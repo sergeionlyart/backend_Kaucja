@@ -33,6 +33,7 @@ def test_settings_reads_restore_limits_and_signature_env(monkeypatch) -> None:
     monkeypatch.setenv("BUNDLE_SIGNING_KEY", "local-test-key")
     monkeypatch.setenv("LIVE_SMOKE_REQUIRED_PROVIDERS", "openai,google")
     monkeypatch.setenv("LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS", "12.5")
+    monkeypatch.setenv("E2E_MODE", "true")
 
     settings = Settings(_env_file=None)
 
@@ -44,3 +45,4 @@ def test_settings_reads_restore_limits_and_signature_env(monkeypatch) -> None:
     assert settings.bundle_signing_key == "local-test-key"
     assert settings.live_smoke_required_providers == "openai,google"
     assert settings.live_smoke_provider_timeout_seconds == 12.5
+    assert settings.e2e_mode is True

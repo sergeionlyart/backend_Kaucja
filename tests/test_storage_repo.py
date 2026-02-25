@@ -48,6 +48,27 @@ def test_storage_repo_create_and_update_run(tmp_path: Path) -> None:
     assert updated_run.status == "running"
 
 
+def test_storage_repo_create_run_with_fixed_identifiers(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-fixed")
+
+    run = repo.create_run(
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_name="kaucja_gap_analysis",
+        prompt_version="v001",
+        schema_version="v001",
+        status="created",
+        run_id="fixed-run-id",
+        created_at="2026-02-25T00:00:00+00:00",
+    )
+
+    assert run.run_id == "fixed-run-id"
+    assert run.created_at == "2026-02-25T00:00:00+00:00"
+    assert Path(run.artifacts_root_path).name == "fixed-run-id"
+
+
 def test_storage_repo_document_crud(tmp_path: Path) -> None:
     repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
     session = repo.create_session()

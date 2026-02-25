@@ -214,11 +214,11 @@ def refresh_history_for_ui(
 def compare_history_runs(
     *,
     repo: StorageRepo,
-    run_id_a: str,
-    run_id_b: str,
+    run_id_a: str | None,
+    run_id_b: str | None,
 ) -> tuple[str, str, list[list[str]], str, str, str]:
-    selected_a = run_id_a.strip()
-    selected_b = run_id_b.strip()
+    selected_a = (run_id_a or "").strip()
+    selected_b = (run_id_b or "").strip()
     if not selected_a or not selected_b:
         return _empty_compare_payload(
             status_message="Comparison failed: select both run_id A and run_id B."
@@ -1810,6 +1810,9 @@ def _build_ocr_model_choices(settings: Any) -> list[str]:
 
 def _make_preflight_checker(settings: Settings) -> PreflightChecker:
     def _checker(provider: str) -> str | None:
+        if settings.e2e_mode:
+            return None
+
         if settings.mistral_api_key is None or not settings.mistral_api_key.strip():
             return "Runtime preflight failed: MISTRAL_API_KEY is not configured."
         if importlib.util.find_spec("mistralai") is None:

@@ -691,6 +691,26 @@ def test_compare_history_runs_handles_missing_run(tmp_path: Path) -> None:
     assert payload["run_b"]["exists"] is False
 
 
+def test_compare_history_runs_handles_none_inputs(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+
+    (
+        compare_status,
+        compare_summary,
+        compare_rows,
+        compare_gaps,
+        compare_metrics,
+        compare_json,
+    ) = compare_history_runs(repo=repo, run_id_a=None, run_id_b=None)
+
+    assert "select both" in compare_status
+    assert "improved: 0" in compare_summary
+    assert compare_rows == []
+    assert compare_gaps == ""
+    assert compare_metrics == ""
+    assert compare_json == "{}"
+
+
 def test_export_history_run_bundle_success(tmp_path: Path) -> None:
     repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
     session = repo.create_session("session-export")

@@ -72,14 +72,16 @@ class StorageRepo:
         openai_reasoning_effort: str | None = None,
         gemini_thinking_level: str | None = None,
         artifacts_root_path: str | None = None,
+        run_id: str | None = None,
+        created_at: str | None = None,
     ) -> RunRecord:
-        run_id = str(uuid4())
-        created_at = _utc_now()
+        run_identifier = run_id or str(uuid4())
+        created_timestamp = created_at or _utc_now()
 
         if artifacts_root_path is None:
             artifacts = self.artifacts_manager.create_run_artifacts(
                 session_id=session_id,
-                run_id=run_id,
+                run_id=run_identifier,
             )
         else:
             artifacts = self.artifacts_manager.ensure_run_structure(artifacts_root_path)
@@ -108,9 +110,9 @@ class StorageRepo:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    run_id,
+                    run_identifier,
                     session_id,
-                    created_at,
+                    created_timestamp,
                     provider,
                     model,
                     openai_reasoning_effort,
@@ -123,7 +125,7 @@ class StorageRepo:
                 ),
             )
 
-        run = self.get_run(run_id)
+        run = self.get_run(run_identifier)
         if run is None:
             raise RuntimeError("Failed to create run")
 

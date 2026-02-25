@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 
     gradio_server_name: str = "127.0.0.1"
     gradio_server_port: int = Field(default=7860, ge=1, le=65535)
+    e2e_mode: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("KAUCJA_E2E_MODE", "E2E_MODE"),
+    )
 
     restore_max_entries: int = Field(
         default=1_000,

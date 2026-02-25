@@ -18,6 +18,34 @@ pytest -q
 python -c "from app.ui.gradio_app import build_app; build_app(); print('gradio_app_started')"
 ```
 
+## Browser E2E Smoke (No External APIs)
+
+Prepare local browser test environment:
+
+```bash
+./scripts/browser/prepare_env.sh
+```
+
+Seed deterministic local history/artifacts:
+
+```bash
+./scripts/browser/seed_data.sh
+```
+
+Start app in browser e2e mode:
+
+```bash
+./scripts/browser/start_e2e_app.sh
+```
+
+Run browser smoke (seed + start + test in one command):
+
+```bash
+./scripts/browser/run_smoke.sh
+```
+
+Reference guide: `docs/BROWSER_TESTS.md`.
+
 ## Live Provider Smoke
 
 Run local operational diagnostics for provider contracts:
@@ -89,6 +117,7 @@ Restore limits and signing are configurable via `.env`:
 - `BUNDLE_SIGNING_KEY`
 - `LIVE_SMOKE_REQUIRED_PROVIDERS`
 - `LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS`
+- `KAUCJA_E2E_MODE`
 
 ## Artifacts and Logs
 
