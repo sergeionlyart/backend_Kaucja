@@ -13,6 +13,7 @@ from app.llm_client.openai_client import OpenAILLMClient
 from app.ocr_client.mistral_ocr import MistralOCRClient
 from app.ocr_client.types import OCROptions
 from app.pipeline.orchestrator import FullPipelineResult, OCRPipelineOrchestrator
+from app.prompts.manager import PromptManager
 from app.storage.artifact_reader import (
     safe_load_combined_markdown,
     safe_load_llm_parsed_json,
@@ -20,23 +21,24 @@ from app.storage.artifact_reader import (
     safe_load_llm_validation_json,
     safe_load_run_manifest,
     safe_read_json,
+    safe_read_text,
 )
 from app.storage.repo import StorageRepo
+from app.ui.result_helpers import (
+    build_checklist_rows,
+    build_gap_rows,
+    checklist_item_ids,
+    render_checklist_details,
+)
 
 PreflightChecker = Callable[[str], str | None]
 
-_ANALYZE_OUTPUT_EMPTY = (
-    "",
-    "",
-    "",
-    "",
-    "",
-    [],
-    "",
-    "",
-    "",
-    "",
-)
+_ERROR_FRIENDLY_MESSAGES = {
+    "OCR_STAGE_FAILED": "OCR stage failed for one or more documents.",
+    "LLM_API_ERROR": "LLM provider request failed. Please retry or switch provider/model.",
+    "LLM_INVALID_JSON": "Model response is not valid JSON.",
+    "LLM_SCHEMA_INVALID": "Model response does not match required schema.",
+}
 
 
 def run_full_pipeline(
@@ -54,37 +56,19 @@ def run_full_pipeline(
     openai_reasoning_effort: str,
     gemini_thinking_level: str,
     preflight_checker: PreflightChecker,
-) -> tuple[str, str, str, str, str, list[list[str]], str, str, str, str]:
+) -> tuple[Any, ...]:
     paths = _normalize_uploaded_files(uploaded_files)
     if not paths:
-        session_id = current_session_id.strip()
-        return (
-            "No files uploaded. Please select at least one document.",
-            session_id,
-            "",
-            session_id,
-            "",
-            [],
-            "",
-            "",
-            "",
-            "",
+        return _empty_ui_payload(
+            status_message="No files uploaded. Please select at least one document.",
+            session_id=current_session_id.strip(),
         )
 
     preflight_error = preflight_checker(provider)
     if preflight_error is not None:
-        session_id = current_session_id.strip()
-        return (
-            preflight_error,
-            session_id,
-            "",
-            session_id,
-            "",
-            [],
-            "",
-            "",
-            "",
-            "",
+        return _empty_ui_payload(
+            status_message=preflight_error,
+            session_id=current_session_id.strip(),
         )
 
     result = orchestrator.run_full_pipeline(
@@ -105,33 +89,55 @@ def run_full_pipeline(
         },
     )
 
-    rows = _ocr_rows(result)
-    summary_text = _human_summary(result)
-    raw_json = _raw_json_text(result)
-    validation_text = _validation_text(result)
-    metrics_text = json.dumps(result.metrics, ensure_ascii=False, indent=2)
-    artifacts_root = _resolve_artifacts_root(
-        orchestrator=orchestrator, run_id=result.run_id
-    )
-
-    status_message = (
+    run_status = (
         f"Run finished. session_id={result.session_id} run_id={result.run_id} "
         f"status={result.run_status}"
     )
     if result.error_code:
-        status_message += f" error_code={result.error_code}"
+        run_status += f" error_code={result.error_code}"
+
+    artifacts_root = _resolve_artifacts_root(
+        orchestrator=orchestrator,
+        run_id=result.run_id,
+    )
+    parsed_json = _safe_parsed_json(
+        raw_text=result.raw_json_text, parsed=result.parsed_json
+    )
+    progress = _build_progress_text(
+        artifacts_root=artifacts_root,
+        run_status=result.run_status,
+    )
+    runtime_log_tail, runtime_log_path = _read_runtime_log(
+        artifacts_root=artifacts_root,
+        line_count=30,
+    )
+    error_friendly, error_details = _render_error_messages(
+        error_code=result.error_code,
+        error_message=result.error_message,
+    )
+    details_selector, details_text = _details_payload(parsed_json=parsed_json)
 
     return (
-        status_message,
+        run_status,
         result.session_id,
         result.run_id,
         result.session_id,
         artifacts_root,
-        rows,
-        summary_text,
-        raw_json,
-        validation_text,
-        metrics_text,
+        progress,
+        runtime_log_tail,
+        runtime_log_path,
+        error_friendly,
+        error_details,
+        _ocr_rows(result),
+        build_checklist_rows(parsed_json),
+        build_gap_rows(parsed_json),
+        details_selector,
+        details_text,
+        _human_summary(result),
+        _raw_json_text(result),
+        _validation_text(result),
+        json.dumps(result.metrics, ensure_ascii=False, indent=2),
+        parsed_json,
     )
 
 
@@ -174,7 +180,6 @@ def list_history_rows(
                 total_cost,
             ]
         )
-
     return rows
 
 
@@ -182,24 +187,19 @@ def load_history_run(
     *,
     repo: StorageRepo,
     run_id: str,
-) -> tuple[str, str, str, str, str, list[list[str]], str, str, str, str]:
+) -> tuple[Any, ...]:
     target_run_id = run_id.strip()
     if not target_run_id:
-        return (
-            "History load failed: run_id is empty.",
-            *_ANALYZE_OUTPUT_EMPTY[1:],
-        )
+        return _empty_ui_payload(status_message="History load failed: run_id is empty.")
 
     bundle = repo.get_run_bundle(target_run_id)
     if bundle is None:
-        return (
-            f"History load failed: run_id={target_run_id} not found.",
-            *_ANALYZE_OUTPUT_EMPTY[1:],
+        return _empty_ui_payload(
+            status_message=f"History load failed: run_id={target_run_id} not found."
         )
 
     run = bundle.run
     artifacts_root = run.artifacts_root_path
-
     manifest, manifest_error = safe_load_run_manifest(artifacts_root)
     parsed_json = _load_parsed_json(bundle=bundle, artifacts_root=artifacts_root)
     raw_json_text = _load_raw_json_text(
@@ -207,10 +207,6 @@ def load_history_run(
         parsed_json=parsed_json,
     )
     validation_text = _load_validation_text(artifacts_root=artifacts_root)
-    ocr_rows = _history_ocr_rows(bundle=bundle)
-
-    summary_text = _summary_from_payload(parsed_json)
-    metrics_text = _metrics_text_for_history(run=run, manifest=manifest)
     status_message = (
         f"History loaded. session_id={run.session_id} run_id={run.run_id} "
         f"status={run.status}"
@@ -220,78 +216,150 @@ def load_history_run(
     if manifest_error:
         status_message += f" warning={manifest_error}"
 
+    error_friendly, error_details = _render_error_messages(
+        error_code=run.error_code,
+        error_message=run.error_message,
+    )
+    progress = _build_progress_text(
+        artifacts_root=artifacts_root,
+        run_status=run.status,
+    )
+    runtime_log_tail, runtime_log_path = _read_runtime_log(
+        artifacts_root=artifacts_root,
+        line_count=30,
+    )
+    details_selector, details_text = _details_payload(parsed_json=parsed_json)
+
     return (
         status_message,
         run.session_id,
         run.run_id,
         run.session_id,
         artifacts_root,
-        ocr_rows,
-        summary_text,
+        progress,
+        runtime_log_tail,
+        runtime_log_path,
+        error_friendly,
+        error_details,
+        _history_ocr_rows(bundle=bundle),
+        build_checklist_rows(parsed_json),
+        build_gap_rows(parsed_json),
+        details_selector,
+        details_text,
+        _summary_from_payload(parsed_json),
         raw_json_text,
         validation_text,
-        metrics_text,
+        _metrics_text_for_history(run=run, manifest=manifest),
+        parsed_json,
     )
 
 
-def _normalize_uploaded_files(
-    uploaded_files: Sequence[str | Path] | str | Path | None,
-) -> list[Path]:
-    if uploaded_files is None:
-        return []
-    if isinstance(uploaded_files, (str, Path)):
-        return [Path(uploaded_files)]
+def load_prompt_for_ui(
+    *,
+    prompt_manager: PromptManager,
+    prompt_name: str,
+    prompt_version: str | None = None,
+) -> tuple[str, str, str]:
+    versions = prompt_manager.list_versions(prompt_name)
+    if not versions:
+        return "", "", "Prompt versions not found."
 
-    return [Path(file_path) for file_path in uploaded_files]
+    selected_version = prompt_version or versions[-1]
+    if selected_version not in versions:
+        selected_version = versions[-1]
 
-
-def _build_provider_choices(settings: Any) -> list[str]:
-    llm_providers = settings.providers_config.get("llm_providers", {})
-    return sorted(str(name) for name in llm_providers.keys())
-
-
-def _build_model_choices(settings: Any) -> list[str]:
-    llm_providers = settings.providers_config.get("llm_providers", {})
-    models: list[str] = []
-    for provider_data in llm_providers.values():
-        model_map = provider_data.get("models", {})
-        models.extend(str(model_name) for model_name in model_map.keys())
-    return sorted(models)
+    prompt_set = prompt_manager.load_prompt_set(
+        prompt_name=prompt_name,
+        version=selected_version,
+    )
+    return selected_version, prompt_set.system_prompt_text, prompt_set.schema_text
 
 
-def _build_ocr_model_choices(settings: Any) -> list[str]:
-    ocr_providers = settings.providers_config.get("ocr_providers", {})
-    models: list[str] = []
-    for provider_data in ocr_providers.values():
-        model_map = provider_data.get("models", {})
-        models.extend(str(model_name) for model_name in model_map.keys())
-    return sorted(models)
+def on_prompt_name_change(
+    *,
+    prompt_manager: PromptManager,
+    prompt_name: str,
+) -> tuple[Any, Any, str, str, str]:
+    versions = prompt_manager.list_versions(prompt_name)
+    if not versions:
+        return (
+            gr.update(choices=[], value=None),
+            gr.update(choices=[""], value=""),
+            "",
+            "",
+            f"No versions found for prompt: {prompt_name}",
+        )
+
+    selected_version, system_prompt_text, schema_text = load_prompt_for_ui(
+        prompt_manager=prompt_manager,
+        prompt_name=prompt_name,
+        prompt_version=versions[-1],
+    )
+    return (
+        gr.update(choices=versions, value=selected_version),
+        gr.update(choices=[""] + versions, value=""),
+        system_prompt_text,
+        schema_text,
+        f"Loaded {prompt_name}/{selected_version}",
+    )
 
 
-def _make_preflight_checker(settings: Settings) -> PreflightChecker:
-    def _checker(provider: str) -> str | None:
-        if settings.mistral_api_key is None or not settings.mistral_api_key.strip():
-            return "Runtime preflight failed: MISTRAL_API_KEY is not configured."
-        if importlib.util.find_spec("mistralai") is None:
-            return "Runtime preflight failed: mistralai package is not installed."
+def on_prompt_version_change(
+    *,
+    prompt_manager: PromptManager,
+    prompt_name: str,
+    prompt_version: str,
+) -> tuple[str, str, str]:
+    try:
+        _, system_prompt_text, schema_text = load_prompt_for_ui(
+            prompt_manager=prompt_manager,
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
+        )
+    except Exception as error:  # noqa: BLE001
+        return "", "", f"Failed to load prompt assets: {error}"
 
-        if provider == "openai":
-            if settings.openai_api_key is None or not settings.openai_api_key.strip():
-                return "Runtime preflight failed: OPENAI_API_KEY is not configured."
-            if importlib.util.find_spec("openai") is None:
-                return "Runtime preflight failed: openai package is not installed."
+    return system_prompt_text, schema_text, f"Loaded {prompt_name}/{prompt_version}"
 
-        if provider == "google":
-            if settings.google_api_key is None or not settings.google_api_key.strip():
-                return "Runtime preflight failed: GOOGLE_API_KEY is not configured."
-            if importlib.util.find_spec("google.genai") is None:
-                return (
-                    "Runtime preflight failed: google-genai package is not installed."
-                )
 
-        return None
+def save_prompt_as_new_version_for_ui(
+    *,
+    prompt_manager: PromptManager,
+    prompt_name: str,
+    source_version: str,
+    system_prompt_text: str,
+    schema_text: str,
+    author: str,
+    note: str,
+) -> tuple[str, Any, Any]:
+    try:
+        new_version = prompt_manager.save_as_new_version(
+            prompt_name=prompt_name,
+            source_version=source_version,
+            system_prompt_text=system_prompt_text,
+            author=author,
+            note=note,
+            schema_text=schema_text,
+        )
+        versions = prompt_manager.list_versions(prompt_name)
+        return (
+            f"Saved new version: {prompt_name}/{new_version}",
+            gr.update(choices=versions, value=new_version),
+            gr.update(choices=[""] + versions, value=""),
+        )
+    except Exception as error:  # noqa: BLE001
+        return (
+            f"Save failed: {error}",
+            gr.update(),
+            gr.update(),
+        )
 
-    return _checker
+
+def render_details_from_state(
+    parsed_json_state: dict[str, Any] | None,
+    selected_item_id: str,
+) -> str:
+    return render_checklist_details(parsed_json_state, selected_item_id)
 
 
 def build_app(
@@ -301,6 +369,32 @@ def build_app(
 ) -> gr.Blocks:
     settings = get_settings()
     storage_repo = repo or StorageRepo(settings.resolved_sqlite_path)
+    prompt_manager = PromptManager(settings.project_root / "app" / "prompts")
+
+    prompt_names = prompt_manager.list_prompt_names()
+    default_prompt_name = (
+        settings.default_prompt_name
+        if settings.default_prompt_name in prompt_names
+        else (prompt_names[0] if prompt_names else settings.default_prompt_name)
+    )
+    prompt_versions = prompt_manager.list_versions(default_prompt_name)
+    default_prompt_version = (
+        settings.default_prompt_version
+        if settings.default_prompt_version in prompt_versions
+        else (
+            prompt_versions[-1] if prompt_versions else settings.default_prompt_version
+        )
+    )
+
+    try:
+        _, initial_system_prompt, initial_schema_text = load_prompt_for_ui(
+            prompt_manager=prompt_manager,
+            prompt_name=default_prompt_name,
+            prompt_version=default_prompt_version,
+        )
+    except Exception:
+        initial_system_prompt = ""
+        initial_schema_text = "{}"
 
     full_orchestrator = orchestrator or OCRPipelineOrchestrator(
         repo=storage_repo,
@@ -320,7 +414,6 @@ def build_app(
     )
 
     runtime_preflight = preflight_checker or _make_preflight_checker(settings)
-
     provider_choices = _build_provider_choices(settings)
     model_choices = _build_model_choices(settings)
     ocr_model_choices = _build_ocr_model_choices(settings)
@@ -342,16 +435,22 @@ def build_app(
     )
 
     with gr.Blocks(title="Kaucja Case Sandbox") as app:
-        gr.Markdown("# Kaucja Case Sandbox - Iteration 5 (Run Manifest + History)")
-        gr.Markdown("Analyze runs OCR -> pack -> LLM -> validate -> persist.")
+        gr.Markdown(
+            "# Kaucja Case Sandbox - Iteration 6 (Prompt Management + Result UX)"
+        )
+        gr.Markdown(
+            "Analyze runs OCR -> LLM -> validate -> finalize with deterministic artifacts."
+        )
 
         session_state = gr.State(value="")
+        parsed_json_state = gr.State(value={})
 
-        documents = gr.File(
-            label="Documents",
-            file_count="multiple",
-            type="filepath",
-        )
+        with gr.Row():
+            documents = gr.File(
+                label="Documents",
+                file_count="multiple",
+                type="filepath",
+            )
 
         with gr.Row():
             provider = gr.Dropdown(
@@ -364,10 +463,15 @@ def build_app(
                 choices=model_choices,
                 value=default_model,
             )
+            prompt_name = gr.Dropdown(
+                label="Prompt Name",
+                choices=prompt_names or [default_prompt_name],
+                value=default_prompt_name,
+            )
             prompt_version = gr.Dropdown(
                 label="Prompt Version",
-                choices=["v001"],
-                value=settings.default_prompt_version,
+                choices=prompt_versions or [default_prompt_version],
+                value=default_prompt_version,
             )
 
         with gr.Row():
@@ -385,8 +489,6 @@ def build_app(
                 label="Include Image Base64",
                 value=settings.default_ocr_include_image_base64,
             )
-
-        with gr.Row():
             openai_reasoning_effort = gr.Dropdown(
                 label="OpenAI Reasoning Effort",
                 choices=["auto", "low", "medium", "high"],
@@ -398,12 +500,35 @@ def build_app(
                 value="auto",
             )
 
-        analyze_button = gr.Button("Analyze", variant="primary")
+        with gr.Row():
+            analyze_button = gr.Button("Analyze", variant="primary")
 
-        status_box = gr.Textbox(label="Status", interactive=False)
-        run_id_box = gr.Textbox(label="Run ID", interactive=False)
-        session_id_box = gr.Textbox(label="Session ID", interactive=False)
-        artifacts_root_box = gr.Textbox(label="Artifacts Root Path", interactive=False)
+        with gr.Row():
+            status_box = gr.Textbox(label="Status", interactive=False)
+            progress_box = gr.Textbox(
+                label="Progress (OCR -> LLM -> validate -> finalize)", interactive=False
+            )
+            error_box = gr.Textbox(label="User-friendly Error", interactive=False)
+
+        with gr.Row():
+            run_id_box = gr.Textbox(label="Run ID", interactive=False)
+            session_id_box = gr.Textbox(label="Session ID", interactive=False)
+            artifacts_root_box = gr.Textbox(
+                label="Artifacts Root Path", interactive=False
+            )
+
+        with gr.Row():
+            runtime_log_path_box = gr.Textbox(label="Full Log Path", interactive=False)
+        runtime_log_tail_box = gr.Textbox(
+            label="Runtime Log Tail (last lines)",
+            lines=8,
+            interactive=False,
+        )
+        error_details_box = gr.Textbox(
+            label="Error Details (error_code/error_message)",
+            lines=4,
+            interactive=False,
+        )
 
         ocr_results = gr.Dataframe(
             headers=["doc_id", "ocr_status", "pages_count", "combined_md_path"],
@@ -413,6 +538,34 @@ def build_app(
             label="OCR Results",
         )
 
+        checklist_table = gr.Dataframe(
+            headers=["item_id", "importance", "status", "confidence"],
+            datatype=["str", "str", "str", "str"],
+            interactive=False,
+            wrap=True,
+            label="Checklist",
+        )
+
+        gap_table = gr.Dataframe(
+            headers=["item_id", "request_from_user.ask"],
+            datatype=["str", "str"],
+            interactive=False,
+            wrap=True,
+            label="Gap List",
+        )
+
+        with gr.Row():
+            details_item_selector = gr.Dropdown(
+                label="Details item_id",
+                choices=[],
+                value=None,
+            )
+            details_box = gr.Textbox(
+                label="Details (findings/quotes/requests)",
+                lines=12,
+                interactive=False,
+            )
+
         summary_box = gr.Textbox(
             label="Summary (critical gaps + next questions)",
             lines=8,
@@ -421,6 +574,25 @@ def build_app(
         raw_json_box = gr.Textbox(label="Raw JSON", lines=12, interactive=False)
         validation_box = gr.Textbox(label="Validation", lines=6, interactive=False)
         metrics_box = gr.Textbox(label="Metrics", lines=8, interactive=False)
+
+        gr.Markdown("## Prompt Management")
+        prompt_status_box = gr.Textbox(label="Prompt Status", interactive=False)
+        system_prompt_editor = gr.Textbox(
+            label="system_prompt.txt (editable)",
+            lines=14,
+            value=initial_system_prompt,
+        )
+        schema_viewer = gr.Code(
+            label="schema.json (view)",
+            language="json",
+            value=initial_schema_text,
+            interactive=False,
+        )
+        with gr.Row():
+            prompt_author = gr.Textbox(label="Author", value="coder")
+            prompt_note = gr.Textbox(label="Note", value="")
+            save_prompt_button = gr.Button("Save as new version")
+        save_prompt_box = gr.Textbox(label="Save Prompt Result", interactive=False)
 
         gr.Markdown("## Run History")
         with gr.Row():
@@ -437,7 +609,7 @@ def build_app(
             )
             history_prompt_version = gr.Dropdown(
                 label="Filter: prompt_version",
-                choices=["", "v001"],
+                choices=[""] + (prompt_versions or [default_prompt_version]),
                 value="",
             )
 
@@ -473,6 +645,7 @@ def build_app(
             uploaded,
             selected_provider,
             selected_model,
+            selected_prompt_name,
             selected_prompt_version,
             selected_ocr_model,
             selected_table_format,
@@ -480,7 +653,7 @@ def build_app(
             selected_reasoning,
             selected_thinking: run_full_pipeline(
                 orchestrator=full_orchestrator,
-                prompt_name=settings.default_prompt_name,
+                prompt_name=selected_prompt_name,
                 current_session_id=current_session_id,
                 uploaded_files=uploaded,
                 provider=selected_provider,
@@ -498,6 +671,7 @@ def build_app(
                 documents,
                 provider,
                 model,
+                prompt_name,
                 prompt_version,
                 ocr_model,
                 table_format,
@@ -511,12 +685,28 @@ def build_app(
                 run_id_box,
                 session_id_box,
                 artifacts_root_box,
+                progress_box,
+                runtime_log_tail_box,
+                runtime_log_path_box,
+                error_box,
+                error_details_box,
                 ocr_results,
+                checklist_table,
+                gap_table,
+                details_item_selector,
+                details_box,
                 summary_box,
                 raw_json_box,
                 validation_box,
                 metrics_box,
+                parsed_json_state,
             ],
+        )
+
+        details_item_selector.change(
+            fn=render_details_from_state,
+            inputs=[parsed_json_state, details_item_selector],
+            outputs=[details_box],
         )
 
         history_refresh_button.click(
@@ -560,15 +750,106 @@ def build_app(
                 run_id_box,
                 session_id_box,
                 artifacts_root_box,
+                progress_box,
+                runtime_log_tail_box,
+                runtime_log_path_box,
+                error_box,
+                error_details_box,
                 ocr_results,
+                checklist_table,
+                gap_table,
+                details_item_selector,
+                details_box,
                 summary_box,
                 raw_json_box,
                 validation_box,
                 metrics_box,
+                parsed_json_state,
             ],
         )
 
+        prompt_name.change(
+            fn=lambda selected_prompt_name: on_prompt_name_change(
+                prompt_manager=prompt_manager,
+                prompt_name=selected_prompt_name,
+            ),
+            inputs=[prompt_name],
+            outputs=[
+                prompt_version,
+                history_prompt_version,
+                system_prompt_editor,
+                schema_viewer,
+                prompt_status_box,
+            ],
+        )
+
+        prompt_version.change(
+            fn=lambda selected_prompt_name,
+            selected_prompt_version: on_prompt_version_change(
+                prompt_manager=prompt_manager,
+                prompt_name=selected_prompt_name,
+                prompt_version=selected_prompt_version,
+            ),
+            inputs=[prompt_name, prompt_version],
+            outputs=[system_prompt_editor, schema_viewer, prompt_status_box],
+        )
+
+        save_prompt_button.click(
+            fn=lambda selected_prompt_name,
+            selected_prompt_version,
+            edited_prompt,
+            current_schema,
+            author,
+            note: save_prompt_as_new_version_for_ui(
+                prompt_manager=prompt_manager,
+                prompt_name=selected_prompt_name,
+                source_version=selected_prompt_version,
+                system_prompt_text=edited_prompt,
+                schema_text=current_schema,
+                author=author,
+                note=note,
+            ),
+            inputs=[
+                prompt_name,
+                prompt_version,
+                system_prompt_editor,
+                schema_viewer,
+                prompt_author,
+                prompt_note,
+            ],
+            outputs=[save_prompt_box, prompt_version, history_prompt_version],
+        )
+
     return app
+
+
+def _empty_ui_payload(
+    *,
+    status_message: str,
+    session_id: str = "",
+) -> tuple[Any, ...]:
+    return (
+        status_message,
+        session_id,
+        "",
+        session_id,
+        "",
+        "OCR: pending | LLM: pending | Validate: pending | Finalize: pending",
+        "",
+        "",
+        "",
+        "",
+        [],
+        [],
+        [],
+        _details_selector_update([]),
+        "No details available for selected item.",
+        "",
+        "",
+        "",
+        "",
+        {},
+    )
 
 
 def _resolve_artifacts_root(
@@ -579,29 +860,13 @@ def _resolve_artifacts_root(
     repo = getattr(orchestrator, "repo", None)
     if repo is None:
         return ""
-
     get_run = getattr(repo, "get_run", None)
     if not callable(get_run):
         return ""
-
     run = get_run(run_id)
     if run is None:
         return ""
     return run.artifacts_root_path
-
-
-def _ocr_rows(result: FullPipelineResult) -> list[list[str]]:
-    rows: list[list[str]] = []
-    for document in result.documents:
-        rows.append(
-            [
-                document.doc_id,
-                document.ocr_status,
-                "" if document.pages_count is None else str(document.pages_count),
-                document.combined_markdown_path,
-            ]
-        )
-    return rows
 
 
 def _history_ocr_rows(*, bundle: Any) -> list[list[str]]:
@@ -612,7 +877,6 @@ def _history_ocr_rows(*, bundle: Any) -> list[list[str]]:
             if document.ocr_artifacts_path
             else None
         )
-        combined_display = ""
         if combined_path is None:
             combined_display = "combined.md path is not available"
         else:
@@ -629,6 +893,20 @@ def _history_ocr_rows(*, bundle: Any) -> list[list[str]]:
                 document.ocr_status,
                 "" if document.pages_count is None else str(document.pages_count),
                 combined_display,
+            ]
+        )
+    return rows
+
+
+def _ocr_rows(result: FullPipelineResult) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for document in result.documents:
+        rows.append(
+            [
+                document.doc_id,
+                document.ocr_status,
+                "" if document.pages_count is None else str(document.pages_count),
+                document.combined_markdown_path,
             ]
         )
     return rows
@@ -696,9 +974,19 @@ def _load_parsed_json(*, bundle: Any, artifacts_root: str) -> dict[str, Any] | N
             return payload
 
     fallback_payload, fallback_error = safe_load_llm_parsed_json(artifacts_root)
-    if fallback_error is not None:
-        return None
-    return fallback_payload
+    if fallback_error is None and isinstance(fallback_payload, dict):
+        return fallback_payload
+
+    raw_text, raw_error = safe_load_llm_raw_text(artifacts_root)
+    if raw_error is None and raw_text is not None:
+        try:
+            parsed = json.loads(raw_text)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            return None
+
+    return None
 
 
 def _load_raw_json_text(
@@ -755,6 +1043,177 @@ def _metrics_text_for_history(*, run: Any, manifest: dict[str, Any] | None) -> s
                 "cost": manifest_metrics.get("cost", metrics["cost"]),
             }
     return json.dumps(metrics, ensure_ascii=False, indent=2)
+
+
+def _details_payload(parsed_json: dict[str, Any] | None) -> tuple[Any, str]:
+    item_ids = checklist_item_ids(parsed_json)
+    selector_update = _details_selector_update(item_ids)
+    if not item_ids:
+        return selector_update, "No details available for selected item."
+    details_text = render_checklist_details(parsed_json, item_ids[0])
+    return selector_update, details_text
+
+
+def _details_selector_update(item_ids: list[str]) -> Any:
+    return gr.update(choices=item_ids, value=(item_ids[0] if item_ids else None))
+
+
+def _read_runtime_log(
+    *,
+    artifacts_root: str,
+    line_count: int,
+) -> tuple[str, str]:
+    if not artifacts_root:
+        return "Run log is not available.", ""
+
+    log_path = Path(artifacts_root) / "logs" / "run.log"
+    log_text, error = safe_read_text(log_path)
+    if error is not None:
+        return f"Run log is not available: {error}", str(log_path)
+
+    lines = (log_text or "").splitlines()
+    tail = "\n".join(lines[-line_count:]) if lines else "(empty)"
+    return tail, str(log_path)
+
+
+def _safe_parsed_json(
+    *,
+    raw_text: str,
+    parsed: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if isinstance(parsed, dict):
+        return parsed
+    if not raw_text.strip():
+        return None
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _render_error_messages(
+    *,
+    error_code: str | None,
+    error_message: str | None,
+) -> tuple[str, str]:
+    if not error_code:
+        return "No errors.", ""
+
+    friendly = _ERROR_FRIENDLY_MESSAGES.get(
+        error_code,
+        "Run failed. Check error details and run log.",
+    )
+    details = f"error_code={error_code}\nerror_message={error_message or ''}"
+    return friendly, details
+
+
+def _build_progress_text(
+    *,
+    artifacts_root: str,
+    run_status: str,
+) -> str:
+    manifest, error = safe_load_run_manifest(artifacts_root)
+    if error is None and isinstance(manifest, dict):
+        stages = manifest.get("stages")
+        validation = manifest.get("validation")
+        if isinstance(stages, dict):
+            ocr_status = _stage_status(stages=stages, stage_name="ocr")
+            llm_status = _stage_status(stages=stages, stage_name="llm")
+            finalize_status = _stage_status(stages=stages, stage_name="finalize")
+            validate_status = _validation_stage_status(validation)
+            return (
+                f"OCR: {ocr_status} | "
+                f"LLM: {llm_status} | "
+                f"Validate: {validate_status} | "
+                f"Finalize: {finalize_status}"
+            )
+
+    if run_status == "completed":
+        return "OCR: completed | LLM: completed | Validate: completed | Finalize: completed"
+    if run_status == "failed":
+        return "OCR: completed | LLM: failed | Validate: failed | Finalize: failed"
+    return "OCR: running | LLM: pending | Validate: pending | Finalize: pending"
+
+
+def _validation_stage_status(validation: Any) -> str:
+    if not isinstance(validation, dict):
+        return "pending"
+    valid = validation.get("valid")
+    if valid is True:
+        return "completed"
+    if valid is False:
+        return "failed"
+    return "pending"
+
+
+def _stage_status(*, stages: dict[str, Any], stage_name: str) -> str:
+    stage = stages.get(stage_name)
+    if not isinstance(stage, dict):
+        return "pending"
+    status = stage.get("status")
+    return str(status) if status else "pending"
+
+
+def _normalize_uploaded_files(
+    uploaded_files: Sequence[str | Path] | str | Path | None,
+) -> list[Path]:
+    if uploaded_files is None:
+        return []
+    if isinstance(uploaded_files, (str, Path)):
+        return [Path(uploaded_files)]
+    return [Path(file_path) for file_path in uploaded_files]
+
+
+def _build_provider_choices(settings: Any) -> list[str]:
+    llm_providers = settings.providers_config.get("llm_providers", {})
+    return sorted(str(name) for name in llm_providers.keys())
+
+
+def _build_model_choices(settings: Any) -> list[str]:
+    llm_providers = settings.providers_config.get("llm_providers", {})
+    models: list[str] = []
+    for provider_data in llm_providers.values():
+        model_map = provider_data.get("models", {})
+        models.extend(str(model_name) for model_name in model_map.keys())
+    return sorted(models)
+
+
+def _build_ocr_model_choices(settings: Any) -> list[str]:
+    ocr_providers = settings.providers_config.get("ocr_providers", {})
+    models: list[str] = []
+    for provider_data in ocr_providers.values():
+        model_map = provider_data.get("models", {})
+        models.extend(str(model_name) for model_name in model_map.keys())
+    return sorted(models)
+
+
+def _make_preflight_checker(settings: Settings) -> PreflightChecker:
+    def _checker(provider: str) -> str | None:
+        if settings.mistral_api_key is None or not settings.mistral_api_key.strip():
+            return "Runtime preflight failed: MISTRAL_API_KEY is not configured."
+        if importlib.util.find_spec("mistralai") is None:
+            return "Runtime preflight failed: mistralai package is not installed."
+
+        if provider == "openai":
+            if settings.openai_api_key is None or not settings.openai_api_key.strip():
+                return "Runtime preflight failed: OPENAI_API_KEY is not configured."
+            if importlib.util.find_spec("openai") is None:
+                return "Runtime preflight failed: openai package is not installed."
+
+        if provider == "google":
+            if settings.google_api_key is None or not settings.google_api_key.strip():
+                return "Runtime preflight failed: GOOGLE_API_KEY is not configured."
+            if importlib.util.find_spec("google.genai") is None:
+                return (
+                    "Runtime preflight failed: google-genai package is not installed."
+                )
+
+        return None
+
+    return _checker
 
 
 def _to_limit(value: float | int) -> int:
