@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS documents (
     pages_count INTEGER,
     ocr_artifacts_path TEXT,
     ocr_error TEXT,
+    UNIQUE (run_id, doc_id),
     FOREIGN KEY (run_id) REFERENCES runs (run_id) ON DELETE CASCADE
 );
 
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS llm_outputs (
 
 CREATE INDEX IF NOT EXISTS idx_runs_session_id ON runs (session_id);
 CREATE INDEX IF NOT EXISTS idx_documents_run_id ON documents (run_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_documents_run_doc_id ON documents (run_id, doc_id);
 """
 
 

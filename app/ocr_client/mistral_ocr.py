@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import mimetypes
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -13,15 +14,21 @@ class OCRProcessService(Protocol):
     def process(self, **kwargs: Any) -> Any: ...
 
 
+class FileUploadService(Protocol):
+    def upload(self, **kwargs: Any) -> Any: ...
+
+
 class MistralOCRClient:
     def __init__(
         self,
         *,
         api_key: str | None = None,
         process_service: OCRProcessService | None = None,
+        upload_service: FileUploadService | None = None,
     ) -> None:
         self._api_key = api_key
         self._process_service = process_service
+        self._upload_service = upload_service
 
     def process_document(
         self,
@@ -104,34 +111,37 @@ class MistralOCRClient:
         )
 
     def _request_ocr(self, *, input_path: Path, options: OCROptions) -> dict[str, Any]:
-        service = self._resolve_process_service()
+        process_service, upload_service = self._resolve_services()
+        uploaded_file_id = _upload_input_file(
+            upload_service=upload_service, input_path=input_path
+        )
 
         request_payload: dict[str, Any] = {
             "model": options.model,
             "document": {
-                "type": "document_url",
-                "document_url": input_path.resolve().as_uri(),
+                "type": "file",
+                "file_id": uploaded_file_id,
             },
             "include_image_base64": options.include_image_base64,
         }
 
-        if options.table_format != "none":
+        if options.table_format in {"html", "markdown"}:
             request_payload["table_format"] = options.table_format
         if options.extract_header:
             request_payload["extract_header"] = True
         if options.extract_footer:
             request_payload["extract_footer"] = True
 
-        response = service.process(**request_payload)
+        response = process_service.process(**request_payload)
         return _response_to_dict(response)
 
-    def _resolve_process_service(self) -> OCRProcessService:
-        if self._process_service is not None:
-            return self._process_service
+    def _resolve_services(self) -> tuple[OCRProcessService, FileUploadService]:
+        if self._process_service is not None and self._upload_service is not None:
+            return self._process_service, self._upload_service
 
         if self._api_key is None:
             raise ValueError(
-                "Mistral API key is required when process_service is not provided"
+                "Mistral API key is required when services are not provided"
             )
 
         try:
@@ -141,7 +151,27 @@ class MistralOCRClient:
 
         client = Mistral(api_key=self._api_key)
         self._process_service = client.ocr
-        return self._process_service
+        self._upload_service = client.files
+        return self._process_service, self._upload_service
+
+
+def _upload_input_file(*, upload_service: FileUploadService, input_path: Path) -> str:
+    mime_type, _ = mimetypes.guess_type(input_path.name)
+    with input_path.open("rb") as content_stream:
+        response = upload_service.upload(
+            file={
+                "file_name": input_path.name,
+                "content": content_stream,
+                "content_type": mime_type,
+            },
+            purpose="ocr",
+        )
+
+    payload = _response_to_dict(response)
+    file_id = payload.get("id")
+    if not isinstance(file_id, str) or not file_id:
+        raise ValueError("File upload response missing id")
+    return file_id
 
 
 def _response_to_dict(response: Any) -> dict[str, Any]:
@@ -154,7 +184,7 @@ def _response_to_dict(response: Any) -> dict[str, Any]:
         if isinstance(dumped, dict):
             return dumped
 
-    raise ValueError("Unsupported OCR response type")
+    raise ValueError("Unsupported response type")
 
 
 def _write_tables(
@@ -164,6 +194,9 @@ def _write_tables(
     table_format: str,
     tables_dir: Path,
 ) -> int:
+    if table_format == "none":
+        return table_index
+
     tables = page_data.get("tables")
     if not isinstance(tables, list):
         return table_index

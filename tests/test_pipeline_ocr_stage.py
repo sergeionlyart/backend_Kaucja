@@ -30,13 +30,22 @@ class FakeProcessService:
         }
 
 
+class FakeUploadService:
+    def upload(self, **kwargs: object) -> dict[str, object]:
+        assert kwargs["purpose"] == "ocr"
+        return {"id": "file-123"}
+
+
 def test_pipeline_ocr_stage_persists_documents_and_artifacts(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     db_path = tmp_path / "kaucja.sqlite3"
 
     artifacts_manager = ArtifactsManager(data_dir)
     repo = StorageRepo(db_path=db_path, artifacts_manager=artifacts_manager)
-    ocr_client = MistralOCRClient(process_service=FakeProcessService())
+    ocr_client = MistralOCRClient(
+        process_service=FakeProcessService(),
+        upload_service=FakeUploadService(),
+    )
 
     orchestrator = OCRPipelineOrchestrator(
         repo=repo,

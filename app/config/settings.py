@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,7 +37,18 @@ class Settings(BaseSettings):
     gradio_server_name: str = "127.0.0.1"
     gradio_server_port: int = Field(default=7860, ge=1, le=65535)
 
-    mistral_api_key: str | None = None
+    openai_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KAUCJA_OPENAI_API_KEY", "OPENAI_API_KEY"),
+    )
+    google_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KAUCJA_GOOGLE_API_KEY", "GOOGLE_API_KEY"),
+    )
+    mistral_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("KAUCJA_MISTRAL_API_KEY", "MISTRAL_API_KEY"),
+    )
 
     @property
     def project_root(self) -> Path:

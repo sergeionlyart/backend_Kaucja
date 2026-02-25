@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from app.storage.repo import StorageRepo
 
 
@@ -85,3 +87,38 @@ def test_storage_repo_document_crud(tmp_path: Path) -> None:
     assert fetched is not None
     assert fetched.ocr_status == "ok"
     assert fetched.pages_count == 3
+
+
+def test_storage_repo_rejects_duplicate_doc_id_in_same_run(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session()
+    run = repo.create_run(
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_name="kaucja_gap_analysis",
+        prompt_version="v001",
+        schema_version="v001",
+        status="running",
+    )
+
+    repo.create_document(
+        run_id=run.run_id,
+        doc_id="0000001",
+        original_filename="contract.pdf",
+        original_mime="application/pdf",
+        original_path=str(tmp_path / "contract.pdf"),
+        ocr_status="pending",
+        ocr_artifacts_path=str(tmp_path / "ocr"),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.create_document(
+            run_id=run.run_id,
+            doc_id="0000001",
+            original_filename="contract_copy.pdf",
+            original_mime="application/pdf",
+            original_path=str(tmp_path / "contract_copy.pdf"),
+            ocr_status="pending",
+            ocr_artifacts_path=str(tmp_path / "ocr"),
+        )
