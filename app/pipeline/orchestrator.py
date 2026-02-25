@@ -4,10 +4,11 @@ import json
 import mimetypes
 import shutil
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 from app.llm_client.base import LLMClient, LLMResult
 from app.ocr_client.types import OCROptions, OCRResult
@@ -17,6 +18,15 @@ from app.storage.artifacts import ArtifactsManager, DocumentArtifacts, RunArtifa
 from app.storage.models import OCRStatus
 from app.storage.repo import StorageRepo
 from app.storage.run_manifest import init_run_manifest, update_run_manifest
+from app.utils.error_taxonomy import (
+    ContextTooLargeError,
+    build_error_details,
+    classify_llm_api_error,
+    classify_ocr_error,
+    is_retryable_llm_exception,
+    is_retryable_ocr_exception,
+)
+from app.utils.retry import run_with_retry
 
 
 class OCRClientProtocol(Protocol):
@@ -65,6 +75,12 @@ class FullPipelineResult:
     error_message: str | None
 
 
+_OCR_MAX_RETRIES = 1
+_LLM_MAX_RETRIES = 1
+_RETRY_BASE_DELAY_SECONDS = 0.2
+_DEFAULT_CONTEXT_CHAR_LIMIT = 120_000
+
+
 class OCRPipelineOrchestrator:
     def __init__(
         self,
@@ -74,12 +90,14 @@ class OCRPipelineOrchestrator:
         ocr_client: OCRClientProtocol,
         llm_clients: dict[str, LLMClient] | None = None,
         prompt_root: Path | None = None,
+        sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         self.repo = repo
         self.artifacts_manager = artifacts_manager
         self.ocr_client = ocr_client
         self.llm_clients = llm_clients or {}
         self.prompt_root = prompt_root or Path("app/prompts")
+        self.sleep_fn = sleep_fn
 
     def run_ocr_stage(
         self,
@@ -139,26 +157,37 @@ class OCRPipelineOrchestrator:
         )
 
         final_status = "failed" if ocr_stage.has_failures else "completed"
-        self.repo.update_run_status(
+        error_code = ocr_stage.error_code if ocr_stage.has_failures else None
+        error_message = ocr_stage.error_message if ocr_stage.has_failures else None
+        timings = {
+            "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+            "t_total_ms": ocr_stage.t_ocr_total_ms,
+        }
+        metrics_persist_error = _safe_update_run_metrics(
+            repo=self.repo,
             run_id=run.run_id,
-            status=final_status,
-            error_code="OCR_STAGE_FAILED" if ocr_stage.has_failures else None,
-            error_message="One or more documents failed OCR"
-            if ocr_stage.has_failures
-            else None,
-        )
-        self.repo.update_run_metrics(
-            run_id=run.run_id,
-            timings_json={
-                "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
-                "t_total_ms": ocr_stage.t_ocr_total_ms,
-            },
+            timings_json=timings,
             usage_json={},
             usage_normalized_json={},
             cost_json={},
+            run_log_path=run_artifacts.run_log_path,
         )
-        update_run_manifest(
+        status_persist_error = _safe_update_run_status(
+            repo=self.repo,
+            run_id=run.run_id,
+            status=final_status,
+            error_code=error_code,
+            error_message=error_message,
+            run_log_path=run_artifacts.run_log_path,
+        )
+        merged_error_code, merged_error_message = _merge_persistence_error(
+            error_code=error_code or "UNKNOWN_ERROR",
+            error_message=error_message or "Run finished with OCR issues.",
+            persistence_errors=[metrics_persist_error, status_persist_error],
+        )
+        manifest_persist_error = _safe_update_manifest(
             artifacts_root_path=run.artifacts_root_path,
+            run_log_path=run_artifacts.run_log_path,
             updates={
                 "status": final_status,
                 "stages": {
@@ -170,10 +199,7 @@ class OCRPipelineOrchestrator:
                     "documents": _manifest_document_entries(ocr_stage.documents),
                 },
                 "metrics": {
-                    "timings": {
-                        "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
-                        "t_total_ms": ocr_stage.t_ocr_total_ms,
-                    },
+                    "timings": timings,
                     "usage": {},
                     "usage_normalized": {},
                     "cost": {},
@@ -182,14 +208,25 @@ class OCRPipelineOrchestrator:
                     "valid": not ocr_stage.has_failures,
                     "errors": []
                     if not ocr_stage.has_failures
-                    else ["One or more documents failed OCR"],
+                    else [error_message or "One or more documents failed OCR"],
                 },
-                "error_code": "OCR_STAGE_FAILED" if ocr_stage.has_failures else None,
-                "error_message": "One or more documents failed OCR"
-                if ocr_stage.has_failures
-                else None,
+                "error_code": error_code,
+                "error_message": error_message,
             },
         )
+        if manifest_persist_error is not None:
+            merged_error_code, merged_error_message = _merge_persistence_error(
+                error_code=merged_error_code,
+                error_message=merged_error_message,
+                persistence_errors=[manifest_persist_error],
+            )
+            _safe_append_run_log(
+                run_artifacts.run_log_path,
+                (
+                    "Run finalization storage warning: "
+                    f"{merged_error_code} ({merged_error_message})"
+                ),
+            )
         _append_run_log(
             run_artifacts.run_log_path,
             f"Run finished with status={final_status}",
@@ -298,6 +335,10 @@ class OCRPipelineOrchestrator:
         )
 
         if ocr_stage.has_failures:
+            error_code = ocr_stage.error_code or "OCR_API_ERROR"
+            error_message = (
+                ocr_stage.error_message or "One or more documents failed OCR"
+            )
             metrics = {
                 "timings": {
                     "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
@@ -307,21 +348,31 @@ class OCRPipelineOrchestrator:
                 "usage_normalized": {},
                 "cost": {},
             }
-            self.repo.update_run_metrics(
+            metrics_persist_error = _safe_update_run_metrics(
+                repo=self.repo,
                 run_id=run.run_id,
                 timings_json=metrics["timings"],
                 usage_json=metrics["usage"],
                 usage_normalized_json=metrics["usage_normalized"],
                 cost_json=metrics["cost"],
+                run_log_path=run_artifacts.run_log_path,
             )
-            self.repo.update_run_status(
+            status_persist_error = _safe_update_run_status(
+                repo=self.repo,
                 run_id=run.run_id,
                 status="failed",
-                error_code="OCR_STAGE_FAILED",
-                error_message="One or more documents failed OCR",
+                error_code=error_code,
+                error_message=error_message,
+                run_log_path=run_artifacts.run_log_path,
             )
-            update_run_manifest(
+            error_code, error_message = _merge_persistence_error(
+                error_code=error_code,
+                error_message=error_message,
+                persistence_errors=[metrics_persist_error, status_persist_error],
+            )
+            manifest_persist_error = _safe_update_manifest(
                 artifacts_root_path=run.artifacts_root_path,
+                run_log_path=run_artifacts.run_log_path,
                 updates={
                     "status": "failed",
                     "stages": {
@@ -331,11 +382,21 @@ class OCRPipelineOrchestrator:
                     "metrics": metrics,
                     "validation": {
                         "valid": False,
-                        "errors": ["One or more documents failed OCR"],
+                        "errors": [error_message],
                     },
-                    "error_code": "OCR_STAGE_FAILED",
-                    "error_message": "One or more documents failed OCR",
+                    "error_code": error_code,
+                    "error_message": error_message,
                 },
+            )
+            if manifest_persist_error is not None:
+                error_code, error_message = _merge_persistence_error(
+                    error_code=error_code,
+                    error_message=error_message,
+                    persistence_errors=[manifest_persist_error],
+                )
+            _append_run_log(
+                run_artifacts.run_log_path,
+                f"Run failed after OCR stage: {error_code} ({error_message})",
             )
 
             return FullPipelineResult(
@@ -348,10 +409,10 @@ class OCRPipelineOrchestrator:
                 raw_json_text="",
                 parsed_json=None,
                 validation_valid=False,
-                validation_errors=["One or more documents failed OCR"],
+                validation_errors=[error_message],
                 metrics=metrics,
-                error_code="OCR_STAGE_FAILED",
-                error_message="One or more documents failed OCR",
+                error_code=error_code,
+                error_message=error_message,
             )
 
         try:
@@ -366,6 +427,17 @@ class OCRPipelineOrchestrator:
                 prompt_version=prompt_version,
             )
             packed_documents = load_and_pack_documents(ocr_stage.packed_documents)
+            context_char_limit = int(
+                llm_runtime_params.get("context_char_limit")
+                or _DEFAULT_CONTEXT_CHAR_LIMIT
+            )
+            if len(packed_documents) > context_char_limit:
+                raise ContextTooLargeError(
+                    (
+                        "Packed document payload exceeds context threshold: "
+                        f"{len(packed_documents)} > {context_char_limit}"
+                    )
+                )
             _write_request_artifact(
                 path=llm_artifacts.request_path,
                 system_prompt=system_prompt,
@@ -373,17 +445,30 @@ class OCRPipelineOrchestrator:
             )
 
             llm_client = self._resolve_llm_client(provider)
-            llm_result = llm_client.generate_json(
-                system_prompt=system_prompt,
-                user_content=packed_documents,
-                json_schema=schema,
-                model=model,
-                params=llm_runtime_params,
-                run_meta={
-                    "session_id": session.session_id,
-                    "run_id": run.run_id,
-                    "schema_name": f"{prompt_name}_{prompt_version}",
-                },
+            llm_result = run_with_retry(
+                operation=lambda: llm_client.generate_json(
+                    system_prompt=system_prompt,
+                    user_content=packed_documents,
+                    json_schema=schema,
+                    model=model,
+                    params=llm_runtime_params,
+                    run_meta={
+                        "session_id": session.session_id,
+                        "run_id": run.run_id,
+                        "schema_name": f"{prompt_name}_{prompt_version}",
+                    },
+                ),
+                should_retry=is_retryable_llm_exception,
+                max_retries=_LLM_MAX_RETRIES,
+                base_delay_seconds=_RETRY_BASE_DELAY_SECONDS,
+                sleep_fn=self.sleep_fn,
+                on_retry=lambda retry_number, delay, error: _append_run_log(
+                    run_artifacts.run_log_path,
+                    (
+                        "LLM transient error, retrying "
+                        f"(retry={retry_number} delay={delay:.2f}s): {error}"
+                    ),
+                ),
             )
             _write_llm_success_artifacts(
                 llm_result=llm_result,
@@ -449,7 +534,10 @@ class OCRPipelineOrchestrator:
                     error_code="LLM_SCHEMA_INVALID",
                     error_message=error_message,
                 )
-                _append_run_log(run_artifacts.run_log_path, "Validation failed")
+                _append_run_log(
+                    run_artifacts.run_log_path,
+                    f"Validation failed: LLM_SCHEMA_INVALID ({error_message})",
+                )
                 update_run_manifest(
                     artifacts_root_path=run.artifacts_root_path,
                     updates={
@@ -518,6 +606,107 @@ class OCRPipelineOrchestrator:
                 error_message=None,
             )
 
+        except ContextTooLargeError as error:
+            context_error = str(error)
+            error_code = "CONTEXT_TOO_LARGE"
+            error_message = context_error
+            llm_artifacts.response_raw_path.write_text(context_error, encoding="utf-8")
+            llm_artifacts.response_parsed_path.write_text(
+                json.dumps({}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            validation = ValidationResult(
+                valid=False,
+                schema_errors=[context_error],
+                invariant_errors=[],
+            )
+            _write_validation_artifact(
+                path=llm_artifacts.validation_path,
+                validation=validation,
+            )
+            self.repo.upsert_llm_output(
+                run_id=run.run_id,
+                response_json_path=str(llm_artifacts.response_parsed_path.resolve()),
+                response_valid=False,
+                schema_validation_errors_path=str(
+                    llm_artifacts.validation_path.resolve()
+                ),
+            )
+            metrics = {
+                "timings": {
+                    "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+                    "t_total_ms": _elapsed_ms(started_at),
+                },
+                "usage": {},
+                "usage_normalized": {},
+                "cost": {},
+            }
+            metrics_persist_error = _safe_update_run_metrics(
+                repo=self.repo,
+                run_id=run.run_id,
+                timings_json=metrics["timings"],
+                usage_json=metrics["usage"],
+                usage_normalized_json=metrics["usage_normalized"],
+                cost_json=metrics["cost"],
+                run_log_path=run_artifacts.run_log_path,
+            )
+            status_persist_error = _safe_update_run_status(
+                repo=self.repo,
+                run_id=run.run_id,
+                status="failed",
+                error_code=error_code,
+                error_message=error_message,
+                run_log_path=run_artifacts.run_log_path,
+            )
+            error_code, error_message = _merge_persistence_error(
+                error_code=error_code,
+                error_message=error_message,
+                persistence_errors=[metrics_persist_error, status_persist_error],
+            )
+            manifest_persist_error = _safe_update_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                run_log_path=run_artifacts.run_log_path,
+                updates={
+                    "status": "failed",
+                    "stages": {
+                        "llm": {"status": "failed", "updated_at": _utc_now()},
+                        "finalize": {"status": "failed", "updated_at": _utc_now()},
+                    },
+                    "metrics": metrics,
+                    "validation": {
+                        "valid": False,
+                        "errors": validation.errors,
+                    },
+                    "error_code": error_code,
+                    "error_message": error_message,
+                },
+            )
+            if manifest_persist_error is not None:
+                error_code, error_message = _merge_persistence_error(
+                    error_code=error_code,
+                    error_message=error_message,
+                    persistence_errors=[manifest_persist_error],
+                )
+            _append_run_log(
+                run_artifacts.run_log_path,
+                f"Run failed before LLM call: {error_code} ({error_message})",
+            )
+            return FullPipelineResult(
+                session_id=session.session_id,
+                run_id=run.run_id,
+                run_status="failed",
+                documents=ocr_stage.documents,
+                critical_gaps_summary=[],
+                next_questions_to_user=[],
+                raw_json_text=context_error,
+                parsed_json=None,
+                validation_valid=False,
+                validation_errors=validation.errors,
+                metrics=metrics,
+                error_code=error_code,
+                error_message=error_message,
+            )
+
         except json.JSONDecodeError as error:
             llm_artifacts.response_raw_path.write_text(
                 error.doc or "", encoding="utf-8"
@@ -538,16 +727,6 @@ class OCRPipelineOrchestrator:
                     llm_artifacts.validation_path.resolve()
                 ),
             )
-            self.repo.update_run_metrics(
-                run_id=run.run_id,
-                timings_json={
-                    "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
-                    "t_total_ms": _elapsed_ms(started_at),
-                },
-                usage_json={},
-                usage_normalized_json={},
-                cost_json={},
-            )
             metrics = {
                 "timings": {
                     "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
@@ -557,14 +736,37 @@ class OCRPipelineOrchestrator:
                 "usage_normalized": {},
                 "cost": {},
             }
-            self.repo.update_run_status(
+            error_code = "LLM_INVALID_JSON"
+            error_message = str(error)
+            metrics_persist_error = _safe_update_run_metrics(
+                repo=self.repo,
+                run_id=run.run_id,
+                timings_json=metrics["timings"],
+                usage_json=metrics["usage"],
+                usage_normalized_json=metrics["usage_normalized"],
+                cost_json=metrics["cost"],
+                run_log_path=run_artifacts.run_log_path,
+            )
+            status_persist_error = _safe_update_run_status(
+                repo=self.repo,
                 run_id=run.run_id,
                 status="failed",
-                error_code="LLM_INVALID_JSON",
-                error_message=str(error),
+                error_code=error_code,
+                error_message=error_message,
+                run_log_path=run_artifacts.run_log_path,
             )
-            update_run_manifest(
+            error_code, error_message = _merge_persistence_error(
+                error_code=error_code,
+                error_message=error_message,
+                persistence_errors=[metrics_persist_error, status_persist_error],
+            )
+            _append_run_log(
+                run_artifacts.run_log_path,
+                f"Run failed: {error_code} ({error_message})",
+            )
+            manifest_persist_error = _safe_update_manifest(
                 artifacts_root_path=run.artifacts_root_path,
+                run_log_path=run_artifacts.run_log_path,
                 updates={
                     "status": "failed",
                     "stages": {
@@ -576,10 +778,16 @@ class OCRPipelineOrchestrator:
                         "valid": False,
                         "errors": validation.errors,
                     },
-                    "error_code": "LLM_INVALID_JSON",
-                    "error_message": str(error),
+                    "error_code": error_code,
+                    "error_message": error_message,
                 },
             )
+            if manifest_persist_error is not None:
+                error_code, error_message = _merge_persistence_error(
+                    error_code=error_code,
+                    error_message=error_message,
+                    persistence_errors=[manifest_persist_error],
+                )
             return FullPipelineResult(
                 session_id=session.session_id,
                 run_id=run.run_id,
@@ -592,21 +800,17 @@ class OCRPipelineOrchestrator:
                 validation_valid=False,
                 validation_errors=validation.errors,
                 metrics=metrics,
-                error_code="LLM_INVALID_JSON",
-                error_message=str(error),
+                error_code=error_code,
+                error_message=error_message,
             )
 
         except Exception as error:  # noqa: BLE001
-            llm_artifacts.response_raw_path.write_text(str(error), encoding="utf-8")
-            self.repo.update_run_metrics(
-                run_id=run.run_id,
-                timings_json={
-                    "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
-                    "t_total_ms": _elapsed_ms(started_at),
-                },
-                usage_json={},
-                usage_normalized_json={},
-                cost_json={},
+            error_code = classify_llm_api_error(error)
+            error_details = build_error_details(error)
+            stacktrace = traceback.format_exc()
+            llm_artifacts.response_raw_path.write_text(
+                f"{error_details}\n\n{stacktrace}",
+                encoding="utf-8",
             )
             metrics = {
                 "timings": {
@@ -617,14 +821,31 @@ class OCRPipelineOrchestrator:
                 "usage_normalized": {},
                 "cost": {},
             }
-            self.repo.update_run_status(
+            metrics_persist_error = _safe_update_run_metrics(
+                repo=self.repo,
+                run_id=run.run_id,
+                timings_json=metrics["timings"],
+                usage_json=metrics["usage"],
+                usage_normalized_json=metrics["usage_normalized"],
+                cost_json=metrics["cost"],
+                run_log_path=run_artifacts.run_log_path,
+            )
+            status_persist_error = _safe_update_run_status(
+                repo=self.repo,
                 run_id=run.run_id,
                 status="failed",
-                error_code="LLM_API_ERROR",
-                error_message=str(error),
+                error_code=error_code,
+                error_message=error_details,
+                run_log_path=run_artifacts.run_log_path,
             )
-            update_run_manifest(
+            error_code, error_details = _merge_persistence_error(
+                error_code=error_code,
+                error_message=error_details,
+                persistence_errors=[metrics_persist_error, status_persist_error],
+            )
+            manifest_persist_error = _safe_update_manifest(
                 artifacts_root_path=run.artifacts_root_path,
+                run_log_path=run_artifacts.run_log_path,
                 updates={
                     "status": "failed",
                     "stages": {
@@ -634,11 +855,21 @@ class OCRPipelineOrchestrator:
                     "metrics": metrics,
                     "validation": {
                         "valid": False,
-                        "errors": [str(error)],
+                        "errors": [error_details],
                     },
-                    "error_code": "LLM_API_ERROR",
-                    "error_message": str(error),
+                    "error_code": error_code,
+                    "error_message": error_details,
                 },
+            )
+            if manifest_persist_error is not None:
+                error_code, error_details = _merge_persistence_error(
+                    error_code=error_code,
+                    error_message=error_details,
+                    persistence_errors=[manifest_persist_error],
+                )
+            _append_run_log(
+                run_artifacts.run_log_path,
+                f"Run failed: {error_code} ({error_details})\n{stacktrace}",
             )
             return FullPipelineResult(
                 session_id=session.session_id,
@@ -647,13 +878,13 @@ class OCRPipelineOrchestrator:
                 documents=ocr_stage.documents,
                 critical_gaps_summary=[],
                 next_questions_to_user=[],
-                raw_json_text=str(error),
+                raw_json_text=error_details,
                 parsed_json=None,
                 validation_valid=False,
-                validation_errors=[str(error)],
+                validation_errors=[error_details],
                 metrics=metrics,
-                error_code="LLM_API_ERROR",
-                error_message=str(error),
+                error_code=error_code,
+                error_message=error_details,
             )
 
     def _run_ocr_documents(
@@ -668,6 +899,8 @@ class OCRPipelineOrchestrator:
         documents: list[OCRDocumentStageResult] = []
         packed_documents: list[tuple[str, Path]] = []
         has_failures = False
+        first_error_code: str | None = None
+        first_error_message: str | None = None
 
         for index, source_path in enumerate(input_paths, start=1):
             doc_id = _build_doc_id(index)
@@ -693,11 +926,24 @@ class OCRPipelineOrchestrator:
             )
 
             try:
-                ocr_result = self.ocr_client.process_document(
-                    input_path=original_path,
-                    doc_id=doc_id,
-                    options=ocr_options,
-                    output_dir=document_artifacts.ocr_dir,
+                ocr_result = run_with_retry(
+                    operation=lambda: self.ocr_client.process_document(
+                        input_path=original_path,
+                        doc_id=doc_id,
+                        options=ocr_options,
+                        output_dir=document_artifacts.ocr_dir,
+                    ),
+                    should_retry=is_retryable_ocr_exception,
+                    max_retries=_OCR_MAX_RETRIES,
+                    base_delay_seconds=_RETRY_BASE_DELAY_SECONDS,
+                    sleep_fn=self.sleep_fn,
+                    on_retry=lambda retry_number, delay, error: _append_run_log(
+                        run_artifacts.run_log_path,
+                        (
+                            f"Doc {doc_id}: OCR transient error, retrying "
+                            f"(retry={retry_number} delay={delay:.2f}s): {error}"
+                        ),
+                    ),
                 )
                 self.repo.update_document_ocr(
                     run_id=run_id,
@@ -724,7 +970,13 @@ class OCRPipelineOrchestrator:
                 _append_run_log(run_artifacts.run_log_path, f"Doc {doc_id}: OCR ok")
             except Exception as error:  # noqa: BLE001
                 has_failures = True
-                error_message = str(error)
+                error_code = classify_ocr_error(error)
+                error_details = build_error_details(error)
+                stacktrace = traceback.format_exc()
+                if first_error_code is None:
+                    first_error_code = error_code
+                if first_error_message is None:
+                    first_error_message = error_details
                 self.repo.update_document_ocr(
                     run_id=run_id,
                     doc_id=doc_id,
@@ -732,7 +984,7 @@ class OCRPipelineOrchestrator:
                     ocr_model=ocr_options.model,
                     pages_count=None,
                     ocr_artifacts_path=str(document_artifacts.ocr_dir.resolve()),
-                    ocr_error=error_message,
+                    ocr_error=f"{error_code}: {error_details}",
                 )
                 documents.append(
                     OCRDocumentStageResult(
@@ -743,12 +995,12 @@ class OCRPipelineOrchestrator:
                             (document_artifacts.ocr_dir / "combined.md").resolve()
                         ),
                         ocr_artifacts_path=str(document_artifacts.ocr_dir.resolve()),
-                        ocr_error=error_message,
+                        ocr_error=f"{error_code}: {error_details}",
                     )
                 )
                 _append_run_log(
                     run_artifacts.run_log_path,
-                    f"Doc {doc_id}: OCR failed ({error_message})",
+                    f"Doc {doc_id}: OCR failed ({error_code}) {error_details}\n{stacktrace}",
                 )
 
         return _OcrStageInternals(
@@ -756,6 +1008,8 @@ class OCRPipelineOrchestrator:
             packed_documents=packed_documents,
             has_failures=has_failures,
             t_ocr_total_ms=_elapsed_ms(started_at),
+            error_code=first_error_code,
+            error_message=first_error_message,
         )
 
     def _resolve_llm_client(self, provider: str) -> LLMClient:
@@ -795,6 +1049,8 @@ class _OcrStageInternals:
     packed_documents: list[tuple[str, Path]]
     has_failures: bool
     t_ocr_total_ms: float
+    error_code: str | None
+    error_message: str | None
 
 
 def _normalize_input_paths(input_files: Sequence[str | Path]) -> list[Path]:
@@ -930,3 +1186,102 @@ def _to_optional_param(value: Any) -> str | None:
 
 def _utc_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
+
+
+def _safe_update_run_metrics(
+    *,
+    repo: StorageRepo,
+    run_id: str,
+    timings_json: dict[str, Any],
+    usage_json: dict[str, Any],
+    usage_normalized_json: dict[str, Any],
+    cost_json: dict[str, Any],
+    run_log_path: Path,
+) -> str | None:
+    try:
+        repo.update_run_metrics(
+            run_id=run_id,
+            timings_json=timings_json,
+            usage_json=usage_json,
+            usage_normalized_json=usage_normalized_json,
+            cost_json=cost_json,
+        )
+        return None
+    except Exception as error:  # noqa: BLE001
+        details = build_error_details(error)
+        _safe_append_run_log(
+            run_log_path,
+            f"Storage persistence failed in update_run_metrics: {details}",
+        )
+        return details
+
+
+def _safe_update_run_status(
+    *,
+    repo: StorageRepo,
+    run_id: str,
+    status: str,
+    error_code: str | None,
+    error_message: str | None,
+    run_log_path: Path,
+) -> str | None:
+    try:
+        repo.update_run_status(
+            run_id=run_id,
+            status=status,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        return None
+    except Exception as error:  # noqa: BLE001
+        details = build_error_details(error)
+        _safe_append_run_log(
+            run_log_path,
+            f"Storage persistence failed in update_run_status: {details}",
+        )
+        return details
+
+
+def _safe_update_manifest(
+    *,
+    artifacts_root_path: str,
+    updates: dict[str, Any],
+    run_log_path: Path,
+) -> str | None:
+    try:
+        update_run_manifest(
+            artifacts_root_path=artifacts_root_path,
+            updates=updates,
+        )
+        return None
+    except Exception as error:  # noqa: BLE001
+        details = build_error_details(error)
+        _safe_append_run_log(
+            run_log_path,
+            f"Storage persistence failed in update_run_manifest: {details}",
+        )
+        return details
+
+
+def _safe_append_run_log(log_path: Path, message: str) -> None:
+    try:
+        _append_run_log(log_path, message)
+    except Exception:
+        # If log write fails, we keep pipeline execution alive.
+        return
+
+
+def _merge_persistence_error(
+    *,
+    error_code: str,
+    error_message: str,
+    persistence_errors: list[str | None],
+) -> tuple[str, str]:
+    details = [item for item in persistence_errors if item]
+    if not details:
+        return error_code, error_message
+
+    merged = "\n".join(details)
+    if error_code != "STORAGE_ERROR":
+        return "STORAGE_ERROR", f"{error_message}\nStorage details:\n{merged}"
+    return "STORAGE_ERROR", f"{error_message}\n{merged}"

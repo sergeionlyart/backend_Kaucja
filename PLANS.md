@@ -110,3 +110,59 @@ Add deterministic `run.json` manifest updates through pipeline lifecycle and exp
 ## Rollback Plan
 1. Revert Iteration 5 commits touching `storage/pipeline/ui/tests`.
 2. Keep Iteration 4 analyze flow intact as rollback baseline.
+
+---
+
+# ExecPlan: Iteration 7 Reliability Hardening
+
+## Scope
+Finalize reliability hardening to align runtime behavior with TechSpec:
+- OCR bad-page PDF renders
+- bounded retry policies (OCR/LLM)
+- full error taxonomy mapping
+- deterministic persistence for context-too-large and failure branches
+
+## Dependencies
+1. Iteration 6 prompt/result UX baseline on `codex/iteration-7-reliability`.
+2. Existing deterministic artifacts (`run.json`, `run.log`, `llm/*`, `documents/*`).
+3. Existing orchestrator and storage repo contracts.
+
+## Steps
+1. Replace OCR bad-page placeholder with real PDF rendering in `page_renders/` using `pymupdf`.
+2. Preserve safe non-PDF behavior with explicit warning in `quality.json`.
+3. Enforce retry contracts:
+   - OCR: one retry for transient network/timeout/429/5xx.
+   - LLM: one retry for 429/5xx.
+   - no retry for invalid JSON/schema/context-too-large.
+4. Complete runtime taxonomy mapping:
+   - `FILE_UNSUPPORTED`, `OCR_API_ERROR`, `OCR_PARSE_ERROR`
+   - `LLM_API_ERROR`, `LLM_INVALID_JSON`, `LLM_SCHEMA_INVALID`
+   - `CONTEXT_TOO_LARGE`, `STORAGE_ERROR`, `UNKNOWN_ERROR`.
+5. Add best-effort persistence guards for failure paths to avoid cascading crashes when storage writes fail.
+6. Update/extend tests:
+   - OCR page renders (PDF render, non-PDF skip)
+   - retry classifiers and retry attempts
+   - storage/unknown error mapping branches
+   - context-too-large deterministic failure branch.
+7. Run quality gates and publish report.
+
+## Risks
+1. PDF renderer dependency mismatch (`pymupdf`) across local environments.
+2. Retry logic accidentally triggering on non-retryable branches.
+3. Storage failure during error handling causing secondary crashes.
+
+## Risk Mitigation
+1. Add dependency in `pyproject.toml` and cover with unit tests.
+2. Keep retry classifiers explicit and test retry counts.
+3. Use guarded best-effort persistence helpers and keep stack/details in log/artifacts.
+
+## Definition of Done
+1. Bad OCR pages from PDF produce real `page_renders/<page>.png`.
+2. Non-PDF render path safely skips with warning.
+3. Retry behavior matches TechSpec 9.3 exactly.
+4. Error codes map consistently into run state + manifest + UI.
+5. `ruff format .`, `ruff check .`, `pytest -q`, and `build_app` check pass.
+
+## Rollback Plan
+1. Revert Iteration 7 changes in `ocr_client/orchestrator/utils/tests`.
+2. Keep Iteration 6 commit (`0e845ce`) as stable fallback.

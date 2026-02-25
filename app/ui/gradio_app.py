@@ -30,15 +30,9 @@ from app.ui.result_helpers import (
     checklist_item_ids,
     render_checklist_details,
 )
+from app.utils.error_taxonomy import ERROR_FRIENDLY_MESSAGES
 
 PreflightChecker = Callable[[str], str | None]
-
-_ERROR_FRIENDLY_MESSAGES = {
-    "OCR_STAGE_FAILED": "OCR stage failed for one or more documents.",
-    "LLM_API_ERROR": "LLM provider request failed. Please retry or switch provider/model.",
-    "LLM_INVALID_JSON": "Model response is not valid JSON.",
-    "LLM_SCHEMA_INVALID": "Model response does not match required schema.",
-}
 
 
 def run_full_pipeline(
@@ -1102,7 +1096,7 @@ def _render_error_messages(
     if not error_code:
         return "No errors.", ""
 
-    friendly = _ERROR_FRIENDLY_MESSAGES.get(
+    friendly = ERROR_FRIENDLY_MESSAGES.get(
         error_code,
         "Run failed. Check error details and run log.",
     )

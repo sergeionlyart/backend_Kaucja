@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from app.ocr_client.quality import evaluate_ocr_quality
 from app.ocr_client.types import OCROptions, OCRResult
+from app.utils.error_taxonomy import OCRParseError, UnsupportedFileTypeError
 
 
 class OCRProcessService(Protocol):
@@ -38,6 +39,8 @@ class MistralOCRClient:
         options: OCROptions,
         output_dir: Path,
     ) -> OCRResult:
+        _validate_supported_input(input_path)
+
         output_dir.mkdir(parents=True, exist_ok=True)
         pages_dir = output_dir / "pages"
         tables_dir = output_dir / "tables"
@@ -59,7 +62,7 @@ class MistralOCRClient:
 
         pages = payload.get("pages")
         if not isinstance(pages, list):
-            raise ValueError("OCR response missing pages list")
+            raise OCRParseError("OCR response missing pages list")
 
         page_markdowns: list[str] = []
         table_index = 0
@@ -89,9 +92,19 @@ class MistralOCRClient:
         combined_path.write_text("\n\n".join(page_markdowns), encoding="utf-8")
 
         quality = evaluate_ocr_quality(page_markdowns)
+        render_warnings = _write_bad_page_renders(
+            input_path=input_path,
+            bad_pages=quality.bad_pages,
+            page_renders_dir=page_renders_dir,
+        )
+        quality_warnings = [*quality.warnings, *render_warnings]
         quality_path = output_dir / "quality.json"
         quality_path.write_text(
-            json.dumps(quality.to_dict(), ensure_ascii=False, indent=2),
+            json.dumps(
+                {"warnings": quality_warnings, "bad_pages": quality.bad_pages},
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
 
@@ -107,7 +120,7 @@ class MistralOCRClient:
             images_dir=str(images_dir.resolve()),
             page_renders_dir=str(page_renders_dir.resolve()),
             quality_path=str(quality_path.resolve()),
-            quality_warnings=quality.warnings,
+            quality_warnings=quality_warnings,
         )
 
     def _request_ocr(self, *, input_path: Path, options: OCROptions) -> dict[str, Any]:
@@ -170,7 +183,7 @@ def _upload_input_file(*, upload_service: FileUploadService, input_path: Path) -
     payload = _response_to_dict(response)
     file_id = payload.get("id")
     if not isinstance(file_id, str) or not file_id:
-        raise ValueError("File upload response missing id")
+        raise OCRParseError("File upload response missing id")
     return file_id
 
 
@@ -184,7 +197,7 @@ def _response_to_dict(response: Any) -> dict[str, Any]:
         if isinstance(dumped, dict):
             return dumped
 
-    raise ValueError("Unsupported response type")
+    raise OCRParseError("Unsupported response type")
 
 
 def _write_tables(
@@ -254,7 +267,10 @@ def _decode_image_payload(
             mime_segment = header.split("image/", maxsplit=1)[1]
             extension = mime_segment.split(";", maxsplit=1)[0]
 
-    raw_bytes = base64.b64decode(payload)
+    try:
+        raw_bytes = base64.b64decode(payload)
+    except Exception as error:  # noqa: BLE001
+        raise OCRParseError("Image payload is not valid base64") from error
     return raw_bytes, extension
 
 
@@ -268,3 +284,87 @@ def _extension_from_image_data(image_data: dict[str, Any]) -> str:
         return format_hint
 
     return "png"
+
+
+def _validate_supported_input(input_path: Path) -> None:
+    suffix = input_path.suffix.lower()
+    supported_suffixes = {
+        ".pdf",
+        ".docx",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".webp",
+        ".tif",
+        ".tiff",
+        ".bmp",
+        ".gif",
+    }
+    if suffix not in supported_suffixes:
+        raise UnsupportedFileTypeError(
+            f"Unsupported file type for OCR: {input_path.name} ({suffix or 'no extension'})"
+        )
+
+
+def _write_bad_page_renders(
+    *,
+    input_path: Path,
+    bad_pages: list[int],
+    page_renders_dir: Path,
+) -> list[str]:
+    if not bad_pages:
+        return []
+
+    if input_path.suffix.lower() != ".pdf":
+        return [
+            (
+                "Bad pages detected, but page render export is only available for PDF. "
+                f"Skipped for {input_path.name}."
+            )
+        ]
+
+    try:
+        import fitz
+    except ImportError:
+        return [
+            (
+                "Bad pages detected for PDF, but page render export is unavailable "
+                "because pymupdf is not installed."
+            )
+        ]
+
+    warnings: list[str] = []
+    rendered_count = 0
+    normalized_pages = sorted({page for page in bad_pages if page > 0})
+
+    try:
+        with fitz.open(str(input_path)) as document:
+            page_count = int(document.page_count)
+            for page_number in normalized_pages:
+                if page_number > page_count:
+                    warnings.append(
+                        (
+                            "Bad page index outside document range: "
+                            f"page={page_number}, total_pages={page_count}."
+                        )
+                    )
+                    continue
+
+                try:
+                    page = document.load_page(page_number - 1)
+                    pixmap = page.get_pixmap(alpha=False)
+                    render_path = page_renders_dir / f"{page_number:04d}.png"
+                    pixmap.save(str(render_path))
+                    rendered_count += 1
+                except Exception as error:  # noqa: BLE001
+                    warnings.append(f"Failed to render PDF page {page_number}: {error}")
+    except Exception as error:  # noqa: BLE001
+        warnings.append(f"Failed to open PDF for bad page render: {error}")
+        return warnings
+
+    if rendered_count > 0:
+        warnings.insert(
+            0,
+            f"Rendered {rendered_count} bad page(s) under page_renders/.",
+        )
+    return warnings
