@@ -8,6 +8,16 @@ on:
         required: false
         default: false
         type: boolean
+      required_providers:
+        description: "CSV list of required providers"
+        required: false
+        default: "openai,google,mistral_ocr"
+        type: string
+      provider_timeout_seconds:
+        description: "Per-provider timeout in seconds"
+        required: false
+        default: "30"
+        type: string
   schedule:
     - cron: "0 7 * * 1"
 
@@ -35,11 +45,23 @@ jobs:
       - name: Run live smoke
         run: |
           mkdir -p artifacts
+          REQUIRED_PROVIDERS="openai,google,mistral_ocr"
+          PROVIDER_TIMEOUT_SECONDS="30"
           STRICT_FLAG=""
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.strict }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REQUIRED_PROVIDERS="${{ inputs.required_providers }}"
+            PROVIDER_TIMEOUT_SECONDS="${{ inputs.provider_timeout_seconds }}"
+            if [ "${{ inputs.strict }}" = "true" ]; then
+              STRICT_FLAG="--strict"
+            fi
+          else
             STRICT_FLAG="--strict"
           fi
-          python -m app.ops.live_smoke ${STRICT_FLAG} --output artifacts/live_smoke_report.json
+          python -m app.ops.live_smoke \
+            ${STRICT_FLAG} \
+            --required-providers "${REQUIRED_PROVIDERS}" \
+            --provider-timeout-seconds "${PROVIDER_TIMEOUT_SECONDS}" \
+            --output artifacts/live_smoke_report.json
 
       - name: Upload live smoke report
         if: always()
@@ -47,4 +69,3 @@ jobs:
         with:
           name: live-smoke-report
           path: artifacts/live_smoke_report.json
-

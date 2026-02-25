@@ -83,6 +83,21 @@ class Settings(BaseSettings):
             "BUNDLE_SIGNING_KEY",
         ),
     )
+    live_smoke_required_providers: str = Field(
+        default="openai,google,mistral_ocr",
+        validation_alias=AliasChoices(
+            "KAUCJA_LIVE_SMOKE_REQUIRED_PROVIDERS",
+            "LIVE_SMOKE_REQUIRED_PROVIDERS",
+        ),
+    )
+    live_smoke_provider_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        validation_alias=AliasChoices(
+            "KAUCJA_LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS",
+            "LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS",
+        ),
+    )
 
     openai_api_key: str | None = Field(
         default=None,

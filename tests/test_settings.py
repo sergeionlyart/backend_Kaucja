@@ -31,6 +31,8 @@ def test_settings_reads_restore_limits_and_signature_env(monkeypatch) -> None:
     monkeypatch.setenv("RESTORE_MAX_COMPRESSION_RATIO", "44.5")
     monkeypatch.setenv("RESTORE_REQUIRE_SIGNATURE", "true")
     monkeypatch.setenv("BUNDLE_SIGNING_KEY", "local-test-key")
+    monkeypatch.setenv("LIVE_SMOKE_REQUIRED_PROVIDERS", "openai,google")
+    monkeypatch.setenv("LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS", "12.5")
 
     settings = Settings(_env_file=None)
 
@@ -40,3 +42,5 @@ def test_settings_reads_restore_limits_and_signature_env(monkeypatch) -> None:
     assert settings.restore_max_compression_ratio == 44.5
     assert settings.restore_require_signature is True
     assert settings.bundle_signing_key == "local-test-key"
+    assert settings.live_smoke_required_providers == "openai,google"
+    assert settings.live_smoke_provider_timeout_seconds == 12.5

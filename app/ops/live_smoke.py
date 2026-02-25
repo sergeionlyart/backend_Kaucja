@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from queue import Empty, Queue
 from tempfile import TemporaryDirectory
 from typing import Callable
 from typing import Literal
@@ -56,34 +58,43 @@ def run_live_smoke(
     settings: Settings | None = None,
     output_path: Path | str | None = None,
     provider_probes: list[ProviderProbe] | None = None,
+    required_providers: list[str] | None = None,
+    provider_timeout_seconds: float | None = None,
     now_fn: Callable[[], datetime] | None = None,
 ) -> dict[str, object]:
     active_settings = settings or get_settings()
     probes = provider_probes or _default_provider_probes()
     time_provider = now_fn or _utc_now
 
+    timeout_seconds = (
+        float(provider_timeout_seconds)
+        if provider_timeout_seconds is not None
+        else float(active_settings.live_smoke_provider_timeout_seconds)
+    )
+    normalized_required = _normalize_required_providers(
+        required_providers
+        if required_providers is not None
+        else active_settings.live_smoke_required_providers
+    )
+
     started_at = time_provider().isoformat()
     provider_results: list[ProviderSmokeResult] = []
     for probe in probes:
-        provider_name = _probe_provider_name(probe)
-        try:
-            provider_results.append(probe(active_settings))
-        except Exception as error:  # noqa: BLE001
-            provider_results.append(
-                ProviderSmokeResult(
-                    name=provider_name,
-                    status="fail",
-                    latency_ms=None,
-                    error_code="UNKNOWN_ERROR",
-                    error_message=build_error_details(error),
-                )
+        provider_results.append(
+            _run_probe_with_timeout(
+                probe=probe,
+                settings=active_settings,
+                timeout_seconds=timeout_seconds,
             )
+        )
 
     finished_at = time_provider().isoformat()
     report = _build_report(
         started_at=started_at,
         finished_at=finished_at,
         strict=strict,
+        required_providers=normalized_required,
+        provider_timeout_seconds=timeout_seconds,
         providers=provider_results,
     )
 
@@ -95,31 +106,138 @@ def run_live_smoke(
     return report
 
 
+def _run_probe_with_timeout(
+    *,
+    probe: ProviderProbe,
+    settings: Settings,
+    timeout_seconds: float,
+) -> ProviderSmokeResult:
+    provider_name = _probe_provider_name(probe)
+    queue: Queue[tuple[str, object]] = Queue(maxsize=1)
+
+    def _target() -> None:
+        try:
+            result = probe(settings)
+            queue.put(("result", result))
+        except Exception as error:  # noqa: BLE001
+            queue.put(("error", error))
+
+    start_time = time.perf_counter()
+    thread = threading.Thread(
+        target=_target,
+        name=f"live-smoke-{provider_name}",
+        daemon=True,
+    )
+    thread.start()
+    thread.join(timeout_seconds)
+
+    if thread.is_alive():
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        return ProviderSmokeResult(
+            name=provider_name,
+            status="fail",
+            latency_ms=elapsed_ms,
+            error_code="LIVE_SMOKE_TIMEOUT",
+            error_message=(
+                f"Provider probe exceeded timeout of {timeout_seconds:.3f} seconds."
+            ),
+        )
+
+    try:
+        kind, payload = queue.get_nowait()
+    except Empty:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        return ProviderSmokeResult(
+            name=provider_name,
+            status="fail",
+            latency_ms=elapsed_ms,
+            error_code="UNKNOWN_ERROR",
+            error_message="Provider probe finished without returning a result.",
+        )
+
+    if kind == "error":
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        error = payload if isinstance(payload, Exception) else RuntimeError(payload)
+        return ProviderSmokeResult(
+            name=provider_name,
+            status="fail",
+            latency_ms=elapsed_ms,
+            error_code="UNKNOWN_ERROR",
+            error_message=build_error_details(error),
+        )
+
+    if isinstance(payload, ProviderSmokeResult):
+        return ProviderSmokeResult(
+            name=provider_name,
+            status=payload.status,
+            latency_ms=payload.latency_ms,
+            error_code=payload.error_code,
+            error_message=payload.error_message,
+        )
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    return ProviderSmokeResult(
+        name=provider_name,
+        status="fail",
+        latency_ms=elapsed_ms,
+        error_code="UNKNOWN_ERROR",
+        error_message="Provider probe returned invalid payload type.",
+    )
+
+
 def _build_report(
     *,
     started_at: str,
     finished_at: str,
     strict: bool,
+    required_providers: list[str],
+    provider_timeout_seconds: float,
     providers: list[ProviderSmokeResult],
 ) -> dict[str, object]:
     pass_count = sum(1 for provider in providers if provider.status == "pass")
     fail_count = sum(1 for provider in providers if provider.status == "fail")
     skipped_count = sum(1 for provider in providers if provider.status == "skipped")
+
+    provider_status_map = {provider.name: provider.status for provider in providers}
+    required_failures = sorted(
+        [
+            provider
+            for provider in required_providers
+            if provider_status_map.get(provider) == "fail"
+            or provider not in provider_status_map
+        ]
+    )
+    required_skipped = sorted(
+        [
+            provider
+            for provider in required_providers
+            if provider_status_map.get(provider) == "skipped"
+        ]
+    )
+
     strict_skipped_violation = strict and skipped_count > 0
+    policy_violation = bool(required_failures or required_skipped)
 
     overall_status = "pass"
-    if fail_count > 0 or strict_skipped_violation:
+    if fail_count > 0 or strict_skipped_violation or policy_violation:
         overall_status = "fail"
 
     return {
         "finished_at": finished_at,
         "overall_status": overall_status,
+        "provider_timeout_seconds": provider_timeout_seconds,
         "providers": [_provider_to_dict(provider) for provider in providers],
+        "required_failures": required_failures,
+        "required_providers": required_providers,
+        "required_skipped": required_skipped,
         "started_at": started_at,
         "strict_mode": strict,
         "summary": {
             "fail": fail_count,
             "pass": pass_count,
+            "policy_violation": policy_violation,
+            "required_failures": len(required_failures),
+            "required_skipped": len(required_skipped),
             "skipped": skipped_count,
             "strict_skipped_violation": strict_skipped_violation,
         },
@@ -147,7 +265,7 @@ def _probe_openai(settings: Settings) -> ProviderSmokeResult:
     if not settings.openai_api_key:
         return _skipped_result(
             name=provider_name,
-            error_code="MISSING_API_KEY",
+            error_code="LIVE_SMOKE_MISSING_API_KEY",
             error_message="OPENAI_API_KEY is not configured.",
         )
 
@@ -177,7 +295,7 @@ def _probe_openai(settings: Settings) -> ProviderSmokeResult:
         if _is_sdk_missing_error(error):
             return _skipped_result(
                 name=provider_name,
-                error_code="SDK_NOT_INSTALLED",
+                error_code="LIVE_SMOKE_SDK_NOT_INSTALLED",
                 error_message=str(error),
             )
         return _failed_result(
@@ -200,7 +318,7 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
     if not settings.google_api_key:
         return _skipped_result(
             name=provider_name,
-            error_code="MISSING_API_KEY",
+            error_code="LIVE_SMOKE_MISSING_API_KEY",
             error_message="GOOGLE_API_KEY is not configured.",
         )
 
@@ -230,7 +348,7 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
         if _is_sdk_missing_error(error):
             return _skipped_result(
                 name=provider_name,
-                error_code="SDK_NOT_INSTALLED",
+                error_code="LIVE_SMOKE_SDK_NOT_INSTALLED",
                 error_message=str(error),
             )
         return _failed_result(
@@ -253,7 +371,7 @@ def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
     if not settings.mistral_api_key:
         return _skipped_result(
             name=provider_name,
-            error_code="MISSING_API_KEY",
+            error_code="LIVE_SMOKE_MISSING_API_KEY",
             error_message="MISTRAL_API_KEY is not configured.",
         )
 
@@ -282,7 +400,7 @@ def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
         if _is_sdk_missing_error(error):
             return _skipped_result(
                 name=provider_name,
-                error_code="SDK_NOT_INSTALLED",
+                error_code="LIVE_SMOKE_SDK_NOT_INSTALLED",
                 error_message=str(error),
             )
         return _failed_result(
@@ -410,6 +528,20 @@ def _skipped_result(
     )
 
 
+def _normalize_required_providers(value: str | list[str]) -> list[str]:
+    if isinstance(value, str):
+        raw_items = [item.strip().lower() for item in value.split(",")]
+    else:
+        raw_items = [str(item).strip().lower() for item in value]
+
+    normalized: list[str] = []
+    for item in raw_items:
+        if not item or item in normalized:
+            continue
+        normalized.append(item)
+    return normalized
+
+
 def _is_sdk_missing_error(error: Exception) -> bool:
     if not isinstance(error, RuntimeError):
         return False
@@ -441,15 +573,44 @@ def main(argv: list[str] | None = None) -> int:
         help="Treat skipped providers as operational failure.",
     )
     parser.add_argument(
+        "--required-providers",
+        default=None,
+        help=(
+            "CSV list of providers required for readiness policy, "
+            "for example: openai,google,mistral_ocr"
+        ),
+    )
+    parser.add_argument(
+        "--provider-timeout-seconds",
+        default=None,
+        type=float,
+        help="Per-provider probe timeout in seconds.",
+    )
+    parser.add_argument(
         "--output",
         default=None,
         help="Write deterministic JSON report to given path.",
     )
     args = parser.parse_args(argv)
 
+    settings = get_settings()
+    required_providers = _normalize_required_providers(
+        args.required_providers
+        if args.required_providers is not None
+        else settings.live_smoke_required_providers
+    )
+    timeout_seconds = (
+        float(args.provider_timeout_seconds)
+        if args.provider_timeout_seconds is not None
+        else float(settings.live_smoke_provider_timeout_seconds)
+    )
+
     report = run_live_smoke(
         strict=bool(args.strict),
+        settings=settings,
         output_path=(Path(args.output) if args.output else None),
+        required_providers=required_providers,
+        provider_timeout_seconds=timeout_seconds,
     )
     print(_json_report_text(report), end="")
     return 0 if report["overall_status"] == "pass" else 1

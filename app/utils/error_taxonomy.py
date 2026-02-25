@@ -20,6 +20,9 @@ ErrorCode = Literal[
     "RESTORE_RUN_EXISTS",
     "RESTORE_FS_ERROR",
     "RESTORE_DB_ERROR",
+    "LIVE_SMOKE_TIMEOUT",
+    "LIVE_SMOKE_MISSING_API_KEY",
+    "LIVE_SMOKE_SDK_NOT_INSTALLED",
 ]
 
 ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
@@ -43,6 +46,13 @@ ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
     ),
     "RESTORE_FS_ERROR": "Restore failed due to filesystem access error.",
     "RESTORE_DB_ERROR": "Restore failed while writing metadata into SQLite.",
+    "LIVE_SMOKE_TIMEOUT": "Live smoke provider probe exceeded timeout.",
+    "LIVE_SMOKE_MISSING_API_KEY": (
+        "Live smoke skipped provider because API key is missing."
+    ),
+    "LIVE_SMOKE_SDK_NOT_INSTALLED": (
+        "Live smoke skipped provider because SDK package is not installed."
+    ),
 }
 
 

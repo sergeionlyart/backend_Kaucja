@@ -26,15 +26,20 @@ Run local operational diagnostics for provider contracts:
 python -m app.ops.live_smoke --output data/live_smoke_report.json
 ```
 
-Strict mode (`skipped` becomes failure):
+Run with explicit readiness policy and timeout:
 
 ```bash
-python -m app.ops.live_smoke --strict --output data/live_smoke_report.json
+python -m app.ops.live_smoke \
+  --required-providers openai,google,mistral_ocr \
+  --provider-timeout-seconds 30 \
+  --strict \
+  --output data/live_smoke_report.json
 ```
 
 Report format is machine-readable JSON with:
 
 - `started_at`, `finished_at`, `overall_status`
+- `required_providers`, `required_failures`, `required_skipped`
 - `providers[]` entries:
   - `name`
   - `status` (`pass|fail|skipped`)
@@ -48,21 +53,28 @@ Status interpretation:
 - `fail`: provider call failed (taxonomy-aligned `error_code` where applicable).
 - `skipped`: diagnostic intentionally not executed (for example missing API key/SDK).
 
+Operational live-smoke codes:
+
+- `LIVE_SMOKE_TIMEOUT`
+- `LIVE_SMOKE_MISSING_API_KEY`
+- `LIVE_SMOKE_SDK_NOT_INSTALLED`
+
 Operational actions:
 
 - `overall_status=pass`:
-  - non-strict: all providers passed or were skipped;
-  - strict: all providers passed.
+  - all required providers passed;
+  - non-required providers may be skipped in non-strict mode.
 - `overall_status=fail`:
   - inspect `providers[].error_code/error_message`;
+  - inspect `required_failures/required_skipped` policy fields;
   - check API key configuration and provider status;
-  - re-run smoke in strict mode after remediation.
+  - re-run smoke with explicit required providers and timeout after remediation.
 
 CI live-smoke workflow:
 
 - Workflow file: `.github/workflows/live-smoke.yml`
 - Triggers:
-  - `workflow_dispatch` (optional strict input),
+  - `workflow_dispatch` (strict + required providers + timeout inputs),
   - weekly schedule.
 - Report artifact: `live-smoke-report` (`artifacts/live_smoke_report.json`).
 - Main PR CI remains unchanged (`.github/workflows/ci.yml`).
@@ -75,6 +87,8 @@ Restore limits and signing are configurable via `.env`:
 - `RESTORE_MAX_COMPRESSION_RATIO`
 - `RESTORE_REQUIRE_SIGNATURE`
 - `BUNDLE_SIGNING_KEY`
+- `LIVE_SMOKE_REQUIRED_PROVIDERS`
+- `LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS`
 
 ## Artifacts and Logs
 
