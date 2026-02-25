@@ -13,6 +13,20 @@ Install project + browser dependencies:
 ./scripts/browser/prepare_env.sh
 ```
 
+## Test Profiles
+
+- core profile (default): excludes browser tests
+  - command: `pytest -q`
+  - result: no browser skips in base run
+- browser profile:
+  - `browser_p0` for deterministic P0 baseline
+  - `browser_p1` for negative/protection scenarios
+
+Marker expressions:
+
+- P0 only: `-m browser_p0`
+- Full browser regression: `-m "browser_p0 or browser_p1"`
+
 ## E2E Mode (No External API Keys)
 
 Browser smoke uses deterministic local mode:
@@ -48,7 +62,7 @@ Default URL:
 Single command (seed + start app + wait + run tests):
 
 ```bash
-./scripts/browser/run_smoke.sh
+./scripts/browser/run_regression.sh --suite p0
 ```
 
 This command runs P0 browser regression baseline (5 cases):
@@ -59,18 +73,30 @@ This command runs P0 browser regression baseline (5 cases):
 4. export run bundle
 5. restore verify-only
 
+Run full browser regression (P0 + P1):
+
+```bash
+./scripts/browser/run_regression.sh --suite full
+```
+
+Legacy alias:
+
+```bash
+./scripts/browser/run_smoke.sh
+```
+
 Direct pytest mode (if app already running):
 
 ```bash
 export KAUCJA_RUN_BROWSER_TESTS=1
 export KAUCJA_BROWSER_BASE_URL=http://127.0.0.1:7861
-pytest -q tests/browser --junitxml artifacts/browser/junit.xml
+pytest -q -o addopts= tests/browser -m "browser_p0 or browser_p1" --junitxml artifacts/browser/junit.xml
 ```
 
 ## Results and Logs
 
 - Pytest output: terminal.
-- App log (for smoke runner): `data/browser_smoke_app.log`.
+- App log (regression runner): `data/browser_regression_<suite>_app.log`.
 - Browser diagnostics: `artifacts/browser/`:
   - `junit.xml`
   - per-test Playwright traces/screenshots/videos on failure
@@ -89,7 +115,7 @@ Workflow steps:
 
 1. install project dependencies
 2. install Playwright Chromium
-3. run `./scripts/browser/run_smoke.sh`
+3. run `./scripts/browser/run_regression.sh --suite <p0|full>`
 4. upload diagnostics artifacts
 
 ## Troubleshooting Flakes
@@ -103,3 +129,6 @@ Workflow steps:
 - Symptom: restore/export case fails intermittently
   - ensure seed step succeeded (`status=ok`)
   - verify exported path exists in `export_path_box`
+- Symptom: browser tests not discovered in direct pytest run
+  - core profile ignores `tests/browser` by default
+  - use `-o addopts=` for explicit browser execution

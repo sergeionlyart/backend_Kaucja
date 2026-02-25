@@ -35,3 +35,8 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--ignore=tests/browser"
+markers = [
+    "browser_p0: deterministic browser P0 regression suite",
+    "browser_p1: browser P1 regression suite with negative/protection scenarios",
+]

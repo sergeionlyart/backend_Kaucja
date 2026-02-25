@@ -2,6 +2,15 @@ name: Browser Smoke Regression
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: "Browser suite to run (p0|full)"
+        required: false
+        default: "p0"
+        type: choice
+        options:
+          - p0
+          - full
   schedule:
     - cron: "0 8 * * 2"
 
@@ -27,15 +36,20 @@ jobs:
 
       - name: Run browser regression smoke
         env:
+          KAUCJA_BROWSER_SKIP_PREPARE: "1"
           KAUCJA_E2E_MODE: "true"
           KAUCJA_DATA_DIR: "data/e2e"
           KAUCJA_SQLITE_PATH: "data/e2e/kaucja_e2e.sqlite3"
           KAUCJA_GRADIO_SERVER_NAME: "127.0.0.1"
           KAUCJA_GRADIO_SERVER_PORT: "7861"
           KAUCJA_BROWSER_BASE_URL: "http://127.0.0.1:7861"
-          KAUCJA_BROWSER_ARTIFACTS_DIR: "artifacts/browser"
-          KAUCJA_BROWSER_APP_LOG_PATH: "data/browser_smoke_app.log"
-        run: ./scripts/browser/run_smoke.sh
+          KAUCJA_BROWSER_ARTIFACTS_DIR: "artifacts/browser/ci"
+        run: |
+          SUITE="p0"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SUITE="${{ inputs.suite }}"
+          fi
+          ./scripts/browser/run_regression.sh --suite "${SUITE}"
 
       - name: Upload browser diagnostics
         if: always()
@@ -44,5 +58,5 @@ jobs:
           name: browser-smoke-artifacts
           if-no-files-found: warn
           path: |
-            data/browser_smoke_app.log
+            data/browser_regression_*_app.log
             artifacts/browser/**

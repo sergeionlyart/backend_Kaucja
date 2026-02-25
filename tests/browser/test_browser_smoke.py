@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tests.browser.helpers import (
     click_button,
     expect_seeded_runs_visible,
@@ -15,12 +17,14 @@ from tests.browser.helpers import (
 )
 
 
+@pytest.mark.browser_p0
 def test_p0_app_starts_and_core_sections_render(
     page: Any, browser_base_url: str
 ) -> None:
     open_app(page=page, base_url=browser_base_url)
 
 
+@pytest.mark.browser_p0
 def test_p0_history_loads_seeded_run_and_outputs_render(
     page: Any, browser_base_url: str
 ) -> None:
@@ -54,6 +58,7 @@ def test_p0_history_loads_seeded_run_and_outputs_render(
     )
 
 
+@pytest.mark.browser_p0
 def test_p0_compare_seeded_runs_returns_diff_and_metrics(
     page: Any, browser_base_url: str
 ) -> None:
@@ -80,6 +85,7 @@ def test_p0_compare_seeded_runs_returns_diff_and_metrics(
     )
 
 
+@pytest.mark.browser_p0
 def test_p0_export_run_bundle_from_history(page: Any, browser_base_url: str) -> None:
     open_app(page=page, base_url=browser_base_url)
 
@@ -98,6 +104,7 @@ def test_p0_export_run_bundle_from_history(page: Any, browser_base_url: str) -> 
     assert Path(zip_path).is_file()
 
 
+@pytest.mark.browser_p0
 def test_p0_restore_verify_only_for_exported_zip(
     page: Any, browser_base_url: str
 ) -> None:
@@ -133,4 +140,77 @@ def test_p0_restore_verify_only_for_exported_zip(
         page,
         elem_id="restore_details_box",
         expected_substring="verify_only=True",
+    )
+
+
+@pytest.mark.browser_p1
+def test_p1_delete_run_confirmation_mismatch_shows_error(
+    page: Any, browser_base_url: str
+) -> None:
+    open_app(page=page, base_url=browser_base_url)
+
+    click_button(page, "history_refresh_button")
+    expect_seeded_runs_visible(page)
+    fill_textbox(page, "history_run_id_input", "e2e-run-a")
+    fill_textbox(page, "history_confirm_run_id_input", "wrong-confirmation")
+    click_button(page, "history_delete_button")
+
+    expect_textbox_contains(
+        page,
+        elem_id="delete_status_box",
+        expected_substring="Delete failed: confirmation mismatch.",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="delete_details_box",
+        expected_substring="technical_details=Type the exact run_id",
+    )
+
+
+@pytest.mark.browser_p1
+def test_p1_restore_strict_mode_rejects_unsigned_bundle(
+    page: Any, browser_base_url: str
+) -> None:
+    open_app(page=page, base_url=browser_base_url)
+
+    click_button(page, "history_refresh_button")
+    expect_seeded_runs_visible(page)
+    fill_textbox(page, "history_run_id_input", "e2e-run-a")
+    click_button(page, "history_export_button")
+    expect_textbox_contains(
+        page,
+        elem_id="export_status_box",
+        expected_substring="Export completed.",
+    )
+    zip_path = Path(textbox_value(page, "export_path_box"))
+    assert zip_path.is_file()
+
+    upload_file(page, "restore_zip_file_input", zip_path)
+    set_checkbox(page, "restore_verify_only_checkbox", True)
+    set_checkbox(page, "restore_require_signature_checkbox", True)
+    click_button(page, "restore_button")
+
+    expect_textbox_contains(
+        page,
+        elem_id="restore_status_box",
+        expected_substring="Restore failed.",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="restore_details_box",
+        expected_substring="error_code=RESTORE_INVALID_SIGNATURE",
+    )
+
+
+@pytest.mark.browser_p1
+def test_p1_compare_with_empty_selection_shows_graceful_message(
+    page: Any, browser_base_url: str
+) -> None:
+    open_app(page=page, base_url=browser_base_url)
+
+    click_button(page, "compare_button")
+    expect_textbox_contains(
+        page,
+        elem_id="compare_status_box",
+        expected_substring="Comparison failed: select both run_id A and run_id B.",
     )
