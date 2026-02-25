@@ -5,18 +5,74 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 SUITE="p0"
-if [[ $# -ge 2 && "$1" == "--suite" ]]; then
-  SUITE="$2"
-  shift 2
-fi
+RUN_ID="${KAUCJA_BROWSER_RUN_ID:-latest}"
+RUN_PREPARE=0
+PREPARE_ONLY=0
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/browser/run_regression.sh [--suite p0|full] [--run-id ID] [--prepare] [--prepare-only]
+
+Options:
+  --suite p0|full     Select marker set (default: p0).
+  --run-id ID         Artifact/log run identifier (default: latest).
+  --prepare           Explicitly run environment preparation before execute.
+  --prepare-only      Run only preparation and exit.
+  --help              Show this message.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --suite)
+      SUITE="${2:-}"
+      shift 2
+      ;;
+    --run-id)
+      RUN_ID="${2:-}"
+      shift 2
+      ;;
+    --prepare)
+      RUN_PREPARE=1
+      shift
+      ;;
+    --prepare-only)
+      RUN_PREPARE=1
+      PREPARE_ONLY=1
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      usage
+      exit 2
+      ;;
+  esac
+done
 
 if [[ "$SUITE" != "p0" && "$SUITE" != "full" ]]; then
   echo "Unsupported suite: '$SUITE'. Use --suite p0|full"
   exit 2
 fi
 
-if [[ "${KAUCJA_BROWSER_SKIP_PREPARE:-0}" != "1" ]]; then
+if [[ -z "$RUN_ID" ]]; then
+  echo "Run id must not be empty."
+  exit 2
+fi
+
+RUN_ID_SAFE="$(echo "$RUN_ID" | tr -c 'A-Za-z0-9_.-' '_')"
+
+if [[ "$RUN_PREPARE" -eq 1 ]]; then
   "$ROOT_DIR/scripts/browser/prepare_env.sh"
+fi
+
+if [[ "$PREPARE_ONLY" -eq 1 ]]; then
+  echo "prepare_done=true"
+  exit 0
 fi
 
 export KAUCJA_E2E_MODE="${KAUCJA_E2E_MODE:-true}"
@@ -25,8 +81,8 @@ export KAUCJA_SQLITE_PATH="${KAUCJA_SQLITE_PATH:-$KAUCJA_DATA_DIR/kaucja_e2e.sql
 export KAUCJA_GRADIO_SERVER_NAME="${KAUCJA_GRADIO_SERVER_NAME:-127.0.0.1}"
 export KAUCJA_GRADIO_SERVER_PORT="${KAUCJA_GRADIO_SERVER_PORT:-7861}"
 export KAUCJA_BROWSER_BASE_URL="${KAUCJA_BROWSER_BASE_URL:-http://127.0.0.1:${KAUCJA_GRADIO_SERVER_PORT}}"
-export KAUCJA_BROWSER_ARTIFACTS_DIR="${KAUCJA_BROWSER_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/browser/$SUITE}"
-export KAUCJA_BROWSER_APP_LOG_PATH="${KAUCJA_BROWSER_APP_LOG_PATH:-$ROOT_DIR/data/browser_regression_${SUITE}_app.log}"
+export KAUCJA_BROWSER_ARTIFACTS_DIR="${KAUCJA_BROWSER_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/browser/$SUITE/$RUN_ID_SAFE}"
+export KAUCJA_BROWSER_APP_LOG_PATH="${KAUCJA_BROWSER_APP_LOG_PATH:-$ROOT_DIR/data/browser_regression_${SUITE}_${RUN_ID_SAFE}_app.log}"
 export KAUCJA_RUN_BROWSER_TESTS=1
 
 mkdir -p "$KAUCJA_BROWSER_ARTIFACTS_DIR"

@@ -1,21 +1,24 @@
-name: Browser Smoke Regression
+name: Browser Campaign
 
 on:
   workflow_dispatch:
     inputs:
       suite:
-        description: "Browser suite to run (p0|full)"
-        required: false
+        description: "Campaign suite (p0|full)"
+        required: true
         default: "p0"
         type: choice
         options:
           - p0
           - full
-  schedule:
-    - cron: "0 8 * * 2"
+      iterations:
+        description: "Number of iterations"
+        required: true
+        default: "5"
+        type: string
 
 jobs:
-  browser-smoke:
+  browser-campaign:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,7 +37,7 @@ jobs:
       - name: Install Playwright browser
         run: python -m playwright install chromium
 
-      - name: Run browser regression smoke
+      - name: Run browser campaign
         env:
           KAUCJA_E2E_MODE: "true"
           KAUCJA_DATA_DIR: "data/e2e"
@@ -42,20 +45,16 @@ jobs:
           KAUCJA_GRADIO_SERVER_NAME: "127.0.0.1"
           KAUCJA_GRADIO_SERVER_PORT: "7861"
           KAUCJA_BROWSER_BASE_URL: "http://127.0.0.1:7861"
-          KAUCJA_BROWSER_ARTIFACTS_DIR: "artifacts/browser/ci"
         run: |
-          SUITE="p0"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            SUITE="${{ inputs.suite }}"
-          fi
-          ./scripts/browser/run_regression.sh --suite "${SUITE}"
+          ./scripts/browser/run_campaign.sh \
+            --suite "${{ inputs.suite }}" \
+            --iterations "${{ inputs.iterations }}"
 
-      - name: Upload browser diagnostics
+      - name: Upload campaign artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: browser-smoke-artifacts
+          name: browser-campaign-artifacts
           if-no-files-found: warn
           path: |
-            data/browser_regression_*_app.log
-            artifacts/browser/**
+            artifacts/browser/campaign/**

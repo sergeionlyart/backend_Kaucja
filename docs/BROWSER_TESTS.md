@@ -13,6 +13,13 @@ Install project + browser dependencies:
 ./scripts/browser/prepare_env.sh
 ```
 
+`run_regression.sh` no longer reinstalls dependencies by default.
+Use explicit prepare when needed:
+
+```bash
+./scripts/browser/run_regression.sh --prepare-only
+```
+
 ## Test Profiles
 
 - core profile (default): excludes browser tests
@@ -57,7 +64,7 @@ Default URL:
 
 - `http://127.0.0.1:7861`
 
-## Run Browser Smoke
+## Run Browser Regression
 
 Single command (seed + start app + wait + run tests):
 
@@ -79,6 +86,25 @@ Run full browser regression (P0 + P1):
 ./scripts/browser/run_regression.sh --suite full
 ```
 
+Explicit prepare + execute:
+
+```bash
+./scripts/browser/run_regression.sh --prepare --suite p0
+```
+
+Run with explicit run-id (isolated artifacts/log paths):
+
+```bash
+./scripts/browser/run_regression.sh --suite p0 --run-id local-check-001
+```
+
+Run campaign loops with aggregation:
+
+```bash
+./scripts/browser/run_campaign.sh --suite p0 --iterations 10
+./scripts/browser/run_campaign.sh --suite full --iterations 5
+```
+
 Legacy alias:
 
 ```bash
@@ -96,11 +122,15 @@ pytest -q -o addopts= tests/browser -m "browser_p0 or browser_p1" --junitxml art
 ## Results and Logs
 
 - Pytest output: terminal.
-- App log (regression runner): `data/browser_regression_<suite>_app.log`.
+- App log (regression runner): `data/browser_regression_<suite>_<run_id>_app.log`.
 - Browser diagnostics: `artifacts/browser/`:
   - `junit.xml`
   - per-test Playwright traces/screenshots/videos on failure
 - Seeded artifacts root: `data/e2e/sessions/e2e-session-001/runs/`.
+- Campaign outputs: `artifacts/browser/campaign/<suite>_<timestamp>/`:
+  - per-iteration artifacts/logs,
+  - `report.json`,
+  - `report.md`.
 
 ## CI Execution
 
@@ -118,10 +148,20 @@ Workflow steps:
 3. run `./scripts/browser/run_regression.sh --suite <p0|full>`
 4. upload diagnostics artifacts
 
+Browser campaign workflow:
+
+- file: `.github/workflows/browser-campaign.yml`
+- trigger: `workflow_dispatch`
+- inputs:
+  - `suite` (`p0|full`)
+  - `iterations`
+- output artifacts:
+  - `artifacts/browser/campaign/**`
+
 ## Troubleshooting Flakes
 
 - Symptom: app not reachable in browser tests
-  - check `data/browser_smoke_app.log`
+  - check `data/browser_regression_*_app.log`
   - verify `KAUCJA_GRADIO_SERVER_PORT` is free
 - Symptom: selectors fail after UI change
   - keep/update `elem_id` in `app/ui/gradio_app.py`
@@ -132,3 +172,6 @@ Workflow steps:
 - Symptom: browser tests not discovered in direct pytest run
   - core profile ignores `tests/browser` by default
   - use `-o addopts=` for explicit browser execution
+- Symptom: repeated runs are slow due repeated installs
+  - avoid `--prepare` for every run
+  - run `prepare_env.sh` once, then execute regression/campaign
