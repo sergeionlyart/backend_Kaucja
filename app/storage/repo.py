@@ -6,7 +6,13 @@ from uuid import uuid4
 
 from app.storage.artifacts import ArtifactsManager
 from app.storage.db import connection, init_db
-from app.storage.models import RunRecord, RunStatus, SessionRecord
+from app.storage.models import (
+    DocumentRecord,
+    OCRStatus,
+    RunRecord,
+    RunStatus,
+    SessionRecord,
+)
 
 
 class StorageRepo:
@@ -182,6 +188,167 @@ class StorageRepo:
             artifacts_root_path=str(row["artifacts_root_path"]),
         )
 
+    def create_document(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        original_filename: str,
+        original_mime: str | None,
+        original_path: str,
+        ocr_status: OCRStatus = "pending",
+        ocr_model: str | None = None,
+        pages_count: int | None = None,
+        ocr_artifacts_path: str | None = None,
+        ocr_error: str | None = None,
+    ) -> DocumentRecord:
+        with connection(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO documents (
+                    run_id,
+                    doc_id,
+                    original_filename,
+                    original_mime,
+                    original_path,
+                    ocr_status,
+                    ocr_model,
+                    pages_count,
+                    ocr_artifacts_path,
+                    ocr_error
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    doc_id,
+                    original_filename,
+                    original_mime,
+                    original_path,
+                    ocr_status,
+                    ocr_model,
+                    pages_count,
+                    ocr_artifacts_path,
+                    ocr_error,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT
+                    id,
+                    run_id,
+                    doc_id,
+                    original_filename,
+                    original_mime,
+                    original_path,
+                    ocr_status,
+                    ocr_model,
+                    pages_count,
+                    ocr_artifacts_path,
+                    ocr_error
+                FROM documents
+                WHERE run_id = ? AND doc_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (run_id, doc_id),
+            ).fetchone()
+
+        if row is None:
+            raise RuntimeError("Failed to create document")
+
+        return _row_to_document_record(row)
+
+    def update_document_ocr(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        ocr_status: OCRStatus,
+        ocr_model: str | None,
+        pages_count: int | None,
+        ocr_artifacts_path: str | None,
+        ocr_error: str | None,
+    ) -> None:
+        with connection(self.db_path) as conn:
+            result = conn.execute(
+                """
+                UPDATE documents
+                SET
+                    ocr_status = ?,
+                    ocr_model = ?,
+                    pages_count = ?,
+                    ocr_artifacts_path = ?,
+                    ocr_error = ?
+                WHERE run_id = ? AND doc_id = ?
+                """,
+                (
+                    ocr_status,
+                    ocr_model,
+                    pages_count,
+                    ocr_artifacts_path,
+                    ocr_error,
+                    run_id,
+                    doc_id,
+                ),
+            )
+
+        if result.rowcount == 0:
+            raise KeyError(f"Document not found: run_id={run_id}, doc_id={doc_id}")
+
+    def get_document(self, *, run_id: str, doc_id: str) -> DocumentRecord | None:
+        with connection(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    id,
+                    run_id,
+                    doc_id,
+                    original_filename,
+                    original_mime,
+                    original_path,
+                    ocr_status,
+                    ocr_model,
+                    pages_count,
+                    ocr_artifacts_path,
+                    ocr_error
+                FROM documents
+                WHERE run_id = ? AND doc_id = ?
+                LIMIT 1
+                """,
+                (run_id, doc_id),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return _row_to_document_record(row)
+
+    def list_documents(self, *, run_id: str) -> list[DocumentRecord]:
+        with connection(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    run_id,
+                    doc_id,
+                    original_filename,
+                    original_mime,
+                    original_path,
+                    ocr_status,
+                    ocr_model,
+                    pages_count,
+                    ocr_artifacts_path,
+                    ocr_error
+                FROM documents
+                WHERE run_id = ?
+                ORDER BY doc_id ASC
+                """,
+                (run_id,),
+            ).fetchall()
+
+        return [_row_to_document_record(row) for row in rows]
+
 
 def _utc_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
@@ -191,3 +358,25 @@ def _to_optional_str(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def _row_to_document_record(row: object) -> DocumentRecord:
+    return DocumentRecord(
+        id=int(row["id"]),
+        run_id=str(row["run_id"]),
+        doc_id=str(row["doc_id"]),
+        original_filename=str(row["original_filename"]),
+        original_mime=_to_optional_str(row["original_mime"]),
+        original_path=str(row["original_path"]),
+        ocr_status=str(row["ocr_status"]),
+        ocr_model=_to_optional_str(row["ocr_model"]),
+        pages_count=_to_optional_int(row["pages_count"]),
+        ocr_artifacts_path=_to_optional_str(row["ocr_artifacts_path"]),
+        ocr_error=_to_optional_str(row["ocr_error"]),
+    )
+
+
+def _to_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)

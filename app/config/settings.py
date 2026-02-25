@@ -30,9 +30,14 @@ class Settings(BaseSettings):
     default_model: str = "gpt-5.1"
     default_prompt_name: str = "kaucja_gap_analysis"
     default_prompt_version: str = "v001"
+    default_ocr_model: str = "mistral-ocr-latest"
+    default_ocr_table_format: str = "html"
+    default_ocr_include_image_base64: bool = True
 
     gradio_server_name: str = "127.0.0.1"
     gradio_server_port: int = Field(default=7860, ge=1, le=65535)
+
+    mistral_api_key: str | None = None
 
     @property
     def project_root(self) -> Path:

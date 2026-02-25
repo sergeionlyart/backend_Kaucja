@@ -10,6 +10,7 @@ readme = "AGENTS.md"
 requires-python = ">=3.10"
 dependencies = [
     "gradio>=5.0.0",
+    "mistralai>=1.2.0",
     "pydantic-settings>=2.2.1",
     "PyYAML>=6.0.1",
 ]

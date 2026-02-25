@@ -11,6 +11,21 @@ class RunArtifacts:
     run_log_path: Path
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentArtifacts:
+    doc_id: str
+    document_root_path: Path
+    original_dir: Path
+    ocr_dir: Path
+    pages_dir: Path
+    tables_dir: Path
+    images_dir: Path
+    page_renders_dir: Path
+    combined_markdown_path: Path
+    raw_response_path: Path
+    quality_path: Path
+
+
 class ArtifactsManager:
     def __init__(self, data_dir: Path | str) -> None:
         self.data_dir = Path(data_dir)
@@ -35,4 +50,39 @@ class ArtifactsManager:
             artifacts_root_path=root_path,
             logs_dir=logs_dir,
             run_log_path=run_log_path,
+        )
+
+    def create_document_artifacts(
+        self,
+        *,
+        artifacts_root_path: Path | str,
+        doc_id: str,
+    ) -> DocumentArtifacts:
+        root_path = Path(artifacts_root_path)
+        document_root = root_path / "documents" / doc_id
+        original_dir = document_root / "original"
+        ocr_dir = document_root / "ocr"
+        pages_dir = ocr_dir / "pages"
+        tables_dir = ocr_dir / "tables"
+        images_dir = ocr_dir / "images"
+        page_renders_dir = ocr_dir / "page_renders"
+
+        original_dir.mkdir(parents=True, exist_ok=True)
+        pages_dir.mkdir(parents=True, exist_ok=True)
+        tables_dir.mkdir(parents=True, exist_ok=True)
+        images_dir.mkdir(parents=True, exist_ok=True)
+        page_renders_dir.mkdir(parents=True, exist_ok=True)
+
+        return DocumentArtifacts(
+            doc_id=doc_id,
+            document_root_path=document_root,
+            original_dir=original_dir,
+            ocr_dir=ocr_dir,
+            pages_dir=pages_dir,
+            tables_dir=tables_dir,
+            images_dir=images_dir,
+            page_renders_dir=page_renders_dir,
+            combined_markdown_path=ocr_dir / "combined.md",
+            raw_response_path=ocr_dir / "raw_response.json",
+            quality_path=ocr_dir / "quality.json",
         )

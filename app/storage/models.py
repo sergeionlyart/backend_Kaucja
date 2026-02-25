@@ -29,3 +29,18 @@ class RunRecord:
     gemini_thinking_level: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentRecord:
+    id: int
+    run_id: str
+    doc_id: str
+    original_filename: str
+    original_mime: str | None
+    original_path: str
+    ocr_status: OCRStatus
+    ocr_model: str | None
+    pages_count: int | None
+    ocr_artifacts_path: str | None
+    ocr_error: str | None
