@@ -29,3 +29,44 @@ jobs:
 
       - name: Gradio smoke
         run: python -c "from app.ui.gradio_app import build_app; build_app(); print('gradio_app_started')"
+
+  browser-p0-gate:
+    needs: lint-test-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Run browser P0 gate
+        env:
+          KAUCJA_E2E_MODE: "true"
+          KAUCJA_DATA_DIR: "data/e2e"
+          KAUCJA_SQLITE_PATH: "data/e2e/kaucja_e2e.sqlite3"
+          KAUCJA_GRADIO_SERVER_NAME: "127.0.0.1"
+          KAUCJA_GRADIO_SERVER_PORT: "7861"
+          KAUCJA_BROWSER_BASE_URL: "http://127.0.0.1:7861"
+          KAUCJA_BROWSER_ARTIFACTS_DIR: "artifacts/browser/ci/p0"
+          KAUCJA_BROWSER_APP_LOG_PATH: "artifacts/browser/ci/p0/app.log"
+        run: ./scripts/browser/run_regression.sh --suite p0 --run-id ci-p0-gate
+
+      - name: Upload browser P0 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-p0-gate-artifacts
+          if-no-files-found: warn
+          path: |
+            artifacts/browser/ci/p0/**

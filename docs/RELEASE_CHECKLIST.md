@@ -6,6 +6,14 @@
 ./scripts/release/run_preflight.sh
 ```
 
+## Main CI gate (blocking)
+
+Primary CI (`.github/workflows/ci.yml`) now includes mandatory `browser-p0-gate`
+for every `push` and `pull_request`.
+
+- Gate command in CI: `./scripts/browser/run_regression.sh --suite p0 --run-id ci-p0-gate`
+- On failure diagnostics are always uploaded from `artifacts/browser/ci/p0/**`.
+
 Preflight runs stages in this exact order:
 
 1. `ruff check .`

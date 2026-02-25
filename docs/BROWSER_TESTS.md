@@ -142,6 +142,18 @@ pytest -q -o addopts= tests/browser -m "browser_p0 or browser_p1" --junitxml art
 
 ## CI Execution
 
+Main CI gate:
+
+- file: `.github/workflows/ci.yml`
+- triggers:
+  - `push`
+  - `pull_request`
+- blocking job:
+  - `browser-p0-gate` (`./scripts/browser/run_regression.sh --suite p0 --run-id ci-p0-gate`)
+- diagnostics on failure:
+  - uploaded artifact `browser-p0-gate-artifacts`
+  - source path: `artifacts/browser/ci/p0/**`
+
 Browser regression workflow:
 
 - file: `.github/workflows/browser-smoke.yml`
