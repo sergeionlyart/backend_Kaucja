@@ -64,3 +64,24 @@ class RunBundle:
     run: RunRecord
     documents: list[DocumentRecord]
     llm_output: LLMOutputRecord | None
+
+
+@dataclass(frozen=True, slots=True)
+class DeleteRunResult:
+    run_id: str
+    deleted: bool
+    error_code: str | None
+    error_message: str | None
+    technical_details: str | None
+    artifacts_deleted: bool
+    artifacts_missing: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionCleanupResult:
+    cutoff_created_at: str
+    scanned_runs: int
+    deleted_runs: int
+    failed_runs: int
+    deleted_run_ids: list[str]
+    errors: list[str]

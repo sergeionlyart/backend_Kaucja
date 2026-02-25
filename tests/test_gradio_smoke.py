@@ -13,6 +13,7 @@ from app.storage.repo import StorageRepo
 from app.ui.gradio_app import (
     build_app,
     compare_history_runs,
+    delete_history_run,
     export_history_run_bundle,
     list_history_rows,
     load_history_run,
@@ -674,3 +675,91 @@ def test_export_history_run_bundle_handles_missing_run(tmp_path: Path) -> None:
     assert "not found" in status
     assert zip_path == ""
     assert download_path is None
+
+
+def test_delete_history_run_success_and_refreshes_history(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-delete-ui")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=80,
+        total_cost=0.03,
+        total_time_ms=42.0,
+    )
+
+    (
+        status,
+        details,
+        rows,
+        compare_a,
+        compare_b,
+        run_id_update,
+    ) = delete_history_run(
+        repo=repo,
+        run_id=run_id,
+        confirm_run_id=run_id,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert "Delete completed." in status
+    assert "artifacts_deleted=True" in details
+    assert repo.get_run(run_id) is None
+    assert rows == []
+    assert compare_a["choices"] == []
+    assert compare_b["choices"] == []
+    assert run_id_update["value"] == ""
+
+
+def test_delete_history_run_requires_exact_confirmation(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-delete-confirm")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="missing",
+            ask="Upload receipt",
+            gap="Missing receipt",
+            question="Please upload receipt",
+        ),
+        tokens=60,
+        total_cost=0.02,
+        total_time_ms=55.0,
+    )
+
+    status, details, rows, _compare_a, _compare_b, _update = delete_history_run(
+        repo=repo,
+        run_id=run_id,
+        confirm_run_id="wrong-id",
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert "confirmation mismatch" in status.lower()
+    assert "expected=" in details
+    assert repo.get_run(run_id) is not None
+    assert len(rows) == 1

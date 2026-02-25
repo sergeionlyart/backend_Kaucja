@@ -262,6 +262,100 @@ def export_history_run_bundle(
     return status, str(zip_path), str(zip_path)
 
 
+def delete_history_run(
+    *,
+    repo: StorageRepo,
+    run_id: str,
+    confirm_run_id: str,
+    session_id: str,
+    provider: str,
+    model: str,
+    prompt_version: str,
+    date_from: str,
+    date_to: str,
+    limit: float | int,
+) -> tuple[str, str, list[list[str]], Any, Any, Any]:
+    target_run_id = run_id.strip()
+    confirmation = confirm_run_id.strip()
+    rows, compare_a, compare_b = refresh_history_for_ui(
+        repo=repo,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        prompt_version=prompt_version,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    clear_run_id_update = gr.update()
+
+    if not target_run_id:
+        return (
+            "Delete failed: run_id is empty.",
+            "technical_details=Input run_id is empty.",
+            rows,
+            compare_a,
+            compare_b,
+            clear_run_id_update,
+        )
+
+    if confirmation != target_run_id:
+        return (
+            "Delete failed: confirmation mismatch.",
+            (
+                "technical_details=Type the exact run_id in confirmation field. "
+                f"expected={target_run_id} got={confirmation or '(empty)'}"
+            ),
+            rows,
+            compare_a,
+            compare_b,
+            clear_run_id_update,
+        )
+
+    result = repo.delete_run(target_run_id)
+    rows, compare_a, compare_b = refresh_history_for_ui(
+        repo=repo,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        prompt_version=prompt_version,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    clear_run_id_update = gr.update(value="")
+
+    if result.deleted:
+        technical = (
+            "technical_details="
+            f"artifacts_deleted={result.artifacts_deleted} "
+            f"artifacts_missing={result.artifacts_missing}"
+        )
+        return (
+            f"Delete completed. run_id={target_run_id}",
+            technical,
+            rows,
+            compare_a,
+            compare_b,
+            clear_run_id_update,
+        )
+
+    details = (
+        "technical_details="
+        f"error_code={result.error_code or ''} "
+        f"error_message={result.error_message or ''} "
+        f"details={result.technical_details or ''}"
+    )
+    return (
+        f"Delete failed. run_id={target_run_id}",
+        details,
+        rows,
+        compare_a,
+        compare_b,
+        clear_run_id_update,
+    )
+
+
 def load_history_run(
     *,
     repo: StorageRepo,
@@ -715,13 +809,24 @@ def build_app(
 
         with gr.Row():
             history_run_id = gr.Textbox(label="Run ID to load")
+            history_confirm_run_id = gr.Textbox(
+                label="Confirm Run ID for Delete",
+                value="",
+            )
             load_history_button = gr.Button("Load Selected Run")
             export_history_button = gr.Button("Export run bundle (zip)")
+            delete_history_button = gr.Button("Delete run", variant="stop")
 
         with gr.Row():
             export_status_box = gr.Textbox(label="Export Status", interactive=False)
             export_path_box = gr.Textbox(label="Export ZIP Path", interactive=False)
         export_file_box = gr.File(label="Download ZIP", interactive=False)
+        with gr.Row():
+            delete_status_box = gr.Textbox(label="Delete Status", interactive=False)
+            delete_details_box = gr.Textbox(
+                label="Delete Technical Details",
+                interactive=False,
+            )
 
         gr.Markdown("### Compare Runs")
         with gr.Row():
@@ -910,6 +1015,48 @@ def build_app(
             ),
             inputs=[history_run_id],
             outputs=[export_status_box, export_path_box, export_file_box],
+        )
+
+        delete_history_button.click(
+            fn=lambda selected_run_id,
+            confirmed_run_id,
+            session_filter,
+            provider_filter,
+            model_filter,
+            prompt_filter,
+            date_from_filter,
+            date_to_filter,
+            result_limit: delete_history_run(
+                repo=storage_repo,
+                run_id=selected_run_id,
+                confirm_run_id=confirmed_run_id,
+                session_id=session_filter,
+                provider=provider_filter,
+                model=model_filter,
+                prompt_version=prompt_filter,
+                date_from=date_from_filter,
+                date_to=date_to_filter,
+                limit=result_limit,
+            ),
+            inputs=[
+                history_run_id,
+                history_confirm_run_id,
+                history_session_id,
+                history_provider,
+                history_model,
+                history_prompt_version,
+                history_date_from,
+                history_date_to,
+                history_limit,
+            ],
+            outputs=[
+                delete_status_box,
+                delete_details_box,
+                history_table,
+                compare_run_id_a,
+                compare_run_id_b,
+                history_run_id,
+            ],
         )
 
         compare_button.click(

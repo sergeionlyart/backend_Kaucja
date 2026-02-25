@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,7 @@ from uuid import uuid4
 from app.storage.artifacts import ArtifactsManager
 from app.storage.db import connection, init_db
 from app.storage.models import (
+    DeleteRunResult,
     DocumentRecord,
     LLMOutputRecord,
     OCRStatus,
@@ -294,6 +297,110 @@ class StorageRepo:
         llm_output = self.get_llm_output(run_id=run_id)
         return RunBundle(run=run, documents=documents, llm_output=llm_output)
 
+    def delete_run(self, run_id: str) -> DeleteRunResult:
+        target_run_id = run_id.strip()
+        if not target_run_id:
+            return DeleteRunResult(
+                run_id=run_id,
+                deleted=False,
+                error_code="RUN_NOT_FOUND",
+                error_message="Run id is empty.",
+                technical_details="Input run_id is empty after trimming.",
+                artifacts_deleted=False,
+                artifacts_missing=False,
+            )
+
+        try:
+            run = self.get_run(target_run_id)
+        except sqlite3.Error as error:
+            return DeleteRunResult(
+                run_id=target_run_id,
+                deleted=False,
+                error_code="DELETE_DB_ERROR",
+                error_message="Failed to read run metadata from database.",
+                technical_details=f"{error.__class__.__name__}: {error}",
+                artifacts_deleted=False,
+                artifacts_missing=False,
+            )
+
+        if run is None:
+            return DeleteRunResult(
+                run_id=target_run_id,
+                deleted=False,
+                error_code="RUN_NOT_FOUND",
+                error_message=f"Run not found: {target_run_id}",
+                technical_details=None,
+                artifacts_deleted=False,
+                artifacts_missing=False,
+            )
+
+        try:
+            artifacts_root = self._safe_artifacts_root_for_delete(
+                run_id=target_run_id,
+                artifacts_root_path=run.artifacts_root_path,
+            )
+        except ValueError as error:
+            return DeleteRunResult(
+                run_id=target_run_id,
+                deleted=False,
+                error_code="DELETE_PATH_INVALID",
+                error_message="Artifacts path failed safety validation.",
+                technical_details=str(error),
+                artifacts_deleted=False,
+                artifacts_missing=False,
+            )
+
+        artifacts_deleted = False
+        artifacts_missing = False
+        try:
+            artifacts_deleted, artifacts_missing = self._delete_artifacts_tree(
+                artifacts_root=artifacts_root
+            )
+        except OSError as error:
+            return DeleteRunResult(
+                run_id=target_run_id,
+                deleted=False,
+                error_code="DELETE_FS_ERROR",
+                error_message="Failed to delete run artifacts from filesystem.",
+                technical_details=f"{error.__class__.__name__}: {error}",
+                artifacts_deleted=False,
+                artifacts_missing=False,
+            )
+
+        try:
+            metadata_deleted = self._delete_run_metadata(run_id=target_run_id)
+        except sqlite3.Error as error:
+            return DeleteRunResult(
+                run_id=target_run_id,
+                deleted=False,
+                error_code="DELETE_DB_ERROR",
+                error_message="Failed to delete run metadata from database.",
+                technical_details=f"{error.__class__.__name__}: {error}",
+                artifacts_deleted=artifacts_deleted,
+                artifacts_missing=artifacts_missing,
+            )
+
+        if not metadata_deleted:
+            return DeleteRunResult(
+                run_id=target_run_id,
+                deleted=False,
+                error_code="RUN_NOT_FOUND",
+                error_message=f"Run not found: {target_run_id}",
+                technical_details="Metadata row disappeared before delete.",
+                artifacts_deleted=artifacts_deleted,
+                artifacts_missing=artifacts_missing,
+            )
+
+        return DeleteRunResult(
+            run_id=target_run_id,
+            deleted=True,
+            error_code=None,
+            error_message=None,
+            technical_details=None,
+            artifacts_deleted=artifacts_deleted,
+            artifacts_missing=artifacts_missing,
+        )
+
     def create_document(
         self,
         *,
@@ -513,6 +620,82 @@ class StorageRepo:
                 row["schema_validation_errors_path"]
             ),
         )
+
+    def _safe_artifacts_root_for_delete(
+        self,
+        *,
+        run_id: str,
+        artifacts_root_path: str,
+    ) -> Path:
+        raw_path = Path(artifacts_root_path)
+        if raw_path.is_symlink():
+            raise ValueError(f"Artifacts root must not be symlink: {raw_path}")
+
+        resolved_root = raw_path.resolve()
+        data_root = self.artifacts_manager.data_dir.resolve()
+        try:
+            relative = resolved_root.relative_to(data_root)
+        except ValueError as error:
+            raise ValueError(
+                f"Artifacts root is outside storage data directory: {resolved_root}"
+            ) from error
+
+        if len(relative.parts) < 4:
+            raise ValueError(f"Artifacts root has unexpected layout: {resolved_root}")
+        if relative.parts[0] != "sessions" or relative.parts[2] != "runs":
+            raise ValueError(f"Artifacts root has unexpected layout: {resolved_root}")
+        if relative.parts[-1] != run_id:
+            raise ValueError(
+                "Artifacts root does not match run_id: "
+                f"run_id={run_id}, path={resolved_root}"
+            )
+
+        return resolved_root
+
+    def _delete_artifacts_tree(self, *, artifacts_root: Path) -> tuple[bool, bool]:
+        if not artifacts_root.exists():
+            return False, True
+        if not artifacts_root.is_dir():
+            raise OSError(f"Artifacts root is not a directory: {artifacts_root}")
+
+        for candidate in artifacts_root.rglob("*"):
+            if candidate.is_symlink():
+                raise OSError(
+                    f"Refusing to delete run with symlinked path: {candidate}"
+                )
+
+        shutil.rmtree(artifacts_root)
+        self._cleanup_empty_parents(artifacts_root)
+        return True, False
+
+    def _delete_run_metadata(self, *, run_id: str) -> bool:
+        with connection(self.db_path) as conn:
+            result = conn.execute(
+                """
+                DELETE FROM runs
+                WHERE run_id = ?
+                """,
+                (run_id,),
+            )
+        return result.rowcount > 0
+
+    def _cleanup_empty_parents(self, artifacts_root: Path) -> None:
+        data_root = self.artifacts_manager.data_dir.resolve()
+        session_path = artifacts_root.parent.parent
+        runs_path = artifacts_root.parent
+
+        for path in (runs_path, session_path):
+            try:
+                path.relative_to(data_root)
+            except ValueError:
+                continue
+
+            try:
+                next(path.iterdir())
+            except StopIteration:
+                path.rmdir()
+            except OSError:
+                continue
 
 
 def _utc_now() -> str:

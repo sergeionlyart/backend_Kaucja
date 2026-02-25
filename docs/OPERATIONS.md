@@ -62,3 +62,39 @@ Current behavior:
 - Export fails when artifacts root is missing or empty.
 - Export rejects symlinked paths inside run artifacts (path traversal protection).
 - ZIP generation is local filesystem operation; large runs may take noticeable time.
+
+## Delete Run / Retention
+
+### Delete single run from UI
+
+In History section:
+
+1. Enter target `run_id` in `Run ID to load`.
+2. Type the same value in `Confirm Run ID for Delete`.
+3. Click `Delete run`.
+
+Behavior:
+
+- On success: SQLite metadata is removed and run artifacts folder is deleted.
+- On failure: UI shows status and technical details (`error_code/error_message/details`).
+- History table and compare dropdowns are refreshed after delete attempt.
+
+Safety controls:
+
+- run artifacts path must resolve under configured `data/` root;
+- expected layout `sessions/<session_id>/runs/<run_id>` is enforced;
+- symlinked paths are rejected during delete traversal.
+
+### Manual retention cleanup (older than N days)
+
+Command:
+
+```bash
+python -m app.storage.retention --days 30 --db-path data/kaucja.sqlite3 --data-dir data
+```
+
+Notes:
+
+- cleanup is best-effort: continues even if some runs fail to delete;
+- output is JSON report with `scanned_runs`, `deleted_runs`, `failed_runs`, and error details;
+- no background scheduler in MVP, only manual invocation.
