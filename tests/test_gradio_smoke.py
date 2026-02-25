@@ -5,11 +5,14 @@ from pathlib import Path
 from typing import Any
 
 import gradio as gr
+import pytest
 
+import app.ui.gradio_app as gradio_app_module
 from app.pipeline.orchestrator import FullPipelineResult, OCRDocumentStageResult
 from app.prompts.manager import PromptManager
 from app.storage.run_manifest import init_run_manifest, update_run_manifest
 from app.storage.repo import StorageRepo
+from app.storage.zip_export import ZipExportError
 from app.ui.gradio_app import (
     build_app,
     compare_history_runs,
@@ -699,15 +702,18 @@ def test_delete_history_run_success_and_refreshes_history(tmp_path: Path) -> Non
 
     (
         status,
+        backup_path,
         details,
         rows,
         compare_a,
         compare_b,
         run_id_update,
+        confirm_update,
     ) = delete_history_run(
         repo=repo,
         run_id=run_id,
         confirm_run_id=run_id,
+        create_backup_zip=False,
         session_id=session.session_id,
         provider="",
         model="",
@@ -718,12 +724,14 @@ def test_delete_history_run_success_and_refreshes_history(tmp_path: Path) -> Non
     )
 
     assert "Delete completed." in status
+    assert backup_path == ""
     assert "artifacts_deleted=True" in details
     assert repo.get_run(run_id) is None
     assert rows == []
     assert compare_a["choices"] == []
     assert compare_b["choices"] == []
     assert run_id_update["value"] == ""
+    assert confirm_update["value"] == ""
 
 
 def test_delete_history_run_requires_exact_confirmation(tmp_path: Path) -> None:
@@ -746,10 +754,20 @@ def test_delete_history_run_requires_exact_confirmation(tmp_path: Path) -> None:
         total_time_ms=55.0,
     )
 
-    status, details, rows, _compare_a, _compare_b, _update = delete_history_run(
+    (
+        status,
+        backup_path,
+        details,
+        rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+        _confirm_update,
+    ) = delete_history_run(
         repo=repo,
         run_id=run_id,
         confirm_run_id="wrong-id",
+        create_backup_zip=False,
         session_id=session.session_id,
         provider="",
         model="",
@@ -760,6 +778,116 @@ def test_delete_history_run_requires_exact_confirmation(tmp_path: Path) -> None:
     )
 
     assert "confirmation mismatch" in status.lower()
+    assert backup_path == ""
     assert "expected=" in details
+    assert repo.get_run(run_id) is not None
+    assert len(rows) == 1
+
+
+def test_delete_history_run_with_backup_success(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-delete-backup")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=40,
+        total_cost=0.01,
+        total_time_ms=10.0,
+    )
+
+    (
+        status,
+        backup_path,
+        details,
+        rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+        _confirm_update,
+    ) = delete_history_run(
+        repo=repo,
+        run_id=run_id,
+        confirm_run_id=run_id,
+        create_backup_zip=True,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert "Delete completed." in status
+    assert backup_path.endswith("_bundle.zip")
+    assert Path(backup_path).is_file()
+    assert "artifacts_deleted=True" in details
+    assert repo.get_run(run_id) is None
+    assert rows == []
+
+
+def test_delete_history_run_with_backup_failure_keeps_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-delete-backup-fail")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="missing",
+            ask="Upload doc",
+            gap="Missing doc",
+            question="Please upload doc",
+        ),
+        tokens=40,
+        total_cost=0.01,
+        total_time_ms=10.0,
+    )
+
+    def _raise_backup_error(*, artifacts_root_path: str, output_dir: str | None = None):
+        raise ZipExportError("backup failed")
+
+    monkeypatch.setattr(gradio_app_module, "export_run_bundle", _raise_backup_error)
+
+    (
+        status,
+        backup_path,
+        details,
+        rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+        _confirm_update,
+    ) = delete_history_run(
+        repo=repo,
+        run_id=run_id,
+        confirm_run_id=run_id,
+        create_backup_zip=True,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert "Delete failed." in status
+    assert backup_path == ""
+    assert "BACKUP_EXPORT_FAILED" in details
     assert repo.get_run(run_id) is not None
     assert len(rows) == 1

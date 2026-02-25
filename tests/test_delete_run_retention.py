@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+import app.storage.retention as retention_module
 from app.storage.db import connection
 from app.storage.models import DeleteRunResult
 from app.storage.repo import StorageRepo
 from app.storage.retention import purge_runs_older_than_days
+from app.storage.zip_export import ZipExportError
 
 
 def _create_run(
-    repo: StorageRepo, *, session_id: str, artifacts_root: str | None = None
+    repo: StorageRepo,
+    *,
+    session_id: str,
+    artifacts_root: str | None = None,
 ):
     run = repo.create_run(
         session_id=session_id,
@@ -148,9 +154,7 @@ def test_delete_run_returns_db_error_when_metadata_delete_fails(
     assert repo.get_run(run.run_id) is not None
 
 
-def test_delete_run_rejects_symlink_inside_artifacts(
-    tmp_path: Path,
-) -> None:
+def test_delete_run_rejects_symlink_inside_artifacts(tmp_path: Path) -> None:
     repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
     session = repo.create_session("session-symlink")
     run = _create_run(repo, session_id=session.session_id)
@@ -171,9 +175,9 @@ def test_delete_run_rejects_symlink_inside_artifacts(
     assert repo.get_run(run.run_id) is not None
 
 
-def test_retention_deletes_only_runs_older_than_n_days(tmp_path: Path) -> None:
+def test_retention_dry_run_does_not_delete_candidates(tmp_path: Path) -> None:
     repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
-    session = repo.create_session("session-retention")
+    session = repo.create_session("session-retention-dry")
     old_run = _create_run(repo, session_id=session.session_id)
     fresh_run = _create_run(repo, session_id=session.session_id)
 
@@ -192,14 +196,114 @@ def test_retention_deletes_only_runs_older_than_n_days(tmp_path: Path) -> None:
         repo=repo,
         days=30,
         now=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        dry_run=True,
+        report_dir=tmp_path / "retention-reports",
     )
 
+    assert report.dry_run is True
     assert report.scanned_runs == 1
+    assert report.deleted_runs == 0
+    assert report.failed_runs == 0
+    assert report.skipped_runs == 0
+    assert report.audit_entries[0]["action"] == "dry_run_candidate"
+    assert report.audit_entries[0]["status"] == "candidate"
+    assert repo.get_run(old_run.run_id) is not None
+    assert repo.get_run(fresh_run.run_id) is not None
+    assert Path(report.report_path).is_file()
+
+
+def test_retention_export_before_delete_success(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-retention-export")
+    old_run = _create_run(repo, session_id=session.session_id)
+    _set_run_created_at(
+        repo=repo,
+        run_id=old_run.run_id,
+        created_at="2025-01-01T00:00:00+00:00",
+    )
+
+    report = purge_runs_older_than_days(
+        repo=repo,
+        days=30,
+        now=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        export_before_delete=True,
+        export_dir=tmp_path / "backups",
+        report_dir=tmp_path / "retention-reports",
+    )
+
+    assert report.export_before_delete is True
     assert report.deleted_runs == 1
     assert report.failed_runs == 0
-    assert old_run.run_id in report.deleted_run_ids
+    assert report.skipped_runs == 0
+    assert report.audit_entries[0]["action"] == "backup_then_delete"
+    assert report.audit_entries[0]["status"] == "deleted"
+    backup_path = report.audit_entries[0]["backup_zip_path"]
+    assert isinstance(backup_path, str)
+    assert Path(backup_path).is_file()
     assert repo.get_run(old_run.run_id) is None
-    assert repo.get_run(fresh_run.run_id) is not None
+
+
+def test_retention_export_failure_skips_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-retention-export-fail")
+    old_run = _create_run(repo, session_id=session.session_id)
+    _set_run_created_at(
+        repo=repo,
+        run_id=old_run.run_id,
+        created_at="2025-01-01T00:00:00+00:00",
+    )
+
+    def _raise_export_error(*, artifacts_root_path: str, output_dir: str | None = None):
+        raise ZipExportError("export failed")
+
+    monkeypatch.setattr(retention_module, "export_run_bundle", _raise_export_error)
+
+    report = purge_runs_older_than_days(
+        repo=repo,
+        days=30,
+        now=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        export_before_delete=True,
+        export_dir=tmp_path / "backups",
+        report_dir=tmp_path / "retention-reports",
+    )
+
+    assert report.deleted_runs == 0
+    assert report.failed_runs == 1
+    assert report.skipped_runs == 1
+    assert report.audit_entries[0]["action"] == "skip_delete_backup_failed"
+    assert report.audit_entries[0]["status"] == "failed"
+    assert "BACKUP_EXPORT_FAILED" in report.errors[0]
+    assert repo.get_run(old_run.run_id) is not None
+
+
+def test_retention_report_written_to_custom_path(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-report-file")
+    old_run = _create_run(repo, session_id=session.session_id)
+    _set_run_created_at(
+        repo=repo,
+        run_id=old_run.run_id,
+        created_at="2025-01-01T00:00:00+00:00",
+    )
+
+    report_file = tmp_path / "reports" / "custom-retention.json"
+    report = purge_runs_older_than_days(
+        repo=repo,
+        days=30,
+        now=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        dry_run=True,
+        report_path=report_file,
+    )
+
+    assert report.report_path == str(report_file)
+    assert report_file.is_file()
+    payload = json.loads(report_file.read_text(encoding="utf-8"))
+    assert payload["report_path"] == str(report_file)
+    assert payload["dry_run"] is True
+    assert payload["audit_entries"][0]["run_id"] == old_run.run_id
 
 
 def test_retention_best_effort_reports_failures(
@@ -239,9 +343,11 @@ def test_retention_best_effort_reports_failures(
         repo=repo,
         days=1,
         now=datetime(2026, 2, 25, tzinfo=timezone.utc),
+        report_dir=tmp_path / "retention-reports",
     )
 
     assert report.scanned_runs == 2
     assert report.deleted_runs == 1
     assert report.failed_runs == 1
+    assert report.skipped_runs == 0
     assert any(run_b.run_id in item for item in report.errors)

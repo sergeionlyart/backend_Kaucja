@@ -80,8 +80,14 @@ class DeleteRunResult:
 @dataclass(frozen=True, slots=True)
 class RetentionCleanupResult:
     cutoff_created_at: str
+    dry_run: bool
+    export_before_delete: bool
+    export_dir: str | None
+    report_path: str
     scanned_runs: int
     deleted_runs: int
     failed_runs: int
+    skipped_runs: int
     deleted_run_ids: list[str]
+    audit_entries: list[dict[str, Any]]
     errors: list[str]

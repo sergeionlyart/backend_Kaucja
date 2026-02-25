@@ -71,12 +71,15 @@ In History section:
 
 1. Enter target `run_id` in `Run ID to load`.
 2. Type the same value in `Confirm Run ID for Delete`.
-3. Click `Delete run`.
+3. Optional: enable `Create backup ZIP before delete`.
+4. Click `Delete run`.
 
 Behavior:
 
 - On success: SQLite metadata is removed and run artifacts folder is deleted.
+- If backup option is enabled: backup ZIP is created first; delete starts only after successful backup.
 - On failure: UI shows status and technical details (`error_code/error_message/details`).
+- UI also shows backup ZIP path when backup is enabled and succeeds.
 - History table and compare dropdowns are refreshed after delete attempt.
 
 Safety controls:
@@ -93,8 +96,27 @@ Command:
 python -m app.storage.retention --days 30 --db-path data/kaucja.sqlite3 --data-dir data
 ```
 
+Dry-run (no deletion, only candidates + report):
+
+```bash
+python -m app.storage.retention --days 30 --dry-run --db-path data/kaucja.sqlite3 --data-dir data
+```
+
+Backup-before-delete with custom backup and report locations:
+
+```bash
+python -m app.storage.retention \
+  --days 30 \
+  --export-before-delete \
+  --export-dir data/backups \
+  --report-dir data/retention_reports \
+  --db-path data/kaucja.sqlite3 \
+  --data-dir data
+```
+
 Notes:
 
 - cleanup is best-effort: continues even if some runs fail to delete;
-- output is JSON report with `scanned_runs`, `deleted_runs`, `failed_runs`, and error details;
+- output is JSON report with per-run audit entries (`run_id`, `action`, `status`, `error`, `backup_zip_path`);
+- report is always persisted by default in `data/retention_reports/<timestamp>.json` unless overridden by `--report-path` or `--report-dir`;
 - no background scheduler in MVP, only manual invocation.

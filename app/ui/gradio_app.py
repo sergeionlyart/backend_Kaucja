@@ -267,6 +267,7 @@ def delete_history_run(
     repo: StorageRepo,
     run_id: str,
     confirm_run_id: str,
+    create_backup_zip: bool,
     session_id: str,
     provider: str,
     model: str,
@@ -274,7 +275,7 @@ def delete_history_run(
     date_from: str,
     date_to: str,
     limit: float | int,
-) -> tuple[str, str, list[list[str]], Any, Any, Any]:
+) -> tuple[str, str, str, list[list[str]], Any, Any, Any, Any]:
     target_run_id = run_id.strip()
     confirmation = confirm_run_id.strip()
     rows, compare_a, compare_b = refresh_history_for_ui(
@@ -288,20 +289,25 @@ def delete_history_run(
         limit=limit,
     )
     clear_run_id_update = gr.update()
+    clear_confirm_update = gr.update()
+    backup_path = ""
 
     if not target_run_id:
         return (
             "Delete failed: run_id is empty.",
+            backup_path,
             "technical_details=Input run_id is empty.",
             rows,
             compare_a,
             compare_b,
             clear_run_id_update,
+            clear_confirm_update,
         )
 
     if confirmation != target_run_id:
         return (
             "Delete failed: confirmation mismatch.",
+            backup_path,
             (
                 "technical_details=Type the exact run_id in confirmation field. "
                 f"expected={target_run_id} got={confirmation or '(empty)'}"
@@ -310,7 +316,54 @@ def delete_history_run(
             compare_a,
             compare_b,
             clear_run_id_update,
+            clear_confirm_update,
         )
+
+    run = repo.get_run(target_run_id)
+    if run is None:
+        return (
+            f"Delete failed. run_id={target_run_id}",
+            backup_path,
+            "technical_details=error_code=RUN_NOT_FOUND error_message=Run not found.",
+            rows,
+            compare_a,
+            compare_b,
+            clear_run_id_update,
+            clear_confirm_update,
+        )
+
+    if create_backup_zip:
+        try:
+            zip_path = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+            backup_path = str(zip_path)
+        except (FileNotFoundError, NotADirectoryError, ZipExportError) as error:
+            return (
+                f"Delete failed. run_id={target_run_id}",
+                backup_path,
+                (
+                    "technical_details=error_code=BACKUP_EXPORT_FAILED "
+                    f"error_message={error}"
+                ),
+                rows,
+                compare_a,
+                compare_b,
+                clear_run_id_update,
+                clear_confirm_update,
+            )
+        except OSError as error:
+            return (
+                f"Delete failed. run_id={target_run_id}",
+                backup_path,
+                (
+                    "technical_details=error_code=BACKUP_EXPORT_FAILED "
+                    f"error_message=filesystem error: {error}"
+                ),
+                rows,
+                compare_a,
+                compare_b,
+                clear_run_id_update,
+                clear_confirm_update,
+            )
 
     result = repo.delete_run(target_run_id)
     rows, compare_a, compare_b = refresh_history_for_ui(
@@ -324,6 +377,7 @@ def delete_history_run(
         limit=limit,
     )
     clear_run_id_update = gr.update(value="")
+    clear_confirm_update = gr.update(value="")
 
     if result.deleted:
         technical = (
@@ -333,11 +387,13 @@ def delete_history_run(
         )
         return (
             f"Delete completed. run_id={target_run_id}",
+            backup_path,
             technical,
             rows,
             compare_a,
             compare_b,
             clear_run_id_update,
+            clear_confirm_update,
         )
 
     details = (
@@ -348,11 +404,13 @@ def delete_history_run(
     )
     return (
         f"Delete failed. run_id={target_run_id}",
+        backup_path,
         details,
         rows,
         compare_a,
         compare_b,
         clear_run_id_update,
+        clear_confirm_update,
     )
 
 
@@ -813,6 +871,10 @@ def build_app(
                 label="Confirm Run ID for Delete",
                 value="",
             )
+            delete_with_backup = gr.Checkbox(
+                label="Create backup ZIP before delete",
+                value=False,
+            )
             load_history_button = gr.Button("Load Selected Run")
             export_history_button = gr.Button("Export run bundle (zip)")
             delete_history_button = gr.Button("Delete run", variant="stop")
@@ -823,6 +885,10 @@ def build_app(
         export_file_box = gr.File(label="Download ZIP", interactive=False)
         with gr.Row():
             delete_status_box = gr.Textbox(label="Delete Status", interactive=False)
+            delete_backup_path_box = gr.Textbox(
+                label="Delete Backup ZIP Path",
+                interactive=False,
+            )
             delete_details_box = gr.Textbox(
                 label="Delete Technical Details",
                 interactive=False,
@@ -1020,6 +1086,7 @@ def build_app(
         delete_history_button.click(
             fn=lambda selected_run_id,
             confirmed_run_id,
+            create_backup_before_delete,
             session_filter,
             provider_filter,
             model_filter,
@@ -1030,6 +1097,7 @@ def build_app(
                 repo=storage_repo,
                 run_id=selected_run_id,
                 confirm_run_id=confirmed_run_id,
+                create_backup_zip=create_backup_before_delete,
                 session_id=session_filter,
                 provider=provider_filter,
                 model=model_filter,
@@ -1041,6 +1109,7 @@ def build_app(
             inputs=[
                 history_run_id,
                 history_confirm_run_id,
+                delete_with_backup,
                 history_session_id,
                 history_provider,
                 history_model,
@@ -1051,11 +1120,13 @@ def build_app(
             ],
             outputs=[
                 delete_status_box,
+                delete_backup_path_box,
                 delete_details_box,
                 history_table,
                 compare_run_id_a,
                 compare_run_id_b,
                 history_run_id,
+                history_confirm_run_id,
             ],
         )
 
