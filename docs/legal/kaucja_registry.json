@@ -1,0 +1,160 @@
+[
+  {
+    "id": "SAOS-330695",
+    "url": "https://www.saos.org.pl/judgments/330695",
+    "alt_url": "",
+    "тип_источника": "Судебное решение (SAOS)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Okręgowy w Warszawie, XXIII Wydział Gospodarczy Odwoławczy, XXIII Ga 1670/17, 08-12-2017",
+    "тема": "Бремя доказывания удержания кауции; кауция ≠ «переплаченная аренда»; давность (art. 118 vs art. 677 k.c.)",
+    "факты": "Наймодатель удержал часть kaucja gwarancyjna при завершении найма, мотивируя необходимостью восстановительных работ/устранения повреждений. Арендатор требует возврата удержанной части.",
+    "правило_суда": "Если наймодатель удерживает кауцию под «ущерб/восстановление», он должен доказать необходимость работ и размер затрат (ciężar dowodu по art. 6 k.c.). Суды отвергли попытку приравнять кауцию к «nadpłacony czynsz», чтобы применить годичный срок по art. 677 k.c.; применён общий срок давности (art. 118 k.c.).",
+    "что_требовать_как_доказательства": [
+      "Письменное основание удержания: какие именно требования покрывались кауцией (ссылка на договор/статью закона)",
+      "Доказательства факта повреждений: фото/видео, протоколы передачи, показания свидетелей",
+      "Доказательства размера ущерба: счета/фактуры, сметы, договоры с подрядчиками, подтверждение оплаты",
+      "Сопоставление «состояние на въезд/выезд» (protokół zdawczo‑odbiorczy + фото)"
+    ],
+    "готовая_формулировка_для_письма": "Wzywam do zwrotu zatrzymanej części kaucji w kwocie {KWOTA} dotyczącej lokalu {ADRES} w terminie {TERMIN} dni od doręczenia niniejszego pisma. Jeżeli twierdzą Państwo, że kaucja została zatrzymana na poczet szkód lub przywrócenia lokalu do stanu poprzedniego, proszę o przedstawienie szczegółowego rozliczenia oraz dowodów (protokół/zdjęcia, faktury/rachunki, potwierdzenia zapłaty). Zgodnie z art. 6 k.c. ciężar wykazania zasadności i wysokości potrąceń spoczywa na wynajmującym."
+  },
+  {
+    "id": "SAOS-346698",
+    "url": "https://www.saos.org.pl/judgments/346698",
+    "alt_url": "",
+    "тип_источника": "Судебное решение (SAOS)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Rejonowy w Wąbrzeźnie, I C 106/17, 28-12-2017",
+    "тема": "Срок возврата кауции (1 месяц после освобождения); недопустимость «% за износ»; доказанность ущерба и размера; частичный зачёт (potrącenie)",
+    "факты": "Наймодатель удержал/уменьшил возврат kaucja mieszkaniowa, ссылаясь на повреждения и дополнительные платежи; также заявлялась «оплата 10% в месяц от кауции за zużycie mieszkania».",
+    "правило_суда": "Кауция возвращается в течение месяца от дня opróżnienia lokalu после удержания только «należności wynajmującego z tytułu najmu». «Процент за износ» не соответствует цели кауции (она обеспечивает конкретные требования, а не является абонплатой за пользование). При удержании под ущерб наймодатель обязан доказать и факт ущерба, и его размер; суд допустил лишь подтверждённый зачёт по небольшому долгу.",
+    "что_требовать_как_доказательства": [
+      "Дата освобождения/передачи ключей (подтверждение передачи, протокол)",
+      "Точное перечисление «należności z tytułu najmu», которые якобы удержаны из кауции (чинш/оплаты по договору)",
+      "Документы по ущербу: фото/протокол/экспертиза + документы стоимости ремонта/замены",
+      "Письменное oświadczenie o potrąceniu (если заявляется зачёт) и расчёт сумм"
+    ],
+    "готовая_формулировка_для_письма": "Zgodnie z zasadami rozliczenia kaucji, kaucja podlega zwrotowi w ciągu miesiąca od dnia opróżnienia lokalu po potrąceniu wyłącznie należności wynajmującego z tytułu najmu. Nie akceptuję potrącania „opłaty za zużycie” (np. {PROCENT}% kaucji miesięcznie), gdyż kaucja służy jedynie zabezpieczeniu konkretnych roszczeń. Proszę o wskazanie podstawy umownej/prawnej każdej pozycji potrącenia oraz przedstawienie dowodów i wyliczeń."
+  },
+  {
+    "id": "SAOS-521555",
+    "url": "https://www.saos.org.pl/judgments/521555",
+    "alt_url": "",
+    "тип_источника": "Судебное решение (SAOS)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Rejonowy Poznań‑Nowe Miasto i Wilda w Poznaniu, V C 1874/22, 28-02-2024",
+    "тема": "Механика удержания кауции через potrącenie (art. 498+ k.c.); требование oświadczenia o potrąceniu; расчёт после освобождения",
+    "факты": "Суд в мотивировке подробно описал, как работает «умова кауции»: требование о возврате возникает при внесении, но удержания реализуются через зачёт. Важно: суд отдельно отметил, что конкретное дело не было спором о возврате kaucja mieszkaniowa (позиция дана как объяснение механизма).",
+    "правило_суда": "До момента возврата кауции наймодатель не должен «молчаливо вычитать»; зачёт осуществляется по art. 498 i n. k.c. через oświadczenie o potrąceniu с указанием взаимных требований. Различные удержания должны быть оформлены и обоснованы документами; settlement из кауции — после opróżnienia lokalu.",
+    "что_требовать_как_доказательства": [
+      "Письменное oświadczenie o potrąceniu (art. 498–499 k.c.) с перечнем требований и сумм",
+      "Доказательства существования каждого встречного требования (долг по чиншу/медиа/ущерб) и его размера",
+      "Подтверждение даты освобождения/возврата ключей (когда расчёт по кауции стал возможен)"
+    ],
+    "готовая_формулировка_для_письма": "Proszę o doręczenie pisemnego oświadczenia o potrąceniu (art. 498–499 k.c.) wraz ze wskazaniem każdej potrącanej wierzytelności (podstawa, kwota, okres) oraz dokumentami potwierdzającymi jej istnienie i wysokość. W przypadku braku skutecznego oświadczenia o potrąceniu oraz dowodów, zatrzymanie kaucji uznaję za bezpodstawne i wzywam do jej zwrotu."
+  },
+  {
+    "id": "SAOS-486542",
+    "url": "https://www.saos.org.pl/judgments/486542",
+    "alt_url": "",
+    "тип_источника": "Судебное решение (SAOS)",
+    "юрисдикция": "Польша (дело с применением немецкого права BGB)",
+    "суд_и_дело": "Sąd Rejonowy Szczecin‑Centrum w Szczecinie, I C 733/21, 07-03-2023",
+    "тема": "Протокол передачи = документ частный (нет презумпции истинности); normal wear; зачёт должен опираться на реальную задолженность; проценты — после требования (wymagalność)",
+    "факты": "Спор о расчёте после найма в Германии: сторона ссылалась на протокол передачи и ремонтные счета; спорили о том, что можно покрыть из кауции и с какого момента начислять проценты.",
+    "правило_суда": "Суд указал, что протокол передачи является dokument prywatny: подтверждает факт подписания, но не имеет domniemania prawdziwości содержания; для взыскания/зачёта нужно доказывать факты и размер. По процентам суд критически относится к ранним датам, если не было доказанного wezwania do zapłaty/ввода требования в «wymagalność». (Используйте как доказательный паттерн; материальное право в деле — BGB.)",
+    "что_требовать_как_доказательства": [
+      "Дополнительные доказательства к протоколу: фото/видео, свидетели, экспертные заключения, счета/фактуры",
+      "Доказательство направления и получения wezwania do zapłaty (для процентов/вымогательности)",
+      "Доказательства реальности и размера встречного требования, заявленного к зачёту"
+    ],
+    "готовая_формулировка_для_письма": "W odniesieniu do powoływania się wyłącznie na protokół przekazania lokalu wskazuję, że sam protokół nie zastępuje udowodnienia istnienia i wysokości roszczeń. Proszę o przekazanie materiału dowodowego (zdjęcia, faktury/rachunki, ekspertyzy) oraz o wskazanie, kiedy i w jaki sposób wezwali mnie Państwo do zapłaty/rozliczenia (dowód doręczenia), co ma znaczenie dla wymagalności roszczenia i odsetek."
+  },
+  {
+    "id": "SAOS-505310",
+    "url": "https://www.saos.org.pl/judgments/505310",
+    "alt_url": "",
+    "тип_источника": "Судебное решение (SAOS)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Rejonowy (najem okazjonalny), III C 224/22, 2022/2023 (w SAOS)",
+    "тема": "«Удержание под покраску/обновление» — без доказательства факта работ и затрат удержание не проходит; нельзя тратить кауцию на ипотеку; важность протокола без замечаний",
+    "факты": "Арендатор вернул квартиру по протоколу без замечаний о стенах/потолках. Наймодатель отказал в возврате кауции, ссылаясь на обязанность арендатора отмалевать/на расходы на покраску; в суде выяснилось отсутствие чеков/подтверждений фактических работ.",
+    "правило_суда": "Если наймодатель удерживает кауцию на «malowanie/odświeżenie», он должен доказать, что работы действительно выполнены и понесены расходы (хотя бы paragon/faktura). Оценка/смета без факта работ недостаточны; использование кауции на цели, не связанные с требованиями из найма (например, на spłatę kredytu), противоречит сущности кауции. Если протокол возврата не содержит замечаний, удержание становится сложнее доказать.",
+    "что_требовать_как_доказательства": [
+      "Протокол возврата/передачи (особенно отсутствие замечаний) + фото/видео",
+      "Фактуры/чеки на материалы и работы по покраске; договор/заказ с исполнителем; подтверждение оплаты",
+      "Доказательства необходимости работ (фото «до», заключение эксперта, показания свидетелей)",
+      "Указание, какие именно договорные положения нарушены и как это влияет на конкретный ущерб"
+    ],
+    "готовая_формулировка_для_письма": "W protokole zdawczo‑odbiorczym z dnia {DATA_ZWROTU} nie odnotowano zastrzeżeń co do stanu ścian i sufitów. Jeżeli zatrzymują Państwo kaucję na rzekome koszty malowania, proszę o przedstawienie dowodów wykonania prac oraz poniesionych wydatków (paragony/faktury, daty, zakres, potwierdzenia zapłaty). Brak takich dowodów oznacza brak podstaw do zatrzymania kaucji i wzywam do jej zwrotu."
+  },
+  {
+    "id": "SAOS-487012",
+    "url": "https://www.saos.org.pl/judgments/487012",
+    "alt_url": "",
+    "тип_источника": "Судебное решение (SAOS)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Rejonowy dla m. st. Warszawy w Warszawie, I C 2040/22, 27-12-2022 (wyrok), publikacja 10-05-2023",
+    "тема": "Финальный расчёт: медиа/коммуналка только по договору и по фактурам; нельзя «докидывать» расходы общедомовые без основания; при отсутствии доказательств — риск отказа в требованиях",
+    "факты": "Наймодатель требовал итоговую доплату (чинш + медиа + ремонт + уборка), указывая, что учёл незвращённую кауцию. Суд пересчитал медиа, признал завышение и отметил отсутствие договорной основы для некоторых начислений; у арендатора вышла переплата с учётом кауции и медиа.",
+    "правило_суда": "Расходы на медиа должны подтверждаться и считаться по фактурам поставщиков и по договорной модели (что именно оплачивает арендатор). Нельзя включать в «медиа» расходы типа czynsz do wspólnoty/utrzymanie nieruchomości wspólnej и иные платежи, если договором это не предусмотрено. При непредставлении расчёта по тарифам/периодам действует art. 6 k.c. — бремя доказывания на заявителе.",
+    "что_требовать_как_доказательства": [
+      "Пункты договора: что входит в czynsz, что отдельно как media/zaliczki, по каким документам считается",
+      "Фактуры от поставщиков (energia, gaz, woda, ciepło) + показания счётчиков на въезд/выезд",
+      "Помесячный расчёт: оплачено vs начислено, ставки и периоды",
+      "Если удерживают «общедомовые»/прочие платежи — конкретный пункт договора, позволяющий переложить их на арендатора"
+    ],
+    "готовая_формулировка_для_письма": "W związku z rozliczeniem mediów proszę o przedstawienie faktur od dostawców oraz szczegółowego wyliczenia (wskazania liczników, stawki, okresy). Jednocześnie wzywam do wskazania konkretnego postanowienia umowy, które uprawnia do obciążania mnie kosztami typu „czynsz do wspólnoty/utrzymanie nieruchomości wspólnej”. W braku podstawy umownej i dowodów żądam korekty rozliczenia oraz zwrotu kaucji/nadpłaty."
+  },
+  {
+    "id": "SN-ICNP-31-13",
+    "url": "https://www.sn.pl/sites/orzecznictwo/OrzeczeniaHTML/I%20CNP%2031-13.docx.html",
+    "alt_url": "",
+    "тип_источника": "Постановление Верховного суда (SN)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Najwyższy, I CNP 31/13, 27-03-2014 (postanowienie)",
+    "тема": "Пункт договора «можем удерживать кауцию X дней/месяц для расчётов» ≠ potrącenie; зачёт требует отдельного заявления (oświadczenie o potrąceniu)",
+    "факты": "В договоре было условие: кауция возвращается в течение месяца после окончания найма, в течение этого месяца стороны могут «rozliczyć» претензии. Сторона пыталась трактовать это как «договорный зачёт» без отдельного заявления.",
+    "правило_суда": "SN указал, что такое договорное условие даёт лишь право временно удерживать кауцию для расчёта, но не является «potrącenie umowne». Для зачёта взаимных требований нужно подать oświadczenie o potrąceniu по art. 498–499 k.c.; нельзя ссылаться на «зачёт», не совершив его.",
+    "что_требовать_как_доказательства": [
+      "Текст договора (параграф о кауции и сроке возврата)",
+      "Письменное oświadczenie o potrąceniu (если заявляют зачёт)",
+      "Документы, подтверждающие каждое встречное требование и его размер"
+    ],
+    "готовая_формулировка_для_письма": "Sam zapis umowy przewidujący zatrzymanie kaucji na czas rozliczeń nie stanowi potrącenia wierzytelności. Jeżeli powołują się Państwo na kompensatę, proszę o przedłożenie oświadczenia o potrąceniu (art. 498–499 k.c.) oraz dokumentów potwierdzających istnienie i wysokość potrącanych roszczeń. W przeciwnym razie wzywam do niezwłocznego zwrotu kaucji."
+  },
+  {
+    "id": "SAOS-132635",
+    "url": "https://orzeczenia.katowice.sa.gov.pl/content/$N/151500000002503_V_ACa_000599_2014_Uz_2015-02-18_001",
+    "alt_url": "https://www.saos.org.pl/judgments/132635",
+    "тип_источника": "Судебное решение (портал суда / SAOS-альтернатива)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "Sąd Apelacyjny w Katowicach, V Wydział Cywilny, V ACa 599/14, 18-02-2015",
+    "тема": "Смена собственника/вступление приобретателя в найм (art. 678 k.c.) ≠ автоматический перенос долга по возврату кауции; правильный ответчик (legitymacja bierna)",
+    "факты": "Кауция была внесена прежнему наймодателю (исторически — «mieszkanie zakładowe»). Позже объект был продан другому лицу, с которым заключили новый договор найма. После выселения/выезда арендатор потребовал возврата кауции от нового владельца.",
+    "правило_суда": "Обязанность возврата (в т.ч. валоризованной) kaucja mieszkaniowa не покрывается диспозицией art. 678 § 1 k.c. (вступление приобретателя в отношения найма). Кауция — отдельное обязательственное отношение «обок» найма; новый собственник обязан вернуть кауцию только если он её получил/принял долг (np. przejęcie długu) либо есть специальная норма. Без доказательства перехода долга иск к новому собственнику может быть отклонён из‑за braku legitymacji biernej.",
+    "что_требовать_как_доказательства": [
+      "Доказательства, кому именно была внесена кауция (платёжка, квитанция, кассовый документ)",
+      "Документы о сделке/переходе собственности (умова sprzedaży) и условия о кauции, если есть",
+      "Доказательства того, что новый собственник получил кауции или принял долг по их возврату (umowa przejęcia długu / potwierdzenie przekazania kaucji)",
+      "Переписка/письма при смене собственника (кто отвечает за кауции)"
+    ],
+    "готовая_формулировка_для_письма": "W związku ze zmianą właściciela lokalu proszę o pisemne potwierdzenie, czy i w jakiej wysokości przejęli Państwo kaucję wpłaconą uprzedniemu wynajmującemu oraz czy doszło do przejęcia długu z tytułu jej zwrotu. Jeżeli nie przejęli Państwo kaucji/długu, proszę wskazać podmiot, który kaucję przyjął, aby roszczenie mogło zostać skierowane do właściwego dłużnika."
+  },
+  {
+    "id": "LEX-ART-118-KC",
+    "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118",
+    "alt_url": "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU20180001104/O/D20181104.pdf",
+    "тип_источника": "Норма закона (art. 118 k.c.)",
+    "юрисдикция": "Польша",
+    "суд_и_дело": "",
+    "тема": "Проверка давности требований (przedawnienie): общий срок 6 лет; 3 года для периодических/бизнес‑требований; правило «конец года»",
+    "факты": "Используется не как «кейс», а как расчётный модуль: когда наймодатель/арендатор спорит о том, не пропущена ли давность по требованию о возврате кауции или связанным платежам.",
+    "правило_суда": "Art. 118 k.c. задаёт базовые сроки давности (6 лет; 3 года для świadczenia okresowe и требований, связанных с działalność gospodarcza) и правило, что окончание сроков ≥2 лет приходится на последний день календарного года. Это помогает отбивать/проверять возражения «już przedawnione».",
+    "что_требовать_как_доказательства": [
+      "Дата возникновения требования о возврате кауции (обычно: окончание/расторжение + выезд/сдача ключей + требование/срок по закону/договору)",
+      "Документы по таймлайну: договор, протоколы, переписка, wezwania, доказательство вручения",
+      "Информация, является ли требование периодическим (например, чинш) или связанным с предпринимательской деятельностью стороны"
+    ],
+    "готовая_формулировка_для_письма": "Na marginesie wskazuję, że podniesienie zarzutu przedawnienia wymaga wykazania prawidłowej daty początkowej biegu terminu. Proszę o wskazanie, od jakiej daty liczą Państwo bieg przedawnienia oraz na jakiej podstawie. W razie sporu roszczenie będzie oceniane zgodnie z art. 118 k.c. i dokumentami potwierdzającymi daty (umowa, protokoły, wezwania)."
+  }
+]
