@@ -1,0 +1,44 @@
+version: 1
+updated_at: "2026-02-25"
+
+defaults:
+  llm_provider: openai
+  llm_model: gpt-5.1
+  prompt_name: kaucja_gap_analysis
+  prompt_version: v001
+  ocr_provider: mistral
+  ocr_model: mistral-ocr-latest
+
+llm_providers:
+  openai:
+    api_key_env: OPENAI_API_KEY
+    api_mode: responses
+    ui:
+      reasoning_effort_values: [auto, low, medium, high]
+    models:
+      gpt-5.1:
+        id: gpt-5.1
+        structured_output_json_schema: true
+      gpt-5.2:
+        id: gpt-5.2
+        structured_output_json_schema: true
+
+  google:
+    api_key_env: GOOGLE_API_KEY
+    api_mode: google_genai
+    ui:
+      thinking_level_values: [auto, low, medium, high]
+    models:
+      gemini-3.1-pro-preview:
+        id: gemini-3.1-pro-preview
+        structured_output_json_schema: true
+      gemini-3.1-flash-preview:
+        id: gemini-3.1-flash-preview
+        structured_output_json_schema: true
+
+ocr_providers:
+  mistral:
+    api_key_env: MISTRAL_API_KEY
+    models:
+      mistral-ocr-latest:
+        id: mistral-ocr-latest
