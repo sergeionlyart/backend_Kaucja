@@ -105,6 +105,14 @@ Run campaign loops with aggregation:
 ./scripts/browser/run_campaign.sh --suite full --iterations 5
 ```
 
+Release preflight gate (single command before campaign start):
+
+```bash
+./scripts/release/run_preflight.sh
+```
+
+Checklist and GO/NO-GO criteria: `docs/RELEASE_CHECKLIST.md`.
+
 Legacy alias:
 
 ```bash
