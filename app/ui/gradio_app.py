@@ -325,8 +325,12 @@ def restore_history_run_bundle(
         )
         details = (
             "technical_details="
+            f"manifest_verification={result.manifest_verification_status} "
+            f"files_checked={result.files_checked} "
             f"warnings={len(result.warnings)} "
-            f"errors={len(result.errors)}"
+            f"errors={len(result.errors)} "
+            f"rollback_attempted={result.rollback_attempted} "
+            f"rollback_succeeded={result.rollback_succeeded}"
         )
         run_id_update = gr.update(value=restored_run_id)
         return (
@@ -342,6 +346,10 @@ def restore_history_run_bundle(
 
     details = (
         "technical_details="
+        f"manifest_verification={result.manifest_verification_status} "
+        f"files_checked={result.files_checked} "
+        f"rollback_attempted={result.rollback_attempted} "
+        f"rollback_succeeded={result.rollback_succeeded} "
         f"error_code={result.error_code or ''} "
         f"error_message={result.error_message or ''} "
         f"errors={' | '.join(result.errors)}"

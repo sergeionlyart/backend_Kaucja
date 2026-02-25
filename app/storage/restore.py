@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import mimetypes
 import shutil
 import tempfile
 from dataclasses import asdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -17,9 +19,35 @@ from app.storage.models import RestoreRunResult
 from app.storage.repo import StorageRepo
 
 _REQUIRED_MANIFEST_FILE = "run.json"
+_BUNDLE_MANIFEST_FILE = "bundle_manifest.json"
 _VALID_RUN_STATUSES = {"created", "running", "completed", "failed"}
 _VALID_OCR_STATUSES = {"pending", "ok", "failed"}
 _LAYOUT_ROOTS = {"logs", "documents", "llm"}
+_ZIP_BOMB_DEFAULT_MAX_ENTRIES = 1_000
+_ZIP_BOMB_DEFAULT_MAX_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+_ZIP_BOMB_DEFAULT_MAX_SINGLE_FILE_BYTES = 128 * 1024 * 1024
+_ZIP_BOMB_DEFAULT_MAX_COMPRESSION_RATIO = 200.0
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreSafetyLimits:
+    max_entries: int = _ZIP_BOMB_DEFAULT_MAX_ENTRIES
+    max_total_uncompressed_bytes: int = _ZIP_BOMB_DEFAULT_MAX_TOTAL_UNCOMPRESSED_BYTES
+    max_single_file_bytes: int = _ZIP_BOMB_DEFAULT_MAX_SINGLE_FILE_BYTES
+    max_compression_ratio: float = _ZIP_BOMB_DEFAULT_MAX_COMPRESSION_RATIO
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveInspection:
+    file_entries: list[ZipInfo]
+    has_bundle_manifest: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BundleVerification:
+    files_checked: int
+    run_id: str | None
+    session_id: str | None
 
 
 class RestoreArchiveError(RuntimeError):
@@ -35,6 +63,8 @@ def restore_run_bundle(
     zip_path: Path | str,
     data_dir: Path | str | None = None,
     overwrite_existing: bool = False,
+    rollback_on_metadata_failure: bool = True,
+    safety_limits: RestoreSafetyLimits | None = None,
 ) -> RestoreRunResult:
     archive_path = Path(zip_path)
     data_root = (
@@ -42,18 +72,43 @@ def restore_run_bundle(
         if data_dir is not None
         else repo.artifacts_manager.data_dir.resolve()
     )
+    limits = safety_limits or RestoreSafetyLimits()
+    manifest_verification_status = "not_checked"
+    files_checked = 0
+    bundle_manifest_run_id: str | None = None
+    bundle_manifest_session_id: str | None = None
 
     if not archive_path.exists() or not archive_path.is_file():
         return _restore_error(
             error_code="RESTORE_INVALID_ARCHIVE",
             error_message=f"Archive file not found: {archive_path}",
+            manifest_verification_status=manifest_verification_status,
+            files_checked=files_checked,
         )
 
     warnings: list[str] = []
 
     try:
         with ZipFile(archive_path, "r") as archive:
-            file_entries = _validate_archive_entries(archive)
+            inspection = _validate_archive_entries(archive, limits=limits)
+            file_entries = inspection.file_entries
+
+            if inspection.has_bundle_manifest:
+                manifest_verification_status = "verifying"
+                bundle_verification = _verify_bundle_manifest(
+                    archive=archive,
+                    file_entries=file_entries,
+                )
+                files_checked = bundle_verification.files_checked
+                bundle_manifest_run_id = bundle_verification.run_id
+                bundle_manifest_session_id = bundle_verification.session_id
+                manifest_verification_status = "verified"
+            else:
+                manifest_verification_status = "legacy_missing_manifest"
+                warnings.append(
+                    "bundle_manifest.json is missing; legacy archive restored "
+                    "without integrity verification."
+                )
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 extract_root = Path(temp_dir) / "run_bundle"
@@ -74,6 +129,12 @@ def restore_run_bundle(
                         code="RESTORE_INVALID_ARCHIVE",
                         message="run.json must contain non-empty session_id and run_id.",
                     )
+                _validate_bundle_identity(
+                    run_id=run_id,
+                    session_id=session_id,
+                    bundle_run_id=bundle_manifest_run_id,
+                    bundle_session_id=bundle_manifest_session_id,
+                )
 
                 target_root = _build_target_root(
                     data_root=data_root,
@@ -88,6 +149,8 @@ def restore_run_bundle(
                             run_id=run_id,
                             session_id=session_id,
                             artifacts_root_path=str(target_root),
+                            manifest_verification_status=manifest_verification_status,
+                            files_checked=files_checked,
                         )
 
                     delete_result = repo.delete_run(run_id)
@@ -102,6 +165,8 @@ def restore_run_bundle(
                             run_id=run_id,
                             session_id=session_id,
                             artifacts_root_path=str(target_root),
+                            manifest_verification_status=manifest_verification_status,
+                            files_checked=files_checked,
                         )
 
                 _move_extracted_tree(extract_root=extract_root, target_root=target_root)
@@ -117,6 +182,19 @@ def restore_run_bundle(
                 restored_paths = _restored_paths(target_root)
 
                 if metadata_errors:
+                    rollback_attempted = False
+                    rollback_succeeded: bool | None = None
+                    if rollback_on_metadata_failure:
+                        rollback_attempted = True
+                        rollback_succeeded = _rollback_restored_tree(
+                            target_root=target_root,
+                            data_root=data_root,
+                        )
+                        if not rollback_succeeded:
+                            warnings.append(
+                                "Rollback failed after metadata restore failure; "
+                                "restored files may remain on disk."
+                            )
                     return RestoreRunResult(
                         status="failed",
                         run_id=run_id,
@@ -127,6 +205,10 @@ def restore_run_bundle(
                         errors=metadata_errors,
                         error_code="RESTORE_DB_ERROR",
                         error_message="Metadata restore failed for one or more entities.",
+                        manifest_verification_status=manifest_verification_status,
+                        files_checked=files_checked,
+                        rollback_attempted=rollback_attempted,
+                        rollback_succeeded=rollback_succeeded,
                     )
 
                 return RestoreRunResult(
@@ -139,47 +221,86 @@ def restore_run_bundle(
                     errors=[],
                     error_code=None,
                     error_message=None,
+                    manifest_verification_status=manifest_verification_status,
+                    files_checked=files_checked,
+                    rollback_attempted=False,
+                    rollback_succeeded=None,
                 )
 
     except RestoreArchiveError as error:
+        if manifest_verification_status in {"verifying", "verified"}:
+            manifest_verification_status = "failed"
         return _restore_error(
             error_code=error.code,
             error_message=error.message,
+            manifest_verification_status=manifest_verification_status,
+            files_checked=files_checked,
         )
     except BadZipFile as error:
         return _restore_error(
             error_code="RESTORE_INVALID_ARCHIVE",
             error_message=f"Invalid ZIP archive: {error}",
+            manifest_verification_status=manifest_verification_status,
+            files_checked=files_checked,
         )
     except OSError as error:
         return _restore_error(
             error_code="RESTORE_FS_ERROR",
             error_message=f"Filesystem restore error: {error}",
+            manifest_verification_status=manifest_verification_status,
+            files_checked=files_checked,
         )
     except Exception as error:  # noqa: BLE001
         return _restore_error(
             error_code="RESTORE_DB_ERROR",
             error_message=f"Restore failed: {error.__class__.__name__}: {error}",
+            manifest_verification_status=manifest_verification_status,
+            files_checked=files_checked,
         )
 
 
-def _validate_archive_entries(archive: ZipFile) -> list[ZipInfo]:
+def _validate_archive_entries(
+    archive: ZipFile,
+    *,
+    limits: RestoreSafetyLimits,
+) -> ArchiveInspection:
     infos = sorted(archive.infolist(), key=lambda item: item.filename)
     if not infos:
         raise RestoreArchiveError(
             code="RESTORE_INVALID_ARCHIVE",
             message="Archive is empty.",
         )
+    if len(infos) > limits.max_entries:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                f"Archive has too many entries ({len(infos)}), limit is "
+                f"{limits.max_entries}."
+            ),
+        )
 
     file_entries: list[ZipInfo] = []
     has_manifest = False
+    has_bundle_manifest = False
     layout_roots_seen: set[str] = set()
+    seen_paths: set[str] = set()
+    total_uncompressed_bytes = 0
     for info in infos:
         path = _validate_archive_path(info)
+        normalized_name = path.as_posix()
+        if normalized_name in seen_paths:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=f"Archive contains duplicated entry path: {info.filename}",
+            )
+        seen_paths.add(normalized_name)
+
         if info.is_dir():
             continue
         if path.as_posix() == _REQUIRED_MANIFEST_FILE:
             has_manifest = True
+        if path.as_posix() == _BUNDLE_MANIFEST_FILE:
+            has_bundle_manifest = True
         if path.parts and path.parts[0] in _LAYOUT_ROOTS:
             layout_roots_seen.add(path.parts[0])
         if _is_symlink_entry(info):
@@ -187,7 +308,19 @@ def _validate_archive_entries(archive: ZipFile) -> list[ZipInfo]:
                 code="RESTORE_INVALID_ARCHIVE",
                 message=f"Archive contains symlink entry: {info.filename}",
             )
+        _validate_zip_bomb_limits(info=info, limits=limits)
+        total_uncompressed_bytes += info.file_size
         file_entries.append(info)
+
+    if total_uncompressed_bytes > limits.max_total_uncompressed_bytes:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                "Archive uncompressed size exceeds allowed limit: "
+                f"{total_uncompressed_bytes} > "
+                f"{limits.max_total_uncompressed_bytes}."
+            ),
+        )
 
     if not has_manifest:
         raise RestoreArchiveError(
@@ -202,7 +335,32 @@ def _validate_archive_entries(archive: ZipFile) -> list[ZipInfo]:
             ),
         )
 
-    return file_entries
+    return ArchiveInspection(
+        file_entries=file_entries,
+        has_bundle_manifest=has_bundle_manifest,
+    )
+
+
+def _validate_zip_bomb_limits(*, info: ZipInfo, limits: RestoreSafetyLimits) -> None:
+    if info.file_size > limits.max_single_file_bytes:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                f"Archive entry '{info.filename}' exceeds max_single_file_bytes: "
+                f"{info.file_size} > {limits.max_single_file_bytes}."
+            ),
+        )
+
+    compressed_size = max(info.compress_size, 1)
+    compression_ratio = info.file_size / compressed_size
+    if compression_ratio > limits.max_compression_ratio:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                f"Archive entry '{info.filename}' exceeds max_compression_ratio: "
+                f"{compression_ratio:.2f} > {limits.max_compression_ratio:.2f}."
+            ),
+        )
 
 
 def _validate_archive_path(info: ZipInfo) -> PurePosixPath:
@@ -251,6 +409,8 @@ def _extract_archive_entries(
 
     for info in file_entries:
         relative = _validate_archive_path(info)
+        if relative.as_posix() == _BUNDLE_MANIFEST_FILE:
+            continue
         target_path = extract_root / relative.as_posix()
         resolved_target = target_path.resolve()
         try:
@@ -264,6 +424,176 @@ def _extract_archive_entries(
         target_path.parent.mkdir(parents=True, exist_ok=True)
         with archive.open(info, "r") as source, target_path.open("wb") as destination:
             shutil.copyfileobj(source, destination)
+
+
+def _verify_bundle_manifest(
+    *,
+    archive: ZipFile,
+    file_entries: list[ZipInfo],
+) -> BundleVerification:
+    bundle_entry: ZipInfo | None = None
+    for info in file_entries:
+        if _validate_archive_path(info).as_posix() == _BUNDLE_MANIFEST_FILE:
+            bundle_entry = info
+            break
+
+    if bundle_entry is None:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message="bundle_manifest.json is not present.",
+        )
+
+    try:
+        manifest_payload = json.loads(archive.read(bundle_entry).decode("utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=f"Failed to parse bundle_manifest.json: {error}",
+        ) from error
+
+    if not isinstance(manifest_payload, dict):
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message="bundle_manifest.json root must be a JSON object.",
+        )
+
+    expected_files = manifest_payload.get("files")
+    if not isinstance(expected_files, list):
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message="bundle_manifest.json must contain files[] list.",
+        )
+
+    expected_map: dict[str, tuple[int, str]] = {}
+    for file_item in expected_files:
+        if not isinstance(file_item, dict):
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message="bundle_manifest.json files[] contains non-object item.",
+            )
+        relative_path = str(file_item.get("relative_path") or "").strip()
+        if not relative_path:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message="bundle_manifest.json files[] item has empty relative_path.",
+            )
+        if relative_path == _BUNDLE_MANIFEST_FILE:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message="bundle_manifest.json must not include itself in files[] list.",
+            )
+        try:
+            size_bytes = int(file_item.get("size_bytes"))
+        except (TypeError, ValueError) as error:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=(
+                    "bundle_manifest.json files[] item has invalid size_bytes for "
+                    f"path '{relative_path}'."
+                ),
+            ) from error
+
+        if size_bytes < 0:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=(
+                    "bundle_manifest.json files[] item has negative size_bytes for "
+                    f"path '{relative_path}'."
+                ),
+            )
+
+        sha256_hex = str(file_item.get("sha256") or "").strip().lower()
+        if len(sha256_hex) != 64 or any(
+            char not in "0123456789abcdef" for char in sha256_hex
+        ):
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=(
+                    "bundle_manifest.json files[] item has invalid sha256 for "
+                    f"path '{relative_path}'."
+                ),
+            )
+
+        if relative_path in expected_map:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=f"bundle_manifest.json has duplicate path: {relative_path}",
+            )
+        expected_map[relative_path] = (size_bytes, sha256_hex)
+
+    actual_map: dict[str, ZipInfo] = {}
+    for info in file_entries:
+        relative_path = _validate_archive_path(info).as_posix()
+        if relative_path == _BUNDLE_MANIFEST_FILE:
+            continue
+        actual_map[relative_path] = info
+
+    expected_paths = set(expected_map)
+    actual_paths = set(actual_map)
+    missing_paths = sorted(expected_paths - actual_paths)
+    extra_paths = sorted(actual_paths - expected_paths)
+    if missing_paths or extra_paths:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                "bundle_manifest.json paths mismatch. "
+                f"missing={missing_paths} extra={extra_paths}"
+            ),
+        )
+
+    for relative_path in sorted(expected_map):
+        expected_size, expected_sha = expected_map[relative_path]
+        entry = actual_map[relative_path]
+        payload = archive.read(entry)
+
+        if len(payload) != expected_size:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=(
+                    f"Integrity mismatch for '{relative_path}': "
+                    f"size {len(payload)} != {expected_size}."
+                ),
+            )
+
+        actual_sha = hashlib.sha256(payload).hexdigest()
+        if actual_sha != expected_sha:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_ARCHIVE",
+                message=(
+                    f"Integrity mismatch for '{relative_path}': sha256 does not match."
+                ),
+            )
+
+    return BundleVerification(
+        files_checked=len(expected_map),
+        run_id=_to_optional_str(manifest_payload.get("run_id")),
+        session_id=_to_optional_str(manifest_payload.get("session_id")),
+    )
+
+
+def _validate_bundle_identity(
+    *,
+    run_id: str,
+    session_id: str,
+    bundle_run_id: str | None,
+    bundle_session_id: str | None,
+) -> None:
+    if bundle_run_id is not None and bundle_run_id != run_id:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                "bundle_manifest.json run_id does not match run.json. "
+                f"bundle={bundle_run_id} run={run_id}."
+            ),
+        )
+    if bundle_session_id is not None and bundle_session_id != session_id:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=(
+                "bundle_manifest.json session_id does not match run.json. "
+                f"bundle={bundle_session_id} run={session_id}."
+            ),
+        )
 
 
 def _load_manifest(path: Path) -> dict[str, Any]:
@@ -656,6 +986,24 @@ def _restored_paths(target_root: Path) -> list[str]:
     return existing
 
 
+def _rollback_restored_tree(*, target_root: Path, data_root: Path) -> bool:
+    if not target_root.exists():
+        return True
+
+    resolved_data_root = data_root.resolve()
+    resolved_target = target_root.resolve()
+    try:
+        resolved_target.relative_to(resolved_data_root)
+    except ValueError:
+        return False
+
+    try:
+        shutil.rmtree(resolved_target)
+    except OSError:
+        return False
+    return True
+
+
 def _to_optional_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -690,6 +1038,8 @@ def _restore_error(
     run_id: str | None = None,
     session_id: str | None = None,
     artifacts_root_path: str | None = None,
+    manifest_verification_status: str,
+    files_checked: int,
 ) -> RestoreRunResult:
     return RestoreRunResult(
         status="failed",
@@ -701,6 +1051,10 @@ def _restore_error(
         errors=[error_message],
         error_code=error_code,
         error_message=error_message,
+        manifest_verification_status=manifest_verification_status,
+        files_checked=files_checked,
+        rollback_attempted=False,
+        rollback_succeeded=None,
     )
 
 
@@ -724,6 +1078,14 @@ def main() -> None:
         action="store_true",
         help="Allow overwrite for already existing run_id.",
     )
+    parser.add_argument(
+        "--no-rollback-on-metadata-failure",
+        action="store_true",
+        help=(
+            "Disable filesystem rollback when metadata restore fails after files were "
+            "copied."
+        ),
+    )
 
     args = parser.parse_args()
     repo = StorageRepo(
@@ -735,6 +1097,7 @@ def main() -> None:
         zip_path=Path(args.zip_path),
         data_dir=Path(args.data_dir),
         overwrite_existing=bool(args.overwrite_existing),
+        rollback_on_metadata_failure=not bool(args.no_rollback_on_metadata_failure),
     )
     print(json.dumps(asdict(result), ensure_ascii=False, indent=2, sort_keys=True))
 

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
+from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+
+_BUNDLE_MANIFEST_FILE = "bundle_manifest.json"
 
 
 class ZipExportError(RuntimeError):
@@ -28,20 +33,41 @@ def export_run_bundle(
 
     zip_path = destination_dir / f"{run_id}_bundle.zip"
     file_paths = _collect_artifact_files(resolved_root)
+    archive_files = _collect_archive_files(resolved_root, file_paths)
+    session_id, manifest_run_id = _resolve_bundle_identifiers(resolved_root)
+    manifest_payload = _build_bundle_manifest(
+        run_id=manifest_run_id,
+        session_id=session_id,
+        archive_files=archive_files,
+    )
+    manifest_bytes = _json_dumps_bytes(manifest_payload)
+    archive_entries = [
+        *archive_files,
+        (_BUNDLE_MANIFEST_FILE, manifest_bytes),
+    ]
 
     with ZipFile(zip_path, mode="w") as archive:
-        for file_path in file_paths:
-            relative_path = _safe_relative_path(
-                base_path=resolved_root,
-                target_path=file_path,
-            )
-            zip_info = ZipInfo(filename=relative_path.as_posix())
+        for relative_path, data in sorted(archive_entries, key=lambda item: item[0]):
+            zip_info = ZipInfo(filename=relative_path)
             zip_info.date_time = (1980, 1, 1, 0, 0, 0)
             zip_info.compress_type = ZIP_DEFLATED
-            data = file_path.read_bytes()
             archive.writestr(zip_info, data)
 
     return zip_path
+
+
+def _collect_archive_files(
+    root_path: Path,
+    file_paths: list[Path],
+) -> list[tuple[str, bytes]]:
+    archive_files: list[tuple[str, bytes]] = []
+    for file_path in file_paths:
+        relative_path = _safe_relative_path(
+            base_path=root_path,
+            target_path=file_path,
+        )
+        archive_files.append((relative_path.as_posix(), file_path.read_bytes()))
+    return archive_files
 
 
 def _collect_artifact_files(root_path: Path) -> list[Path]:
@@ -79,3 +105,64 @@ def _safe_relative_path(*, base_path: Path, target_path: Path) -> Path:
     if ".." in relative_path.parts:
         raise ZipExportError(f"Path traversal attempt detected: {resolved_target}")
     return relative_path
+
+
+def _resolve_bundle_identifiers(root_path: Path) -> tuple[str, str]:
+    run_id = root_path.name
+    session_id = "unknown"
+
+    run_manifest_path = root_path / "run.json"
+    if run_manifest_path.exists():
+        try:
+            payload = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+
+        if isinstance(payload, dict):
+            payload_session_id = str(payload.get("session_id") or "").strip()
+            payload_run_id = str(payload.get("run_id") or "").strip()
+            if payload_session_id:
+                session_id = payload_session_id
+            if payload_run_id:
+                run_id = payload_run_id
+
+    if session_id == "unknown":
+        path_parts = root_path.parts
+        if len(path_parts) >= 3 and path_parts[-2] == "runs":
+            session_id = path_parts[-3]
+
+    return session_id, run_id
+
+
+def _build_bundle_manifest(
+    *,
+    run_id: str,
+    session_id: str,
+    archive_files: list[tuple[str, bytes]],
+) -> dict[str, Any]:
+    files_payload: list[dict[str, Any]] = []
+    for relative_path, data in sorted(archive_files, key=lambda item: item[0]):
+        files_payload.append(
+            {
+                "relative_path": relative_path,
+                "size_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        )
+
+    return {
+        "version": "v1",
+        "run_id": run_id,
+        "session_id": session_id,
+        "files": files_payload,
+    }
+
+
+def _json_dumps_bytes(payload: dict[str, Any]) -> bytes:
+    text = json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    )
+    return f"{text}\n".encode("utf-8")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -35,6 +36,7 @@ def test_export_run_bundle_creates_deterministic_zip(tmp_path: Path) -> None:
         names = archive.namelist()
         assert names == sorted(names)
         assert names == [
+            "bundle_manifest.json",
             "documents/0000001/ocr/combined.md",
             "llm/response_raw.txt",
             "logs/run.log",
@@ -43,6 +45,20 @@ def test_export_run_bundle_creates_deterministic_zip(tmp_path: Path) -> None:
 
         for info in archive.infolist():
             assert info.date_time == (1980, 1, 1, 0, 0, 0)
+
+        manifest_payload = json.loads(
+            archive.read("bundle_manifest.json").decode("utf-8")
+        )
+        assert manifest_payload["version"] == "v1"
+        assert manifest_payload["run_id"] == "run-artifacts"
+        assert isinstance(manifest_payload["session_id"], str)
+        files = manifest_payload["files"]
+        assert [item["relative_path"] for item in files] == [
+            "documents/0000001/ocr/combined.md",
+            "llm/response_raw.txt",
+            "logs/run.log",
+            "run.json",
+        ]
 
 
 def test_export_run_bundle_fails_when_root_missing(tmp_path: Path) -> None:

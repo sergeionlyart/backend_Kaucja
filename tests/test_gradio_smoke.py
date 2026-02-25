@@ -11,6 +11,7 @@ import pytest
 import app.ui.gradio_app as gradio_app_module
 from app.pipeline.orchestrator import FullPipelineResult, OCRDocumentStageResult
 from app.prompts.manager import PromptManager
+from app.storage.models import RestoreRunResult
 from app.storage.run_manifest import init_run_manifest, update_run_manifest
 from app.storage.repo import StorageRepo
 from app.storage.zip_export import ZipExportError
@@ -1021,7 +1022,9 @@ def test_restore_history_run_bundle_success_cycle(tmp_path: Path) -> None:
     )
 
     assert "Restore completed." in restore_status
-    assert "warnings=" in restore_details
+    assert "manifest_verification=verified" in restore_details
+    assert "files_checked=" in restore_details
+    assert "rollback_attempted=False" in restore_details
     assert restored_run_id == run_id
     assert Path(restored_artifacts_root).is_dir()
     assert any(row[0] == run_id for row in rows)
@@ -1064,3 +1067,120 @@ def test_restore_history_run_bundle_invalid_archive(tmp_path: Path) -> None:
     assert restored_run_id == ""
     assert restored_artifacts_root == ""
     assert rows == []
+
+
+def test_restore_history_run_bundle_integrity_failure(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-restore-integrity-ui")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=15,
+        total_cost=0.01,
+        total_time_ms=8.0,
+    )
+    export_status, zip_path, _download = export_history_run_bundle(
+        repo=repo,
+        run_id=run_id,
+    )
+    assert "Export completed." in export_status
+    assert zip_path
+
+    tampered_zip = tmp_path / "tampered-ui.zip"
+    with ZipFile(zip_path, "r") as source_archive:
+        with ZipFile(tampered_zip, "w") as target_archive:
+            for info in source_archive.infolist():
+                payload = source_archive.read(info.filename)
+                if info.filename == "logs/run.log":
+                    payload = b"tampered\n"
+                target_archive.writestr(info.filename, payload)
+
+    repo.delete_run(run_id)
+    (
+        restore_status,
+        restore_details,
+        _restored_run_id,
+        _restored_artifacts_root,
+        rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+    ) = restore_history_run_bundle(
+        repo=repo,
+        zip_file_path=tampered_zip,
+        overwrite_existing=False,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert restore_status == "Restore failed."
+    assert "RESTORE_INVALID_ARCHIVE" in restore_details
+    assert "manifest_verification=failed" in restore_details
+    assert rows == []
+
+
+def test_restore_history_run_bundle_shows_rollback_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+
+    def _restore_stub(**_: Any) -> RestoreRunResult:
+        return RestoreRunResult(
+            status="failed",
+            run_id="run-x",
+            session_id="session-x",
+            artifacts_root_path="/tmp/path",
+            restored_paths=[],
+            warnings=[],
+            errors=["metadata failed"],
+            error_code="RESTORE_DB_ERROR",
+            error_message="metadata failed",
+            manifest_verification_status="verified",
+            files_checked=7,
+            rollback_attempted=True,
+            rollback_succeeded=False,
+        )
+
+    monkeypatch.setattr(gradio_app_module, "restore_run_bundle", _restore_stub)
+
+    (
+        restore_status,
+        restore_details,
+        _restored_run_id,
+        _restored_artifacts_root,
+        _rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+    ) = restore_history_run_bundle(
+        repo=repo,
+        zip_file_path=tmp_path / "not-used.zip",
+        overwrite_existing=False,
+        session_id="",
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert restore_status == "Restore failed."
+    assert "manifest_verification=verified" in restore_details
+    assert "rollback_attempted=True" in restore_details
+    assert "rollback_succeeded=False" in restore_details

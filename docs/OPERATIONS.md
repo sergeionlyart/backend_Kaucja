@@ -86,15 +86,29 @@ python -m app.storage.restore \
   --overwrite-existing
 ```
 
+Disable rollback on metadata failure:
+
+```bash
+python -m app.storage.restore \
+  --zip-path data/sessions/<session_id>/runs/<run_id>_bundle.zip \
+  --db-path data/kaucja.sqlite3 \
+  --data-dir data \
+  --no-rollback-on-metadata-failure
+```
+
 Output:
 
-- JSON report with `status`, `run_id`, `session_id`, `restored_paths`, `warnings`, `errors`, `error_code`, `error_message`.
+- JSON report with `status`, `run_id`, `session_id`, `restored_paths`, `warnings`, `errors`, `error_code`, `error_message`, `manifest_verification_status`, `files_checked`, `rollback_attempted`, `rollback_succeeded`.
 
 Safety checks:
 
 - archive entry names must be relative (no absolute paths, no `..`);
 - symlink entries in ZIP are rejected;
 - archive must include `run.json` and at least one layout root (`logs/`, `documents/`, `llm/`).
+- if `bundle_manifest.json` exists, restore validates `size_bytes` and `sha256` for each listed file before extracting;
+- if `bundle_manifest.json` is missing (legacy archive), restore continues with warning;
+- anti-zip-bomb limits are enforced (`max_entries`, `max_total_uncompressed_bytes`, `max_single_file_bytes`, `max_compression_ratio`);
+- by default, when file copy succeeds but metadata restore fails, restore attempts rollback (delete restored run tree).
 
 Error codes:
 
@@ -114,7 +128,7 @@ In History section:
 UI shows:
 
 - restore status,
-- technical details,
+- technical details (manifest verification, files checked, rollback status, error code/message),
 - restored `run_id`,
 - restored artifacts root path.
 

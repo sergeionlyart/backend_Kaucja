@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
 import app.storage.restore as restore_module
 from app.storage.repo import StorageRepo
-from app.storage.restore import restore_run_bundle
+from app.storage.restore import RestoreSafetyLimits, restore_run_bundle
 from app.storage.zip_export import export_run_bundle
 
 
@@ -141,6 +141,22 @@ def _seed_restorable_run(
     return run.run_id
 
 
+def _tamper_archive_entry(
+    *,
+    source_zip_path: Path,
+    target_zip_path: Path,
+    entry_name: str,
+    payload: bytes,
+) -> None:
+    with ZipFile(source_zip_path, "r") as source_archive:
+        with ZipFile(target_zip_path, "w") as target_archive:
+            for info in source_archive.infolist():
+                data = source_archive.read(info.filename)
+                if info.filename == entry_name:
+                    data = payload
+                target_archive.writestr(info.filename, data, compress_type=ZIP_DEFLATED)
+
+
 def test_restore_run_success(tmp_path: Path) -> None:
     repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
     session_id = "session-restore"
@@ -158,12 +174,82 @@ def test_restore_run_success(tmp_path: Path) -> None:
     assert result.error_code is None
     assert result.run_id == run_id
     assert result.session_id == session_id
+    assert result.manifest_verification_status == "verified"
+    assert result.files_checked >= 1
+    assert result.rollback_attempted is False
+    assert result.rollback_succeeded is None
     restored_run = repo.get_run(run_id)
     assert restored_run is not None
     assert restored_run.provider == "openai"
     assert Path(restored_run.artifacts_root_path).is_dir()
     assert len(repo.list_documents(run_id=run_id)) == 1
     assert repo.get_llm_output(run_id=run_id) is not None
+
+
+def test_restore_fails_on_bundle_manifest_checksum_mismatch(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-integrity"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    run = repo.get_run(run_id)
+    assert run is not None
+
+    source_zip = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+    tampered_zip = tmp_path / "tampered.zip"
+    _tamper_archive_entry(
+        source_zip_path=source_zip,
+        target_zip_path=tampered_zip,
+        entry_name="logs/run.log",
+        payload=b"tampered-log-content\n",
+    )
+
+    repo.delete_run(run_id)
+    result = restore_run_bundle(repo=repo, zip_path=tampered_zip)
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_INVALID_ARCHIVE"
+    assert "Integrity mismatch" in (result.error_message or "")
+    assert result.manifest_verification_status == "failed"
+    assert result.files_checked == 0
+    assert repo.get_run(run_id) is None
+
+
+def test_restore_legacy_zip_without_bundle_manifest_warns(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    run_id = "legacy-run"
+    session_id = "legacy-session"
+    legacy_zip = tmp_path / "legacy.zip"
+    with ZipFile(legacy_zip, "w") as archive:
+        archive.writestr(
+            "run.json",
+            json.dumps(
+                {
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "status": "completed",
+                    "inputs": {
+                        "provider": "openai",
+                        "model": "gpt-5.1",
+                        "prompt_name": "kaucja_gap_analysis",
+                        "prompt_version": "v001",
+                        "schema_version": "v001",
+                    },
+                }
+            ),
+            compress_type=ZIP_DEFLATED,
+        )
+        archive.writestr("logs/run.log", "legacy\n", compress_type=ZIP_DEFLATED)
+        archive.writestr(
+            "documents/0000001/ocr/combined.md",
+            "legacy",
+            compress_type=ZIP_DEFLATED,
+        )
+
+    result = restore_run_bundle(repo=repo, zip_path=legacy_zip)
+
+    assert result.status == "restored"
+    assert result.manifest_verification_status == "legacy_missing_manifest"
+    assert result.files_checked == 0
+    assert any("legacy archive restored" in warning for warning in result.warnings)
 
 
 def test_restore_rejects_invalid_archive_traversal(tmp_path: Path) -> None:
@@ -178,6 +264,45 @@ def test_restore_rejects_invalid_archive_traversal(tmp_path: Path) -> None:
 
     assert result.status == "failed"
     assert result.error_code == "RESTORE_INVALID_ARCHIVE"
+
+
+def test_restore_rejects_archive_when_limits_exceeded(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    zip_path = tmp_path / "too-many-entries.zip"
+    with ZipFile(zip_path, "w") as archive:
+        archive.writestr("run.json", json.dumps({"run_id": "x", "session_id": "s"}))
+        archive.writestr("logs/run.log", "line")
+        archive.writestr("documents/0000001/ocr/combined.md", "doc")
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        safety_limits=RestoreSafetyLimits(max_entries=2),
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_INVALID_ARCHIVE"
+    assert "too many entries" in (result.error_message or "").lower()
+
+
+def test_restore_rejects_archive_on_compression_ratio_limit(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    zip_path = tmp_path / "high-ratio.zip"
+    large_text = "A" * 50_000
+    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as archive:
+        archive.writestr("run.json", json.dumps({"run_id": "x", "session_id": "s"}))
+        archive.writestr("logs/run.log", "log")
+        archive.writestr("documents/0000001/ocr/combined.md", large_text)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        safety_limits=RestoreSafetyLimits(max_compression_ratio=1.05),
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_INVALID_ARCHIVE"
+    assert "max_compression_ratio" in (result.error_message or "")
 
 
 def test_restore_fails_when_run_exists_without_overwrite(tmp_path: Path) -> None:
@@ -267,3 +392,43 @@ def test_restore_handles_db_failure(
     assert result.status == "failed"
     assert result.error_code == "RESTORE_DB_ERROR"
     assert "db failed" in result.errors[0]
+    assert result.rollback_attempted is True
+    assert result.rollback_succeeded is True
+    assert run is not None
+    assert not Path(run.artifacts_root_path).exists()
+
+
+def test_restore_db_failure_without_rollback_keeps_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-db-no-rollback"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    run = repo.get_run(run_id)
+    assert run is not None
+    zip_path = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+    repo.delete_run(run_id)
+
+    def _metadata_failure(
+        *,
+        repo: StorageRepo,
+        manifest: dict[str, object],
+        target_root: Path,
+        session_id: str,
+        run_id: str,
+    ) -> tuple[list[str], list[str]]:
+        return [], ["db failed"]
+
+    monkeypatch.setattr(restore_module, "_restore_metadata", _metadata_failure)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        rollback_on_metadata_failure=False,
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_DB_ERROR"
+    assert result.rollback_attempted is False
+    assert result.rollback_succeeded is None
+    assert Path(run.artifacts_root_path).exists()

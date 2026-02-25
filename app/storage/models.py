@@ -104,3 +104,7 @@ class RestoreRunResult:
     errors: list[str]
     error_code: str | None
     error_message: str | None
+    manifest_verification_status: str
+    files_checked: int
+    rollback_attempted: bool
+    rollback_succeeded: bool | None
