@@ -35,6 +35,10 @@ artifacts/
 *.sqlite
 *.sqlite3
 
+# Local test fixtures (keep docs only)
+fixtures/*
+!fixtures/README.md
+
 # Environment files and secrets
 .env
 .env.*

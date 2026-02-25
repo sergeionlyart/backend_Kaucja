@@ -34,6 +34,11 @@ Finalized reliability hardening for TechSpec alignment (sections 5.1.3, 9.3, run
 5. Dependencies:
    - `pyproject.toml`: added `pymupdf>=1.24.0`.
 
+6. Fixture policy:
+   - `.gitignore` updated to keep `fixtures/` local-only.
+   - repository keeps only `fixtures/README.md` with local setup instructions.
+   - local OS artifacts like `.DS_Store` stay outside Git.
+
 ## Tests
 Added/updated tests:
 - `tests/test_mistral_ocr_client.py`
@@ -62,7 +67,7 @@ python -c "from app.ui.gradio_app import build_app; build_app(); print('gradio_a
 Outputs:
 - `ruff format .` -> `53 files left unchanged`
 - `ruff check .` -> `All checks passed!`
-- `pytest -q` -> `64 passed in 2.91s`
+- `pytest -q` -> `64 passed in 2.85s`
 - build check -> `gradio_app_started`
 
 ## Known Limits
