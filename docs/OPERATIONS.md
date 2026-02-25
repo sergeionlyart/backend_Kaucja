@@ -18,6 +18,15 @@ pytest -q
 python -c "from app.ui.gradio_app import build_app; build_app(); print('gradio_app_started')"
 ```
 
+Restore limits and signing are configurable via `.env`:
+
+- `RESTORE_MAX_ENTRIES`
+- `RESTORE_MAX_TOTAL_UNCOMPRESSED_BYTES`
+- `RESTORE_MAX_SINGLE_FILE_BYTES`
+- `RESTORE_MAX_COMPRESSION_RATIO`
+- `RESTORE_REQUIRE_SIGNATURE`
+- `BUNDLE_SIGNING_KEY`
+
 ## Artifacts and Logs
 
 Runtime artifacts are stored under:
@@ -56,6 +65,8 @@ Current behavior:
 - Output path: sibling of run folder, `<run_id>_bundle.zip`.
 - ZIP keeps relative structure from run root (e.g. `run.json`, `logs/`, `documents/`, `llm/`).
 - Export uses deterministic file ordering and fixed ZIP timestamps.
+- Export writes deterministic `bundle_manifest.json` with file checksums/sizes.
+- If `BUNDLE_SIGNING_KEY` is configured, manifest includes HMAC-SHA256 signature.
 
 ## Export Limitations
 
@@ -96,9 +107,29 @@ python -m app.storage.restore \
   --no-rollback-on-metadata-failure
 ```
 
+Verification-only mode (no writes to filesystem/SQLite):
+
+```bash
+python -m app.storage.restore \
+  --zip-path data/sessions/<session_id>/runs/<run_id>_bundle.zip \
+  --db-path data/kaucja.sqlite3 \
+  --data-dir data \
+  --verify-only
+```
+
+Enable strict signature requirement:
+
+```bash
+python -m app.storage.restore \
+  --zip-path data/sessions/<session_id>/runs/<run_id>_bundle.zip \
+  --db-path data/kaucja.sqlite3 \
+  --data-dir data \
+  --require-signature
+```
+
 Output:
 
-- JSON report with `status`, `run_id`, `session_id`, `restored_paths`, `warnings`, `errors`, `error_code`, `error_message`, `manifest_verification_status`, `files_checked`, `rollback_attempted`, `rollback_succeeded`.
+- JSON report with `status`, `run_id`, `session_id`, `restored_paths`, `warnings`, `errors`, `error_code`, `error_message`, `manifest_verification_status`, `files_checked`, `signature_verification_status`, `archive_signed`, `signature_required`, `verify_only`, `rollback_attempted`, `rollback_succeeded`.
 
 Safety checks:
 
@@ -106,6 +137,8 @@ Safety checks:
 - symlink entries in ZIP are rejected;
 - archive must include `run.json` and at least one layout root (`logs/`, `documents/`, `llm/`).
 - if `bundle_manifest.json` exists, restore validates `size_bytes` and `sha256` for each listed file before extracting;
+- if manifest signature exists and `BUNDLE_SIGNING_KEY` is configured, restore verifies HMAC-SHA256 signature;
+- strict mode (`RESTORE_REQUIRE_SIGNATURE=true` or `--require-signature`) rejects unsigned/unverifiable bundles;
 - if `bundle_manifest.json` is missing (legacy archive), restore continues with warning;
 - anti-zip-bomb limits are enforced (`max_entries`, `max_total_uncompressed_bytes`, `max_single_file_bytes`, `max_compression_ratio`);
 - by default, when file copy succeeds but metadata restore fails, restore attempts rollback (delete restored run tree).
@@ -113,6 +146,7 @@ Safety checks:
 Error codes:
 
 - `RESTORE_INVALID_ARCHIVE`
+- `RESTORE_INVALID_SIGNATURE`
 - `RESTORE_RUN_EXISTS`
 - `RESTORE_FS_ERROR`
 - `RESTORE_DB_ERROR`
@@ -128,7 +162,7 @@ In History section:
 UI shows:
 
 - restore status,
-- technical details (manifest verification, files checked, rollback status, error code/message),
+- technical details (manifest verification, signature verification, signed/unsigned state, strict mode, verify-only state, rollback status, error code/message),
 - restored `run_id`,
 - restored artifacts root path.
 

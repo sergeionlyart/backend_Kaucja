@@ -106,5 +106,9 @@ class RestoreRunResult:
     error_message: str | None
     manifest_verification_status: str
     files_checked: int
+    signature_verification_status: str
+    archive_signed: bool
+    signature_required: bool
+    verify_only: bool
     rollback_attempted: bool
     rollback_succeeded: bool | None

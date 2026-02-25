@@ -15,6 +15,11 @@ ErrorCode = Literal[
     "CONTEXT_TOO_LARGE",
     "STORAGE_ERROR",
     "UNKNOWN_ERROR",
+    "RESTORE_INVALID_ARCHIVE",
+    "RESTORE_INVALID_SIGNATURE",
+    "RESTORE_RUN_EXISTS",
+    "RESTORE_FS_ERROR",
+    "RESTORE_DB_ERROR",
 ]
 
 ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
@@ -27,6 +32,17 @@ ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
     "CONTEXT_TOO_LARGE": "Input content is too large for selected model.",
     "STORAGE_ERROR": "Storage operation failed while saving run data.",
     "UNKNOWN_ERROR": "Unexpected error occurred during pipeline run.",
+    "RESTORE_INVALID_ARCHIVE": (
+        "Restore bundle is invalid or unsafe. Verify archive source and try again."
+    ),
+    "RESTORE_INVALID_SIGNATURE": (
+        "Restore bundle signature verification failed or signature is required."
+    ),
+    "RESTORE_RUN_EXISTS": (
+        "Run already exists in local storage. Enable overwrite to restore it."
+    ),
+    "RESTORE_FS_ERROR": "Restore failed due to filesystem access error.",
+    "RESTORE_DB_ERROR": "Restore failed while writing metadata into SQLite.",
 }
 
 

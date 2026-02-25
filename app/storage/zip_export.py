@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 _BUNDLE_MANIFEST_FILE = "bundle_manifest.json"
+_MANIFEST_SIGNATURE_ALGORITHM = "hmac-sha256"
 
 
 class ZipExportError(RuntimeError):
@@ -17,6 +19,7 @@ def export_run_bundle(
     *,
     artifacts_root_path: Path | str,
     output_dir: Path | str | None = None,
+    signing_key: str | None = None,
 ) -> Path:
     root = Path(artifacts_root_path)
     if not root.exists():
@@ -39,6 +42,7 @@ def export_run_bundle(
         run_id=manifest_run_id,
         session_id=session_id,
         archive_files=archive_files,
+        signing_key=signing_key,
     )
     manifest_bytes = _json_dumps_bytes(manifest_payload)
     archive_entries = [
@@ -139,6 +143,7 @@ def _build_bundle_manifest(
     run_id: str,
     session_id: str,
     archive_files: list[tuple[str, bytes]],
+    signing_key: str | None,
 ) -> dict[str, Any]:
     files_payload: list[dict[str, Any]] = []
     for relative_path, data in sorted(archive_files, key=lambda item: item[0]):
@@ -150,12 +155,23 @@ def _build_bundle_manifest(
             }
         )
 
-    return {
+    manifest_payload: dict[str, Any] = {
         "version": "v1",
         "run_id": run_id,
         "session_id": session_id,
         "files": files_payload,
     }
+    normalized_key = _normalize_signing_key(signing_key)
+    if normalized_key is not None:
+        signature_value = _compute_manifest_signature(
+            manifest_payload=manifest_payload,
+            signing_key=normalized_key,
+        )
+        manifest_payload["signature"] = {
+            "algorithm": _MANIFEST_SIGNATURE_ALGORITHM,
+            "hmac_sha256": signature_value,
+        }
+    return manifest_payload
 
 
 def _json_dumps_bytes(payload: dict[str, Any]) -> bytes:
@@ -166,3 +182,35 @@ def _json_dumps_bytes(payload: dict[str, Any]) -> bytes:
         sort_keys=True,
     )
     return f"{text}\n".encode("utf-8")
+
+
+def _canonical_manifest_bytes(manifest_payload: dict[str, Any]) -> bytes:
+    canonical_json = json.dumps(
+        manifest_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return canonical_json.encode("utf-8")
+
+
+def _compute_manifest_signature(
+    *,
+    manifest_payload: dict[str, Any],
+    signing_key: str,
+) -> str:
+    message = _canonical_manifest_bytes(manifest_payload)
+    return hmac.new(
+        signing_key.encode("utf-8"),
+        message,
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _normalize_signing_key(signing_key: str | None) -> str | None:
+    if signing_key is None:
+        return None
+    normalized = signing_key.strip()
+    if not normalized:
+        return None
+    return normalized

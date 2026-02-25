@@ -37,6 +37,53 @@ class Settings(BaseSettings):
     gradio_server_name: str = "127.0.0.1"
     gradio_server_port: int = Field(default=7860, ge=1, le=65535)
 
+    restore_max_entries: int = Field(
+        default=1_000,
+        ge=1,
+        validation_alias=AliasChoices(
+            "KAUCJA_RESTORE_MAX_ENTRIES",
+            "RESTORE_MAX_ENTRIES",
+        ),
+    )
+    restore_max_total_uncompressed_bytes: int = Field(
+        default=512 * 1024 * 1024,
+        ge=1,
+        validation_alias=AliasChoices(
+            "KAUCJA_RESTORE_MAX_TOTAL_UNCOMPRESSED_BYTES",
+            "RESTORE_MAX_TOTAL_UNCOMPRESSED_BYTES",
+        ),
+    )
+    restore_max_single_file_bytes: int = Field(
+        default=128 * 1024 * 1024,
+        ge=1,
+        validation_alias=AliasChoices(
+            "KAUCJA_RESTORE_MAX_SINGLE_FILE_BYTES",
+            "RESTORE_MAX_SINGLE_FILE_BYTES",
+        ),
+    )
+    restore_max_compression_ratio: float = Field(
+        default=200.0,
+        ge=1.0,
+        validation_alias=AliasChoices(
+            "KAUCJA_RESTORE_MAX_COMPRESSION_RATIO",
+            "RESTORE_MAX_COMPRESSION_RATIO",
+        ),
+    )
+    restore_require_signature: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "KAUCJA_RESTORE_REQUIRE_SIGNATURE",
+            "RESTORE_REQUIRE_SIGNATURE",
+        ),
+    )
+    bundle_signing_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "KAUCJA_BUNDLE_SIGNING_KEY",
+            "BUNDLE_SIGNING_KEY",
+        ),
+    )
+
     openai_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("KAUCJA_OPENAI_API_KEY", "OPENAI_API_KEY"),

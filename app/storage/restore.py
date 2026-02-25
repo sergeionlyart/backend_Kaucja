@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import json
 import mimetypes
 import shutil
@@ -20,6 +21,7 @@ from app.storage.repo import StorageRepo
 
 _REQUIRED_MANIFEST_FILE = "run.json"
 _BUNDLE_MANIFEST_FILE = "bundle_manifest.json"
+_MANIFEST_SIGNATURE_ALGORITHM = "hmac-sha256"
 _VALID_RUN_STATUSES = {"created", "running", "completed", "failed"}
 _VALID_OCR_STATUSES = {"pending", "ok", "failed"}
 _LAYOUT_ROOTS = {"logs", "documents", "llm"}
@@ -48,6 +50,9 @@ class BundleVerification:
     files_checked: int
     run_id: str | None
     session_id: str | None
+    signed: bool
+    signature_verification_status: str
+    warnings: list[str]
 
 
 class RestoreArchiveError(RuntimeError):
@@ -65,6 +70,9 @@ def restore_run_bundle(
     overwrite_existing: bool = False,
     rollback_on_metadata_failure: bool = True,
     safety_limits: RestoreSafetyLimits | None = None,
+    signing_key: str | None = None,
+    require_signature: bool = False,
+    verify_only: bool = False,
 ) -> RestoreRunResult:
     archive_path = Path(zip_path)
     data_root = (
@@ -74,9 +82,12 @@ def restore_run_bundle(
     )
     limits = safety_limits or RestoreSafetyLimits()
     manifest_verification_status = "not_checked"
+    signature_verification_status = "not_checked"
     files_checked = 0
+    archive_signed = False
     bundle_manifest_run_id: str | None = None
     bundle_manifest_session_id: str | None = None
+    normalized_signing_key = _normalize_signing_key(signing_key)
 
     if not archive_path.exists() or not archive_path.is_file():
         return _restore_error(
@@ -84,6 +95,10 @@ def restore_run_bundle(
             error_message=f"Archive file not found: {archive_path}",
             manifest_verification_status=manifest_verification_status,
             files_checked=files_checked,
+            signature_verification_status=signature_verification_status,
+            archive_signed=archive_signed,
+            signature_required=require_signature,
+            verify_only=verify_only,
         )
 
     warnings: list[str] = []
@@ -95,19 +110,87 @@ def restore_run_bundle(
 
             if inspection.has_bundle_manifest:
                 manifest_verification_status = "verifying"
+                signature_verification_status = "verifying"
                 bundle_verification = _verify_bundle_manifest(
                     archive=archive,
                     file_entries=file_entries,
+                    signing_key=normalized_signing_key,
+                    require_signature=require_signature,
                 )
                 files_checked = bundle_verification.files_checked
                 bundle_manifest_run_id = bundle_verification.run_id
                 bundle_manifest_session_id = bundle_verification.session_id
                 manifest_verification_status = "verified"
+                archive_signed = bundle_verification.signed
+                signature_verification_status = (
+                    bundle_verification.signature_verification_status
+                )
+                warnings.extend(bundle_verification.warnings)
             else:
                 manifest_verification_status = "legacy_missing_manifest"
+                signature_verification_status = "missing_manifest_unsigned_legacy"
                 warnings.append(
                     "bundle_manifest.json is missing; legacy archive restored "
                     "without integrity verification."
+                )
+                if require_signature:
+                    return _restore_error(
+                        error_code="RESTORE_INVALID_SIGNATURE",
+                        error_message=(
+                            "Archive signature is required in strict mode, but "
+                            "bundle_manifest.json is missing."
+                        ),
+                        manifest_verification_status=manifest_verification_status,
+                        files_checked=files_checked,
+                        signature_verification_status=signature_verification_status,
+                        archive_signed=False,
+                        signature_required=require_signature,
+                        verify_only=verify_only,
+                    )
+
+            manifest = _load_run_manifest_from_archive(
+                archive=archive,
+                file_entries=file_entries,
+            )
+
+            run_id = str(manifest.get("run_id") or "").strip()
+            session_id = str(manifest.get("session_id") or "").strip()
+            if not run_id or not session_id:
+                raise RestoreArchiveError(
+                    code="RESTORE_INVALID_ARCHIVE",
+                    message="run.json must contain non-empty session_id and run_id.",
+                )
+            _validate_bundle_identity(
+                run_id=run_id,
+                session_id=session_id,
+                bundle_run_id=bundle_manifest_run_id,
+                bundle_session_id=bundle_manifest_session_id,
+            )
+
+            target_root = _build_target_root(
+                data_root=data_root,
+                session_id=session_id,
+                run_id=run_id,
+            )
+            if verify_only:
+                return RestoreRunResult(
+                    status="verified",
+                    run_id=run_id,
+                    session_id=session_id,
+                    artifacts_root_path=str(target_root),
+                    restored_paths=[],
+                    warnings=warnings,
+                    errors=[],
+                    error_code=None,
+                    error_message=None,
+                    manifest_verification_status=manifest_verification_status,
+                    files_checked=files_checked,
+                    signature_verification_status=signature_verification_status,
+                    archive_signed=archive_signed,
+                    signature_required=require_signature,
+                    verify_only=True,
+                    rollback_attempted=False,
+                    rollback_succeeded=None,
                 )
 
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -117,29 +200,6 @@ def restore_run_bundle(
                     archive=archive,
                     file_entries=file_entries,
                     extract_root=extract_root,
-                )
-
-                manifest_path = extract_root / _REQUIRED_MANIFEST_FILE
-                manifest = _load_manifest(manifest_path)
-
-                run_id = str(manifest.get("run_id") or "").strip()
-                session_id = str(manifest.get("session_id") or "").strip()
-                if not run_id or not session_id:
-                    raise RestoreArchiveError(
-                        code="RESTORE_INVALID_ARCHIVE",
-                        message="run.json must contain non-empty session_id and run_id.",
-                    )
-                _validate_bundle_identity(
-                    run_id=run_id,
-                    session_id=session_id,
-                    bundle_run_id=bundle_manifest_run_id,
-                    bundle_session_id=bundle_manifest_session_id,
-                )
-
-                target_root = _build_target_root(
-                    data_root=data_root,
-                    session_id=session_id,
-                    run_id=run_id,
                 )
                 if target_root.exists():
                     if not overwrite_existing:
@@ -151,6 +211,10 @@ def restore_run_bundle(
                             artifacts_root_path=str(target_root),
                             manifest_verification_status=manifest_verification_status,
                             files_checked=files_checked,
+                            signature_verification_status=signature_verification_status,
+                            archive_signed=archive_signed,
+                            signature_required=require_signature,
+                            verify_only=verify_only,
                         )
 
                     delete_result = repo.delete_run(run_id)
@@ -167,6 +231,10 @@ def restore_run_bundle(
                             artifacts_root_path=str(target_root),
                             manifest_verification_status=manifest_verification_status,
                             files_checked=files_checked,
+                            signature_verification_status=signature_verification_status,
+                            archive_signed=archive_signed,
+                            signature_required=require_signature,
+                            verify_only=verify_only,
                         )
 
                 _move_extracted_tree(extract_root=extract_root, target_root=target_root)
@@ -207,6 +275,10 @@ def restore_run_bundle(
                         error_message="Metadata restore failed for one or more entities.",
                         manifest_verification_status=manifest_verification_status,
                         files_checked=files_checked,
+                        signature_verification_status=signature_verification_status,
+                        archive_signed=archive_signed,
+                        signature_required=require_signature,
+                        verify_only=False,
                         rollback_attempted=rollback_attempted,
                         rollback_succeeded=rollback_succeeded,
                     )
@@ -223,6 +295,10 @@ def restore_run_bundle(
                     error_message=None,
                     manifest_verification_status=manifest_verification_status,
                     files_checked=files_checked,
+                    signature_verification_status=signature_verification_status,
+                    archive_signed=archive_signed,
+                    signature_required=require_signature,
+                    verify_only=False,
                     rollback_attempted=False,
                     rollback_succeeded=None,
                 )
@@ -230,11 +306,17 @@ def restore_run_bundle(
     except RestoreArchiveError as error:
         if manifest_verification_status in {"verifying", "verified"}:
             manifest_verification_status = "failed"
+        if signature_verification_status in {"verifying", "verified"}:
+            signature_verification_status = "failed"
         return _restore_error(
             error_code=error.code,
             error_message=error.message,
             manifest_verification_status=manifest_verification_status,
             files_checked=files_checked,
+            signature_verification_status=signature_verification_status,
+            archive_signed=archive_signed,
+            signature_required=require_signature,
+            verify_only=verify_only,
         )
     except BadZipFile as error:
         return _restore_error(
@@ -242,6 +324,10 @@ def restore_run_bundle(
             error_message=f"Invalid ZIP archive: {error}",
             manifest_verification_status=manifest_verification_status,
             files_checked=files_checked,
+            signature_verification_status=signature_verification_status,
+            archive_signed=archive_signed,
+            signature_required=require_signature,
+            verify_only=verify_only,
         )
     except OSError as error:
         return _restore_error(
@@ -249,6 +335,10 @@ def restore_run_bundle(
             error_message=f"Filesystem restore error: {error}",
             manifest_verification_status=manifest_verification_status,
             files_checked=files_checked,
+            signature_verification_status=signature_verification_status,
+            archive_signed=archive_signed,
+            signature_required=require_signature,
+            verify_only=verify_only,
         )
     except Exception as error:  # noqa: BLE001
         return _restore_error(
@@ -256,6 +346,10 @@ def restore_run_bundle(
             error_message=f"Restore failed: {error.__class__.__name__}: {error}",
             manifest_verification_status=manifest_verification_status,
             files_checked=files_checked,
+            signature_verification_status=signature_verification_status,
+            archive_signed=archive_signed,
+            signature_required=require_signature,
+            verify_only=verify_only,
         )
 
 
@@ -430,6 +524,8 @@ def _verify_bundle_manifest(
     *,
     archive: ZipFile,
     file_entries: list[ZipInfo],
+    signing_key: str | None,
+    require_signature: bool,
 ) -> BundleVerification:
     bundle_entry: ZipInfo | None = None
     for info in file_entries:
@@ -564,11 +660,128 @@ def _verify_bundle_manifest(
                 ),
             )
 
+    signature_warnings: list[str] = []
+    signed, signature_status = _verify_bundle_manifest_signature(
+        manifest_payload=manifest_payload,
+        signing_key=signing_key,
+        require_signature=require_signature,
+        warnings=signature_warnings,
+    )
+
     return BundleVerification(
         files_checked=len(expected_map),
         run_id=_to_optional_str(manifest_payload.get("run_id")),
         session_id=_to_optional_str(manifest_payload.get("session_id")),
+        signed=signed,
+        signature_verification_status=signature_status,
+        warnings=signature_warnings,
     )
+
+
+def _verify_bundle_manifest_signature(
+    *,
+    manifest_payload: dict[str, Any],
+    signing_key: str | None,
+    require_signature: bool,
+    warnings: list[str],
+) -> tuple[bool, str]:
+    signature_payload = manifest_payload.get("signature")
+    if signature_payload is None:
+        if require_signature:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_SIGNATURE",
+                message=(
+                    "Archive signature is required in strict mode, but "
+                    "bundle_manifest.json has no signature section."
+                ),
+            )
+        warnings.append(
+            "Archive is unsigned (bundle_manifest.json has no signature). "
+            "Strict mode is disabled, continuing restore."
+        )
+        return False, "unsigned"
+
+    if not isinstance(signature_payload, dict):
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_SIGNATURE",
+            message="bundle_manifest.json signature must be a JSON object.",
+        )
+
+    algorithm = str(signature_payload.get("algorithm") or "").strip().lower()
+    provided_signature = str(signature_payload.get("hmac_sha256") or "").strip().lower()
+    if algorithm != _MANIFEST_SIGNATURE_ALGORITHM:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_SIGNATURE",
+            message=(
+                "Unsupported signature algorithm in bundle_manifest.json: "
+                f"{algorithm or '<empty>'}."
+            ),
+        )
+
+    if len(provided_signature) != 64 or any(
+        char not in "0123456789abcdef" for char in provided_signature
+    ):
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_SIGNATURE",
+            message="bundle_manifest.json signature value has invalid format.",
+        )
+
+    if signing_key is None:
+        if require_signature:
+            raise RestoreArchiveError(
+                code="RESTORE_INVALID_SIGNATURE",
+                message=(
+                    "Archive signature is present, but verification key is not "
+                    "configured."
+                ),
+            )
+        warnings.append(
+            "Archive is signed, but BUNDLE_SIGNING_KEY is not configured. "
+            "Signature was not verified."
+        )
+        return True, "signed_unverified_missing_key"
+
+    canonical_payload = _manifest_payload_without_signature(manifest_payload)
+    expected_signature = _compute_manifest_signature(
+        manifest_payload=canonical_payload,
+        signing_key=signing_key,
+    )
+    if not hmac.compare_digest(provided_signature, expected_signature):
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_SIGNATURE",
+            message="bundle_manifest.json signature mismatch.",
+        )
+
+    return True, "verified"
+
+
+def _manifest_payload_without_signature(
+    manifest_payload: dict[str, Any],
+) -> dict[str, Any]:
+    filtered_payload: dict[str, Any] = {}
+    for key in sorted(manifest_payload):
+        if key == "signature":
+            continue
+        filtered_payload[key] = manifest_payload[key]
+    return filtered_payload
+
+
+def _compute_manifest_signature(
+    *,
+    manifest_payload: dict[str, Any],
+    signing_key: str,
+) -> str:
+    canonical_json = json.dumps(
+        manifest_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hmac.new(
+        signing_key.encode("utf-8"),
+        canonical_json.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def _validate_bundle_identity(
@@ -596,10 +809,49 @@ def _validate_bundle_identity(
         )
 
 
+def _load_run_manifest_from_archive(
+    *,
+    archive: ZipFile,
+    file_entries: list[ZipInfo],
+) -> dict[str, Any]:
+    manifest_entry: ZipInfo | None = None
+    for info in file_entries:
+        if _validate_archive_path(info).as_posix() == _REQUIRED_MANIFEST_FILE:
+            manifest_entry = info
+            break
+
+    if manifest_entry is None:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message="Archive does not contain run.json.",
+        )
+
+    try:
+        payload_text = archive.read(manifest_entry).decode("utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=f"Failed to read run.json: {error}",
+        ) from error
+
+    return _load_manifest_payload(payload_text)
+
+
 def _load_manifest(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        payload_text = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise RestoreArchiveError(
+            code="RESTORE_INVALID_ARCHIVE",
+            message=f"Failed to read run.json: {error}",
+        ) from error
+    return _load_manifest_payload(payload_text)
+
+
+def _load_manifest_payload(payload_text: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError as error:
         raise RestoreArchiveError(
             code="RESTORE_INVALID_ARCHIVE",
             message=f"Failed to parse run.json: {error}",
@@ -1004,6 +1256,15 @@ def _rollback_restored_tree(*, target_root: Path, data_root: Path) -> bool:
     return True
 
 
+def _normalize_signing_key(signing_key: str | None) -> str | None:
+    if signing_key is None:
+        return None
+    normalized = signing_key.strip()
+    if not normalized:
+        return None
+    return normalized
+
+
 def _to_optional_str(value: Any) -> str | None:
     if value is None:
         return None
@@ -1040,6 +1301,10 @@ def _restore_error(
     artifacts_root_path: str | None = None,
     manifest_verification_status: str,
     files_checked: int,
+    signature_verification_status: str,
+    archive_signed: bool,
+    signature_required: bool,
+    verify_only: bool,
 ) -> RestoreRunResult:
     return RestoreRunResult(
         status="failed",
@@ -1053,12 +1318,18 @@ def _restore_error(
         error_message=error_message,
         manifest_verification_status=manifest_verification_status,
         files_checked=files_checked,
+        signature_verification_status=signature_verification_status,
+        archive_signed=archive_signed,
+        signature_required=signature_required,
+        verify_only=verify_only,
         rollback_attempted=False,
         rollback_succeeded=None,
     )
 
 
 def main() -> None:
+    from app.config.settings import get_settings
+
     parser = argparse.ArgumentParser(
         description="Restore run artifacts and metadata from a backup ZIP bundle."
     )
@@ -1086,8 +1357,34 @@ def main() -> None:
             "copied."
         ),
     )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help=(
+            "Only verify archive safety/integrity/signature and print report "
+            "without filesystem or DB writes."
+        ),
+    )
+    parser.add_argument(
+        "--require-signature",
+        action="store_true",
+        help=(
+            "Require bundle signature validation; unsigned archives are rejected "
+            "(strict mode)."
+        ),
+    )
 
     args = parser.parse_args()
+    settings = get_settings()
+    safety_limits = RestoreSafetyLimits(
+        max_entries=settings.restore_max_entries,
+        max_total_uncompressed_bytes=settings.restore_max_total_uncompressed_bytes,
+        max_single_file_bytes=settings.restore_max_single_file_bytes,
+        max_compression_ratio=settings.restore_max_compression_ratio,
+    )
+    require_signature = bool(
+        settings.restore_require_signature or args.require_signature
+    )
     repo = StorageRepo(
         db_path=Path(args.db_path),
         artifacts_manager=ArtifactsManager(Path(args.data_dir)),
@@ -1098,6 +1395,10 @@ def main() -> None:
         data_dir=Path(args.data_dir),
         overwrite_existing=bool(args.overwrite_existing),
         rollback_on_metadata_failure=not bool(args.no_rollback_on_metadata_failure),
+        safety_limits=safety_limits,
+        signing_key=settings.bundle_signing_key,
+        require_signature=require_signature,
+        verify_only=bool(args.verify_only),
     )
     print(json.dumps(asdict(result), ensure_ascii=False, indent=2, sort_keys=True))
 

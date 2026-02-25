@@ -24,7 +24,7 @@ from app.storage.artifact_reader import (
     safe_read_text,
 )
 from app.storage.repo import StorageRepo
-from app.storage.restore import restore_run_bundle
+from app.storage.restore import RestoreSafetyLimits, restore_run_bundle
 from app.storage.zip_export import ZipExportError, export_run_bundle
 from app.ui.result_helpers import (
     build_checklist_rows,
@@ -243,6 +243,7 @@ def export_history_run_bundle(
     *,
     repo: StorageRepo,
     run_id: str,
+    signing_key: str | None = None,
 ) -> tuple[str, str, str | None]:
     target_run_id = run_id.strip()
     if not target_run_id:
@@ -253,7 +254,10 @@ def export_history_run_bundle(
         return f"Export failed: run_id={target_run_id} not found.", "", None
 
     try:
-        zip_path = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+        zip_path = export_run_bundle(
+            artifacts_root_path=run.artifacts_root_path,
+            signing_key=signing_key,
+        )
     except (FileNotFoundError, NotADirectoryError, ZipExportError) as error:
         return f"Export failed: {error}", "", None
     except OSError as error:
@@ -268,14 +272,19 @@ def restore_history_run_bundle(
     repo: StorageRepo,
     zip_file_path: str | Path | None,
     overwrite_existing: bool,
-    session_id: str,
-    provider: str,
-    model: str,
-    prompt_version: str,
-    date_from: str,
-    date_to: str,
-    limit: float | int,
+    verify_only: bool = False,
+    require_signature: bool = False,
+    signing_key: str | None = None,
+    safety_limits: RestoreSafetyLimits | None = None,
+    session_id: str = "",
+    provider: str = "",
+    model: str = "",
+    prompt_version: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: float | int = 20,
 ) -> tuple[str, str, str, str, list[list[str]], Any, Any, Any]:
+    restore_limits = safety_limits or RestoreSafetyLimits()
     rows, compare_a, compare_b = refresh_history_for_ui(
         repo=repo,
         session_id=session_id,
@@ -304,6 +313,10 @@ def restore_history_run_bundle(
         repo=repo,
         zip_path=Path(zip_file_path),
         overwrite_existing=overwrite_existing,
+        verify_only=verify_only,
+        require_signature=require_signature,
+        signing_key=signing_key,
+        safety_limits=restore_limits,
     )
 
     rows, compare_a, compare_b = refresh_history_for_ui(
@@ -317,22 +330,30 @@ def restore_history_run_bundle(
         limit=limit,
     )
 
-    if result.status == "restored":
+    if result.status in {"restored", "verified"}:
         restored_run_id = result.run_id or ""
+        action = (
+            "Verification completed." if result.verify_only else "Restore completed."
+        )
         status = (
-            f"Restore completed. run_id={restored_run_id} "
-            f"session_id={result.session_id or ''}"
+            f"{action} run_id={restored_run_id} session_id={result.session_id or ''}"
         )
         details = (
             "technical_details="
             f"manifest_verification={result.manifest_verification_status} "
             f"files_checked={result.files_checked} "
+            f"signature_verification={result.signature_verification_status} "
+            f"archive_signed={result.archive_signed} "
+            f"strict_mode={result.signature_required} "
+            f"verify_only={result.verify_only} "
             f"warnings={len(result.warnings)} "
             f"errors={len(result.errors)} "
             f"rollback_attempted={result.rollback_attempted} "
             f"rollback_succeeded={result.rollback_succeeded}"
         )
-        run_id_update = gr.update(value=restored_run_id)
+        run_id_update = (
+            gr.update(value=restored_run_id) if not result.verify_only else gr.update()
+        )
         return (
             status,
             details,
@@ -344,10 +365,18 @@ def restore_history_run_bundle(
             run_id_update,
         )
 
+    friendly_error = ERROR_FRIENDLY_MESSAGES.get(
+        result.error_code or "",
+        "Restore failed. Check technical details.",
+    )
     details = (
         "technical_details="
         f"manifest_verification={result.manifest_verification_status} "
         f"files_checked={result.files_checked} "
+        f"signature_verification={result.signature_verification_status} "
+        f"archive_signed={result.archive_signed} "
+        f"strict_mode={result.signature_required} "
+        f"verify_only={result.verify_only} "
         f"rollback_attempted={result.rollback_attempted} "
         f"rollback_succeeded={result.rollback_succeeded} "
         f"error_code={result.error_code or ''} "
@@ -355,7 +384,7 @@ def restore_history_run_bundle(
         f"errors={' | '.join(result.errors)}"
     )
     return (
-        "Restore failed.",
+        f"Restore failed. {friendly_error}",
         details,
         result.run_id or "",
         result.artifacts_root_path or "",
@@ -372,13 +401,14 @@ def delete_history_run(
     run_id: str,
     confirm_run_id: str,
     create_backup_zip: bool,
-    session_id: str,
-    provider: str,
-    model: str,
-    prompt_version: str,
-    date_from: str,
-    date_to: str,
-    limit: float | int,
+    signing_key: str | None = None,
+    session_id: str = "",
+    provider: str = "",
+    model: str = "",
+    prompt_version: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: float | int = 20,
 ) -> tuple[str, str, str, list[list[str]], Any, Any, Any, Any]:
     target_run_id = run_id.strip()
     confirmation = confirm_run_id.strip()
@@ -438,7 +468,10 @@ def delete_history_run(
 
     if create_backup_zip:
         try:
-            zip_path = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+            zip_path = export_run_bundle(
+                artifacts_root_path=run.artifacts_root_path,
+                signing_key=signing_key,
+            )
             backup_path = str(zip_path)
         except (FileNotFoundError, NotADirectoryError, ZipExportError) as error:
             return (
@@ -703,6 +736,14 @@ def build_app(
     preflight_checker: PreflightChecker | None = None,
 ) -> gr.Blocks:
     settings = get_settings()
+    restore_safety_limits = RestoreSafetyLimits(
+        max_entries=settings.restore_max_entries,
+        max_total_uncompressed_bytes=settings.restore_max_total_uncompressed_bytes,
+        max_single_file_bytes=settings.restore_max_single_file_bytes,
+        max_compression_ratio=settings.restore_max_compression_ratio,
+    )
+    bundle_signing_key = settings.bundle_signing_key
+    restore_require_signature_default = settings.restore_require_signature
     storage_repo = repo or StorageRepo(settings.resolved_sqlite_path)
     prompt_manager = PromptManager(settings.project_root / "app" / "prompts")
 
@@ -993,6 +1034,14 @@ def build_app(
                 label="Overwrite existing run",
                 value=False,
             )
+            restore_verify_only = gr.Checkbox(
+                label="Verify only (no restore)",
+                value=False,
+            )
+            restore_require_signature = gr.Checkbox(
+                label="Require signature (strict)",
+                value=restore_require_signature_default,
+            )
             restore_button = gr.Button("Restore run bundle")
         with gr.Row():
             restore_status_box = gr.Textbox(label="Restore Status", interactive=False)
@@ -1201,6 +1250,7 @@ def build_app(
             fn=lambda selected_run_id: export_history_run_bundle(
                 repo=storage_repo,
                 run_id=selected_run_id,
+                signing_key=bundle_signing_key,
             ),
             inputs=[history_run_id],
             outputs=[export_status_box, export_path_box, export_file_box],
@@ -1209,6 +1259,8 @@ def build_app(
         restore_button.click(
             fn=lambda selected_zip_file,
             overwrite_existing_flag,
+            verify_only_flag,
+            require_signature_flag,
             session_filter,
             provider_filter,
             model_filter,
@@ -1219,6 +1271,10 @@ def build_app(
                 repo=storage_repo,
                 zip_file_path=selected_zip_file,
                 overwrite_existing=overwrite_existing_flag,
+                verify_only=verify_only_flag,
+                require_signature=require_signature_flag,
+                signing_key=bundle_signing_key,
+                safety_limits=restore_safety_limits,
                 session_id=session_filter,
                 provider=provider_filter,
                 model=model_filter,
@@ -1230,6 +1286,8 @@ def build_app(
             inputs=[
                 restore_zip_file,
                 restore_overwrite_existing,
+                restore_verify_only,
+                restore_require_signature,
                 history_session_id,
                 history_provider,
                 history_model,
@@ -1265,6 +1323,7 @@ def build_app(
                 run_id=selected_run_id,
                 confirm_run_id=confirmed_run_id,
                 create_backup_zip=create_backup_before_delete,
+                signing_key=bundle_signing_key,
                 session_id=session_filter,
                 provider=provider_filter,
                 model=model_filter,

@@ -157,6 +157,30 @@ def _tamper_archive_entry(
                 target_archive.writestr(info.filename, data, compress_type=ZIP_DEFLATED)
 
 
+def _tamper_manifest_signature(
+    *,
+    source_zip_path: Path,
+    target_zip_path: Path,
+) -> None:
+    with ZipFile(source_zip_path, "r") as source_archive:
+        with ZipFile(target_zip_path, "w") as target_archive:
+            for info in source_archive.infolist():
+                data = source_archive.read(info.filename)
+                if info.filename == "bundle_manifest.json":
+                    payload = json.loads(data.decode("utf-8"))
+                    payload["signature"] = {
+                        "algorithm": "hmac-sha256",
+                        "hmac_sha256": "0" * 64,
+                    }
+                    data = json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ).encode("utf-8")
+                target_archive.writestr(info.filename, data, compress_type=ZIP_DEFLATED)
+
+
 def test_restore_run_success(tmp_path: Path) -> None:
     repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
     session_id = "session-restore"
@@ -175,7 +199,10 @@ def test_restore_run_success(tmp_path: Path) -> None:
     assert result.run_id == run_id
     assert result.session_id == session_id
     assert result.manifest_verification_status == "verified"
+    assert result.signature_verification_status == "unsigned"
+    assert result.archive_signed is False
     assert result.files_checked >= 1
+    assert any("Archive is unsigned" in warning for warning in result.warnings)
     assert result.rollback_attempted is False
     assert result.rollback_succeeded is None
     restored_run = repo.get_run(run_id)
@@ -184,6 +211,108 @@ def test_restore_run_success(tmp_path: Path) -> None:
     assert Path(restored_run.artifacts_root_path).is_dir()
     assert len(repo.list_documents(run_id=run_id)) == 1
     assert repo.get_llm_output(run_id=run_id) is not None
+
+
+def test_restore_run_signed_bundle_success(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-signed"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    source_run = repo.get_run(run_id)
+    assert source_run is not None
+
+    zip_path = export_run_bundle(
+        artifacts_root_path=source_run.artifacts_root_path,
+        signing_key="sign-key",
+    )
+    repo.delete_run(run_id)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        signing_key="sign-key",
+        require_signature=True,
+    )
+
+    assert result.status == "restored"
+    assert result.error_code is None
+    assert result.archive_signed is True
+    assert result.signature_verification_status == "verified"
+    assert result.signature_required is True
+    assert result.verify_only is False
+    assert repo.get_run(run_id) is not None
+
+
+def test_restore_strict_mode_rejects_unsigned_manifest(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-unsigned-strict"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    source_run = repo.get_run(run_id)
+    assert source_run is not None
+
+    zip_path = export_run_bundle(artifacts_root_path=source_run.artifacts_root_path)
+    repo.delete_run(run_id)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        require_signature=True,
+        signing_key="sign-key",
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_INVALID_SIGNATURE"
+    assert "no signature section" in (result.error_message or "")
+
+
+def test_restore_run_fails_on_invalid_signature(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-signed-invalid"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    source_run = repo.get_run(run_id)
+    assert source_run is not None
+
+    source_zip = export_run_bundle(
+        artifacts_root_path=source_run.artifacts_root_path,
+        signing_key="sign-key",
+    )
+    tampered_zip = tmp_path / "tampered-signature.zip"
+    _tamper_manifest_signature(
+        source_zip_path=source_zip,
+        target_zip_path=tampered_zip,
+    )
+    repo.delete_run(run_id)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=tampered_zip,
+        signing_key="sign-key",
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_INVALID_SIGNATURE"
+    assert result.signature_verification_status == "failed"
+
+
+def test_restore_signed_bundle_without_key_warns_in_non_strict(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-signed-no-key"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    source_run = repo.get_run(run_id)
+    assert source_run is not None
+
+    zip_path = export_run_bundle(
+        artifacts_root_path=source_run.artifacts_root_path,
+        signing_key="sign-key",
+    )
+    repo.delete_run(run_id)
+
+    result = restore_run_bundle(repo=repo, zip_path=zip_path)
+
+    assert result.status == "restored"
+    assert result.error_code is None
+    assert result.archive_signed is True
+    assert result.signature_verification_status == "signed_unverified_missing_key"
+    assert any("Signature was not verified" in warning for warning in result.warnings)
 
 
 def test_restore_fails_on_bundle_manifest_checksum_mismatch(tmp_path: Path) -> None:
@@ -248,8 +377,28 @@ def test_restore_legacy_zip_without_bundle_manifest_warns(tmp_path: Path) -> Non
 
     assert result.status == "restored"
     assert result.manifest_verification_status == "legacy_missing_manifest"
+    assert result.signature_verification_status == "missing_manifest_unsigned_legacy"
+    assert result.archive_signed is False
     assert result.files_checked == 0
     assert any("legacy archive restored" in warning for warning in result.warnings)
+
+
+def test_restore_strict_mode_rejects_unsigned_legacy(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    zip_path = tmp_path / "legacy-unsigned.zip"
+    with ZipFile(zip_path, "w") as archive:
+        archive.writestr("run.json", json.dumps({"run_id": "x", "session_id": "s"}))
+        archive.writestr("logs/run.log", "line")
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        require_signature=True,
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "RESTORE_INVALID_SIGNATURE"
+    assert "strict mode" in (result.error_message or "")
 
 
 def test_restore_rejects_invalid_archive_traversal(tmp_path: Path) -> None:
@@ -303,6 +452,61 @@ def test_restore_rejects_archive_on_compression_ratio_limit(tmp_path: Path) -> N
     assert result.status == "failed"
     assert result.error_code == "RESTORE_INVALID_ARCHIVE"
     assert "max_compression_ratio" in (result.error_message or "")
+
+
+def test_restore_verify_only_success_without_writes(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-verify-only"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    run = repo.get_run(run_id)
+    assert run is not None
+    zip_path = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+    repo.delete_run(run_id)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=zip_path,
+        verify_only=True,
+    )
+
+    assert result.status == "verified"
+    assert result.verify_only is True
+    assert result.error_code is None
+    assert result.run_id == run_id
+    assert result.session_id == session_id
+    assert result.artifacts_root_path is not None
+    assert not Path(result.artifacts_root_path).exists()
+    assert repo.get_run(run_id) is None
+
+
+def test_restore_verify_only_fails_on_invalid_signature(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session_id = "session-verify-only-signature"
+    run_id = _seed_restorable_run(repo=repo, session_id=session_id)
+    run = repo.get_run(run_id)
+    assert run is not None
+
+    source_zip = export_run_bundle(
+        artifacts_root_path=run.artifacts_root_path,
+        signing_key="sign-key",
+    )
+    tampered_zip = tmp_path / "verify-only-invalid-signature.zip"
+    _tamper_manifest_signature(
+        source_zip_path=source_zip,
+        target_zip_path=tampered_zip,
+    )
+    repo.delete_run(run_id)
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=tampered_zip,
+        signing_key="sign-key",
+        verify_only=True,
+    )
+
+    assert result.status == "failed"
+    assert result.verify_only is True
+    assert result.error_code == "RESTORE_INVALID_SIGNATURE"
 
 
 def test_restore_fails_when_run_exists_without_overwrite(tmp_path: Path) -> None:

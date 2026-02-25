@@ -256,7 +256,13 @@ def test_retention_export_failure_skips_delete(
         created_at="2025-01-01T00:00:00+00:00",
     )
 
-    def _raise_export_error(*, artifacts_root_path: str, output_dir: str | None = None):
+    def _raise_export_error(
+        *,
+        artifacts_root_path: str,
+        output_dir: str | None = None,
+        signing_key: str | None = None,
+    ):
+        assert signing_key is None
         raise ZipExportError("export failed")
 
     monkeypatch.setattr(retention_module, "export_run_bundle", _raise_export_error)

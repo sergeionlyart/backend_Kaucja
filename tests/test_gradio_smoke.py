@@ -913,7 +913,13 @@ def test_delete_history_run_with_backup_failure_keeps_run(
         total_time_ms=10.0,
     )
 
-    def _raise_backup_error(*, artifacts_root_path: str, output_dir: str | None = None):
+    def _raise_backup_error(
+        *,
+        artifacts_root_path: str,
+        output_dir: str | None = None,
+        signing_key: str | None = None,
+    ):
+        assert signing_key is None
         raise ZipExportError("backup failed")
 
     monkeypatch.setattr(gradio_app_module, "export_run_bundle", _raise_backup_error)
@@ -1024,6 +1030,10 @@ def test_restore_history_run_bundle_success_cycle(tmp_path: Path) -> None:
     assert "Restore completed." in restore_status
     assert "manifest_verification=verified" in restore_details
     assert "files_checked=" in restore_details
+    assert "signature_verification=unsigned" in restore_details
+    assert "archive_signed=False" in restore_details
+    assert "strict_mode=False" in restore_details
+    assert "verify_only=False" in restore_details
     assert "rollback_attempted=False" in restore_details
     assert restored_run_id == run_id
     assert Path(restored_artifacts_root).is_dir()
@@ -1062,7 +1072,7 @@ def test_restore_history_run_bundle_invalid_archive(tmp_path: Path) -> None:
         limit=20,
     )
 
-    assert restore_status == "Restore failed."
+    assert restore_status.startswith("Restore failed.")
     assert "RESTORE_INVALID_ARCHIVE" in restore_details
     assert restored_run_id == ""
     assert restored_artifacts_root == ""
@@ -1127,9 +1137,133 @@ def test_restore_history_run_bundle_integrity_failure(tmp_path: Path) -> None:
         limit=20,
     )
 
-    assert restore_status == "Restore failed."
+    assert restore_status.startswith("Restore failed.")
     assert "RESTORE_INVALID_ARCHIVE" in restore_details
     assert "manifest_verification=failed" in restore_details
+    assert rows == []
+
+
+def test_restore_history_run_bundle_verify_only_signed(
+    tmp_path: Path,
+) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-verify-only-ui")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=22,
+        total_cost=0.03,
+        total_time_ms=11.0,
+    )
+    export_status, zip_path, _download = export_history_run_bundle(
+        repo=repo,
+        run_id=run_id,
+        signing_key="ui-sign-key",
+    )
+    assert "Export completed." in export_status
+    repo.delete_run(run_id)
+
+    (
+        restore_status,
+        restore_details,
+        restored_run_id,
+        restored_artifacts_root,
+        rows,
+        compare_a,
+        compare_b,
+        run_id_update,
+    ) = restore_history_run_bundle(
+        repo=repo,
+        zip_file_path=zip_path,
+        overwrite_existing=False,
+        verify_only=True,
+        require_signature=True,
+        signing_key="ui-sign-key",
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert "Verification completed." in restore_status
+    assert restored_run_id == run_id
+    assert "signature_verification=verified" in restore_details
+    assert "archive_signed=True" in restore_details
+    assert "strict_mode=True" in restore_details
+    assert "verify_only=True" in restore_details
+    assert not Path(restored_artifacts_root).exists()
+    assert rows == []
+    assert compare_a["choices"] == []
+    assert compare_b["choices"] == []
+    assert repo.get_run(run_id) is None
+
+
+def test_restore_history_run_bundle_strict_rejects_unsigned(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-strict-unsigned-ui")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=10,
+        total_cost=0.01,
+        total_time_ms=8.0,
+    )
+    export_status, zip_path, _download = export_history_run_bundle(
+        repo=repo,
+        run_id=run_id,
+    )
+    assert "Export completed." in export_status
+    repo.delete_run(run_id)
+
+    (
+        restore_status,
+        restore_details,
+        _restored_run_id,
+        _restored_artifacts_root,
+        rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+    ) = restore_history_run_bundle(
+        repo=repo,
+        zip_file_path=zip_path,
+        overwrite_existing=False,
+        verify_only=False,
+        require_signature=True,
+        signing_key="ui-sign-key",
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert restore_status.startswith("Restore failed.")
+    assert "RESTORE_INVALID_SIGNATURE" in restore_details
+    assert "strict_mode=True" in restore_details
     assert rows == []
 
 
@@ -1152,6 +1286,10 @@ def test_restore_history_run_bundle_shows_rollback_details(
             error_message="metadata failed",
             manifest_verification_status="verified",
             files_checked=7,
+            signature_verification_status="verified",
+            archive_signed=True,
+            signature_required=True,
+            verify_only=False,
             rollback_attempted=True,
             rollback_succeeded=False,
         )
@@ -1180,7 +1318,7 @@ def test_restore_history_run_bundle_shows_rollback_details(
         limit=20,
     )
 
-    assert restore_status == "Restore failed."
+    assert restore_status.startswith("Restore failed.")
     assert "manifest_verification=verified" in restore_details
     assert "rollback_attempted=True" in restore_details
     assert "rollback_succeeded=False" in restore_details

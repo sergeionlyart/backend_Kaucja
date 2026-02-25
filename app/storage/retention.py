@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from app.config.settings import get_settings
 from app.storage.artifacts import ArtifactsManager
 from app.storage.models import RetentionCleanupResult
 from app.storage.repo import StorageRepo
@@ -22,6 +23,7 @@ def purge_runs_older_than_days(
     export_dir: Path | str | None = None,
     report_path: Path | str | None = None,
     report_dir: Path | str | None = None,
+    signing_key: str | None = None,
 ) -> RetentionCleanupResult:
     if days < 0:
         raise ValueError("days must be >= 0")
@@ -71,6 +73,7 @@ def purge_runs_older_than_days(
                 zip_path = export_run_bundle(
                     artifacts_root_path=run.artifacts_root_path,
                     output_dir=export_dir,
+                    signing_key=signing_key,
                 )
                 backup_zip_path = str(zip_path)
             except (
@@ -242,6 +245,7 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    settings = get_settings()
     repo = _build_repo(
         db_path=Path(args.db_path),
         data_dir=(Path(args.data_dir) if args.data_dir else None),
@@ -254,6 +258,7 @@ def main() -> None:
         export_dir=(Path(args.export_dir) if args.export_dir else None),
         report_dir=(Path(args.report_dir) if args.report_dir else None),
         report_path=(Path(args.report_path) if args.report_path else None),
+        signing_key=settings.bundle_signing_key,
     )
     print(json.dumps(asdict(result), ensure_ascii=False, indent=2, sort_keys=True))
 

@@ -83,3 +83,23 @@ def test_export_run_bundle_rejects_symlink_paths(tmp_path: Path) -> None:
 
     with pytest.raises(ZipExportError, match="Refusing to export symlinked path"):
         export_run_bundle(artifacts_root_path=root)
+
+
+def test_export_run_bundle_adds_signature_when_key_provided(tmp_path: Path) -> None:
+    root = tmp_path / "run-artifacts"
+    _build_run_artifacts(root)
+
+    zip_path = export_run_bundle(
+        artifacts_root_path=root,
+        signing_key="test-signing-key",
+    )
+
+    with ZipFile(zip_path, "r") as archive:
+        manifest_payload = json.loads(
+            archive.read("bundle_manifest.json").decode("utf-8")
+        )
+        signature = manifest_payload.get("signature")
+        assert isinstance(signature, dict)
+        assert signature.get("algorithm") == "hmac-sha256"
+        signature_hex = str(signature.get("hmac_sha256") or "")
+        assert len(signature_hex) == 64
