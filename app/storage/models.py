@@ -91,3 +91,16 @@ class RetentionCleanupResult:
     deleted_run_ids: list[str]
     audit_entries: list[dict[str, Any]]
     errors: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreRunResult:
+    status: str
+    run_id: str | None
+    session_id: str | None
+    artifacts_root_path: str | None
+    restored_paths: list[str]
+    warnings: list[str]
+    errors: list[str]
+    error_code: str | None
+    error_message: str | None

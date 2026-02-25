@@ -63,6 +63,63 @@ Current behavior:
 - Export rejects symlinked paths inside run artifacts (path traversal protection).
 - ZIP generation is local filesystem operation; large runs may take noticeable time.
 
+## Restore Run from ZIP
+
+### Restore from CLI
+
+Basic command:
+
+```bash
+python -m app.storage.restore \
+  --zip-path data/sessions/<session_id>/runs/<run_id>_bundle.zip \
+  --db-path data/kaucja.sqlite3 \
+  --data-dir data
+```
+
+Overwrite existing run:
+
+```bash
+python -m app.storage.restore \
+  --zip-path data/sessions/<session_id>/runs/<run_id>_bundle.zip \
+  --db-path data/kaucja.sqlite3 \
+  --data-dir data \
+  --overwrite-existing
+```
+
+Output:
+
+- JSON report with `status`, `run_id`, `session_id`, `restored_paths`, `warnings`, `errors`, `error_code`, `error_message`.
+
+Safety checks:
+
+- archive entry names must be relative (no absolute paths, no `..`);
+- symlink entries in ZIP are rejected;
+- archive must include `run.json` and at least one layout root (`logs/`, `documents/`, `llm/`).
+
+Error codes:
+
+- `RESTORE_INVALID_ARCHIVE`
+- `RESTORE_RUN_EXISTS`
+- `RESTORE_FS_ERROR`
+- `RESTORE_DB_ERROR`
+
+### Restore from UI
+
+In History section:
+
+1. Upload ZIP in `Restore ZIP File`.
+2. Optional: enable `Overwrite existing run`.
+3. Click `Restore run bundle`.
+
+UI shows:
+
+- restore status,
+- technical details,
+- restored `run_id`,
+- restored artifacts root path.
+
+After success, history table and compare dropdowns are refreshed automatically.
+
 ## Delete Run / Retention
 
 ### Delete single run from UI

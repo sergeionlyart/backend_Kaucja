@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
 import gradio as gr
 import pytest
@@ -21,6 +22,7 @@ from app.ui.gradio_app import (
     list_history_rows,
     load_history_run,
     refresh_history_for_ui,
+    restore_history_run_bundle,
     run_full_pipeline as run_full_pipeline_ui,
     save_prompt_as_new_version_for_ui,
 )
@@ -163,10 +165,12 @@ def _seed_history_run_for_compare(
     )
 
     run_root = Path(run.artifacts_root_path)
-    (run_root / "run.json").write_text(
-        json.dumps({"run_id": run.run_id, "status": "completed"}),
-        encoding="utf-8",
-    )
+    doc_ocr_dir = run_root / "documents" / "0000001" / "ocr"
+    doc_ocr_dir.mkdir(parents=True, exist_ok=True)
+    original_dir = run_root / "documents" / "0000001" / "original"
+    original_dir.mkdir(parents=True, exist_ok=True)
+    original_file = original_dir / "contract.pdf"
+    original_file.write_bytes(b"%PDF-1.4 fake")
     llm_dir = run_root / "llm"
     llm_dir.mkdir(parents=True, exist_ok=True)
     parsed_path = llm_dir / "response_parsed.json"
@@ -176,9 +180,59 @@ def _seed_history_run_for_compare(
         json.dumps({"valid": True, "schema_errors": [], "invariant_errors": []}),
         encoding="utf-8",
     )
-    doc_ocr_dir = run_root / "documents" / "0000001" / "ocr"
-    doc_ocr_dir.mkdir(parents=True, exist_ok=True)
     (doc_ocr_dir / "combined.md").write_text("doc-combined", encoding="utf-8")
+    (doc_ocr_dir / "raw_response.json").write_text("{}", encoding="utf-8")
+    (run_root / "logs" / "run.log").write_text("run log line\n", encoding="utf-8")
+
+    (run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "run_id": run.run_id,
+                "status": "completed",
+                "inputs": {
+                    "provider": provider,
+                    "model": model,
+                    "prompt_name": "kaucja_gap_analysis",
+                    "prompt_version": prompt_version,
+                    "schema_version": prompt_version,
+                    "ocr_params": {"model": "mistral-ocr-latest"},
+                    "llm_params": {"openai_reasoning_effort": "auto"},
+                },
+                "artifacts": {
+                    "root": str(run_root),
+                    "run_log": str(run_root / "logs" / "run.log"),
+                    "documents": [
+                        {
+                            "doc_id": "0000001",
+                            "ocr_status": "ok",
+                            "pages_count": 1,
+                            "combined_markdown_path": str(doc_ocr_dir / "combined.md"),
+                            "ocr_artifacts_path": str(doc_ocr_dir),
+                            "ocr_error": None,
+                        }
+                    ],
+                    "llm": {
+                        "response_parsed_path": str(parsed_path),
+                        "response_raw_path": str(llm_dir / "response_raw.txt"),
+                        "validation_path": str(llm_dir / "validation.json"),
+                    },
+                },
+                "metrics": {
+                    "timings": {"t_total_ms": total_time_ms},
+                    "usage": {"input_tokens": max(tokens // 2, 1)},
+                    "usage_normalized": {"total_tokens": tokens},
+                    "cost": {"total_cost_usd": total_cost},
+                },
+                "validation": {"valid": True, "errors": []},
+                "created_at": "2026-02-25T00:00:00+00:00",
+                "updated_at": "2026-02-25T00:00:00+00:00",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     repo.upsert_llm_output(
         run_id=run.run_id,
@@ -891,3 +945,122 @@ def test_delete_history_run_with_backup_failure_keeps_run(
     assert "BACKUP_EXPORT_FAILED" in details
     assert repo.get_run(run_id) is not None
     assert len(rows) == 1
+
+
+def test_restore_history_run_bundle_success_cycle(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-restore-ui")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=100,
+        total_cost=0.05,
+        total_time_ms=20.0,
+    )
+
+    export_status, zip_path, _download = export_history_run_bundle(
+        repo=repo, run_id=run_id
+    )
+    assert "Export completed." in export_status
+    assert zip_path
+
+    (
+        delete_status,
+        _backup_path,
+        _details,
+        _rows,
+        _a,
+        _b,
+        _run_update,
+        _confirm_update,
+    ) = delete_history_run(
+        repo=repo,
+        run_id=run_id,
+        confirm_run_id=run_id,
+        create_backup_zip=False,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+    assert "Delete completed." in delete_status
+    assert repo.get_run(run_id) is None
+
+    (
+        restore_status,
+        restore_details,
+        restored_run_id,
+        restored_artifacts_root,
+        rows,
+        compare_a,
+        compare_b,
+        run_id_update,
+    ) = restore_history_run_bundle(
+        repo=repo,
+        zip_file_path=zip_path,
+        overwrite_existing=False,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert "Restore completed." in restore_status
+    assert "warnings=" in restore_details
+    assert restored_run_id == run_id
+    assert Path(restored_artifacts_root).is_dir()
+    assert any(row[0] == run_id for row in rows)
+    assert run_id in compare_a["choices"]
+    assert run_id in compare_b["choices"]
+    assert run_id_update["value"] == run_id
+    assert repo.get_run(run_id) is not None
+
+
+def test_restore_history_run_bundle_invalid_archive(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    invalid_zip = tmp_path / "invalid.zip"
+    with ZipFile(invalid_zip, "w") as archive:
+        archive.writestr("logs/run.log", "only log")
+
+    (
+        restore_status,
+        restore_details,
+        restored_run_id,
+        restored_artifacts_root,
+        rows,
+        _compare_a,
+        _compare_b,
+        _run_update,
+    ) = restore_history_run_bundle(
+        repo=repo,
+        zip_file_path=invalid_zip,
+        overwrite_existing=False,
+        session_id="",
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert restore_status == "Restore failed."
+    assert "RESTORE_INVALID_ARCHIVE" in restore_details
+    assert restored_run_id == ""
+    assert restored_artifacts_root == ""
+    assert rows == []

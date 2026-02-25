@@ -24,6 +24,7 @@ from app.storage.artifact_reader import (
     safe_read_text,
 )
 from app.storage.repo import StorageRepo
+from app.storage.restore import restore_run_bundle
 from app.storage.zip_export import ZipExportError, export_run_bundle
 from app.ui.result_helpers import (
     build_checklist_rows,
@@ -260,6 +261,101 @@ def export_history_run_bundle(
 
     status = f"Export completed. run_id={target_run_id}"
     return status, str(zip_path), str(zip_path)
+
+
+def restore_history_run_bundle(
+    *,
+    repo: StorageRepo,
+    zip_file_path: str | Path | None,
+    overwrite_existing: bool,
+    session_id: str,
+    provider: str,
+    model: str,
+    prompt_version: str,
+    date_from: str,
+    date_to: str,
+    limit: float | int,
+) -> tuple[str, str, str, str, list[list[str]], Any, Any, Any]:
+    rows, compare_a, compare_b = refresh_history_for_ui(
+        repo=repo,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        prompt_version=prompt_version,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    run_id_update = gr.update()
+
+    if zip_file_path is None:
+        return (
+            "Restore failed: ZIP file is not provided.",
+            "technical_details=Upload a ZIP file before restore.",
+            "",
+            "",
+            rows,
+            compare_a,
+            compare_b,
+            run_id_update,
+        )
+
+    result = restore_run_bundle(
+        repo=repo,
+        zip_path=Path(zip_file_path),
+        overwrite_existing=overwrite_existing,
+    )
+
+    rows, compare_a, compare_b = refresh_history_for_ui(
+        repo=repo,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        prompt_version=prompt_version,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+
+    if result.status == "restored":
+        restored_run_id = result.run_id or ""
+        status = (
+            f"Restore completed. run_id={restored_run_id} "
+            f"session_id={result.session_id or ''}"
+        )
+        details = (
+            "technical_details="
+            f"warnings={len(result.warnings)} "
+            f"errors={len(result.errors)}"
+        )
+        run_id_update = gr.update(value=restored_run_id)
+        return (
+            status,
+            details,
+            restored_run_id,
+            result.artifacts_root_path or "",
+            rows,
+            compare_a,
+            compare_b,
+            run_id_update,
+        )
+
+    details = (
+        "technical_details="
+        f"error_code={result.error_code or ''} "
+        f"error_message={result.error_message or ''} "
+        f"errors={' | '.join(result.errors)}"
+    )
+    return (
+        "Restore failed.",
+        details,
+        result.run_id or "",
+        result.artifacts_root_path or "",
+        rows,
+        compare_a,
+        compare_b,
+        run_id_update,
+    )
 
 
 def delete_history_run(
@@ -884,6 +980,25 @@ def build_app(
             export_path_box = gr.Textbox(label="Export ZIP Path", interactive=False)
         export_file_box = gr.File(label="Download ZIP", interactive=False)
         with gr.Row():
+            restore_zip_file = gr.File(label="Restore ZIP File", type="filepath")
+            restore_overwrite_existing = gr.Checkbox(
+                label="Overwrite existing run",
+                value=False,
+            )
+            restore_button = gr.Button("Restore run bundle")
+        with gr.Row():
+            restore_status_box = gr.Textbox(label="Restore Status", interactive=False)
+            restore_details_box = gr.Textbox(
+                label="Restore Technical Details",
+                interactive=False,
+            )
+        with gr.Row():
+            restore_run_id_box = gr.Textbox(label="Restored Run ID", interactive=False)
+            restore_artifacts_path_box = gr.Textbox(
+                label="Restored Artifacts Path",
+                interactive=False,
+            )
+        with gr.Row():
             delete_status_box = gr.Textbox(label="Delete Status", interactive=False)
             delete_backup_path_box = gr.Textbox(
                 label="Delete Backup ZIP Path",
@@ -1081,6 +1196,50 @@ def build_app(
             ),
             inputs=[history_run_id],
             outputs=[export_status_box, export_path_box, export_file_box],
+        )
+
+        restore_button.click(
+            fn=lambda selected_zip_file,
+            overwrite_existing_flag,
+            session_filter,
+            provider_filter,
+            model_filter,
+            prompt_filter,
+            date_from_filter,
+            date_to_filter,
+            result_limit: restore_history_run_bundle(
+                repo=storage_repo,
+                zip_file_path=selected_zip_file,
+                overwrite_existing=overwrite_existing_flag,
+                session_id=session_filter,
+                provider=provider_filter,
+                model=model_filter,
+                prompt_version=prompt_filter,
+                date_from=date_from_filter,
+                date_to=date_to_filter,
+                limit=result_limit,
+            ),
+            inputs=[
+                restore_zip_file,
+                restore_overwrite_existing,
+                history_session_id,
+                history_provider,
+                history_model,
+                history_prompt_version,
+                history_date_from,
+                history_date_to,
+                history_limit,
+            ],
+            outputs=[
+                restore_status_box,
+                restore_details_box,
+                restore_run_id_box,
+                restore_artifacts_path_box,
+                history_table,
+                compare_run_id_a,
+                compare_run_id_b,
+                history_run_id,
+            ],
         )
 
         delete_history_button.click(
