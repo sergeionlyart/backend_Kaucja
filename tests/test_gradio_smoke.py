@@ -13,6 +13,7 @@ from app.storage.repo import StorageRepo
 from app.ui.gradio_app import (
     build_app,
     compare_history_runs,
+    export_history_run_bundle,
     list_history_rows,
     load_history_run,
     refresh_history_for_ui,
@@ -158,6 +159,10 @@ def _seed_history_run_for_compare(
     )
 
     run_root = Path(run.artifacts_root_path)
+    (run_root / "run.json").write_text(
+        json.dumps({"run_id": run.run_id, "status": "completed"}),
+        encoding="utf-8",
+    )
     llm_dir = run_root / "llm"
     llm_dir.mkdir(parents=True, exist_ok=True)
     parsed_path = llm_dir / "response_parsed.json"
@@ -167,6 +172,9 @@ def _seed_history_run_for_compare(
         json.dumps({"valid": True, "schema_errors": [], "invariant_errors": []}),
         encoding="utf-8",
     )
+    doc_ocr_dir = run_root / "documents" / "0000001" / "ocr"
+    doc_ocr_dir.mkdir(parents=True, exist_ok=True)
+    (doc_ocr_dir / "combined.md").write_text("doc-combined", encoding="utf-8")
 
     repo.upsert_llm_output(
         run_id=run.run_id,
@@ -622,3 +630,47 @@ def test_compare_history_runs_handles_missing_run(tmp_path: Path) -> None:
     assert compare_rows[0][0] == "KAUCJA_PAYMENT_PROOF"
     payload = json.loads(compare_json)
     assert payload["run_b"]["exists"] is False
+
+
+def test_export_history_run_bundle_success(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-export")
+    run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=100,
+        total_cost=0.05,
+        total_time_ms=50.0,
+    )
+
+    status, zip_path, download_path = export_history_run_bundle(
+        repo=repo, run_id=run_id
+    )
+
+    assert "Export completed." in status
+    assert zip_path.endswith("_bundle.zip")
+    assert download_path == zip_path
+    archive_path = Path(zip_path)
+    assert archive_path.is_file()
+
+
+def test_export_history_run_bundle_handles_missing_run(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+
+    status, zip_path, download_path = export_history_run_bundle(
+        repo=repo,
+        run_id="missing-run",
+    )
+
+    assert "not found" in status
+    assert zip_path == ""
+    assert download_path is None

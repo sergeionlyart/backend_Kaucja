@@ -24,6 +24,7 @@ from app.storage.artifact_reader import (
     safe_read_text,
 )
 from app.storage.repo import StorageRepo
+from app.storage.zip_export import ZipExportError, export_run_bundle
 from app.ui.result_helpers import (
     build_checklist_rows,
     build_gap_rows,
@@ -235,6 +236,30 @@ def compare_history_runs(
         _comparison_metrics_text(diff),
         json.dumps(diff, ensure_ascii=False, indent=2),
     )
+
+
+def export_history_run_bundle(
+    *,
+    repo: StorageRepo,
+    run_id: str,
+) -> tuple[str, str, str | None]:
+    target_run_id = run_id.strip()
+    if not target_run_id:
+        return "Export failed: run_id is empty.", "", None
+
+    run = repo.get_run(target_run_id)
+    if run is None:
+        return f"Export failed: run_id={target_run_id} not found.", "", None
+
+    try:
+        zip_path = export_run_bundle(artifacts_root_path=run.artifacts_root_path)
+    except (FileNotFoundError, NotADirectoryError, ZipExportError) as error:
+        return f"Export failed: {error}", "", None
+    except OSError as error:
+        return f"Export failed: filesystem error: {error}", "", None
+
+    status = f"Export completed. run_id={target_run_id}"
+    return status, str(zip_path), str(zip_path)
 
 
 def load_history_run(
@@ -691,6 +716,12 @@ def build_app(
         with gr.Row():
             history_run_id = gr.Textbox(label="Run ID to load")
             load_history_button = gr.Button("Load Selected Run")
+            export_history_button = gr.Button("Export run bundle (zip)")
+
+        with gr.Row():
+            export_status_box = gr.Textbox(label="Export Status", interactive=False)
+            export_path_box = gr.Textbox(label="Export ZIP Path", interactive=False)
+        export_file_box = gr.File(label="Download ZIP", interactive=False)
 
         gr.Markdown("### Compare Runs")
         with gr.Row():
@@ -870,6 +901,15 @@ def build_app(
                 metrics_box,
                 parsed_json_state,
             ],
+        )
+
+        export_history_button.click(
+            fn=lambda selected_run_id: export_history_run_bundle(
+                repo=storage_repo,
+                run_id=selected_run_id,
+            ),
+            inputs=[history_run_id],
+            outputs=[export_status_box, export_path_box, export_file_box],
         )
 
         compare_button.click(
