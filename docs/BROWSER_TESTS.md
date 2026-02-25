@@ -20,6 +20,23 @@ Use explicit prepare when needed:
 ./scripts/browser/run_regression.sh --prepare-only
 ```
 
+## Reproducible Install
+
+- Runtime lock: `requirements/runtime.lock.txt`
+- Dev lock: `requirements/dev.lock.txt`
+
+Install from lock directly:
+
+```bash
+./scripts/deps/install_from_lock.sh --group dev
+```
+
+Regenerate lock-files (runtime + dev):
+
+```bash
+./scripts/deps/regenerate_locks.sh
+```
+
 ## Test Profiles
 
 - core profile (default): excludes browser tests
@@ -139,6 +156,18 @@ pytest -q -o addopts= tests/browser -m "browser_p0 or browser_p1" --junitxml art
   - per-iteration artifacts/logs,
   - `report.json`,
   - `report.md`.
+
+## Minimal Triage Bundle
+
+For any failed browser run collect at minimum:
+
+- app log: `.../app.log` (or `data/browser_regression_<suite>_<run_id>_app.log`)
+- junit: `.../junit.xml`
+- runner stdout: `.../runner.stdout.log`
+- runner stderr: `.../runner.stderr.log`
+- Playwright diagnostics on failed tests: `trace.zip`, `*.png`, `*.webm`
+
+`run_regression.sh` now validates key diagnostics at the end and fails fast if required files are missing.
 
 ## CI Execution
 

@@ -23,5 +23,5 @@ cleanup_lock() {
 }
 trap cleanup_lock EXIT INT TERM
 
-python -m pip install -e ".[dev]"
+./scripts/deps/install_from_lock.sh --group dev
 python -m playwright install chromium

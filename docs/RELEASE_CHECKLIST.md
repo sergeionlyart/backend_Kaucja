@@ -6,6 +6,23 @@
 ./scripts/release/run_preflight.sh
 ```
 
+## Reproducible install
+
+- Runtime dependencies lock: `requirements/runtime.lock.txt`
+- Dev/test dependencies lock: `requirements/dev.lock.txt`
+
+Install from lock:
+
+```bash
+./scripts/deps/install_from_lock.sh --group dev
+```
+
+Regenerate locks (when dependencies are intentionally changed):
+
+```bash
+./scripts/deps/regenerate_locks.sh
+```
+
 ## Main CI gate (blocking)
 
 Primary CI (`.github/workflows/ci.yml`) now includes mandatory `browser-p0-gate`
@@ -42,11 +59,20 @@ Additional browser artifacts from preflight:
 - `artifacts/release_preflight/<timestamp>/browser_p0/`
 - `artifacts/release_preflight/<timestamp>/browser_full/`
 
+Minimal triage bundle from each browser suite:
+
+- `junit.xml`
+- `runner.stdout.log`
+- `runner.stderr.log`
+- suite app log (`browser_p0_app.log` / `browser_full_app.log`)
+- Playwright failure diagnostics (`trace.zip`, screenshots, video when present)
+
 ## How to interpret report
 
 `report.json` contains:
 
 - global: `overall_status`, `go_no_go`, `started_at`, `finished_at`, `total_duration_seconds`
+- environment: `commit_sha`, `python_version`, `playwright_version`, `browser_suites`
 - per-stage: `name`, `status`, `duration_seconds`, `exit_code`, `log_path`, `command`
 - summary counters: `pass`, `fail`, `skipped`, `total`
 

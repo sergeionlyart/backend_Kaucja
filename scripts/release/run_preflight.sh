@@ -17,6 +17,22 @@ import time
 print(f"{time.time():.6f}")
 PY
 )"
+COMMIT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+PYTHON_VERSION="$(python - <<'PY'
+import platform
+print(platform.python_version())
+PY
+)"
+PLAYWRIGHT_VERSION="$(python - <<'PY'
+from importlib import metadata
+
+try:
+    print(metadata.version("playwright"))
+except metadata.PackageNotFoundError:
+    print("not_installed")
+PY
+)"
+BROWSER_SUITES="p0,full"
 
 append_stage() {
   local stage_name="$1"
@@ -206,6 +222,10 @@ STARTED_AT="$STARTED_AT" \
 FINISHED_AT="$FINISHED_AT" \
 TOTAL_DURATION="$TOTAL_DURATION" \
 OVERALL_FAIL="$overall_fail" \
+COMMIT_SHA="$COMMIT_SHA" \
+PYTHON_VERSION="$PYTHON_VERSION" \
+PLAYWRIGHT_VERSION="$PLAYWRIGHT_VERSION" \
+BROWSER_SUITES="$BROWSER_SUITES" \
 python - <<'PY'
 from __future__ import annotations
 
@@ -244,6 +264,12 @@ overall_status = "fail" if mandatory_failures > 0 or int(os.environ["OVERALL_FAI
 go_no_go = "GO" if overall_status == "pass" else "NO-GO"
 
 report = {
+    "environment": {
+        "browser_suites": os.environ["BROWSER_SUITES"].split(","),
+        "commit_sha": os.environ["COMMIT_SHA"],
+        "playwright_version": os.environ["PLAYWRIGHT_VERSION"],
+        "python_version": os.environ["PYTHON_VERSION"],
+    },
     "finished_at": os.environ["FINISHED_AT"],
     "go_no_go": go_no_go,
     "overall_status": overall_status,
@@ -275,6 +301,13 @@ lines: list[str] = [
     f"- Finished at: `{report['finished_at']}`",
     f"- Total duration (s): `{report['total_duration_seconds']}`",
     f"- Report root: `{report['report_root']}`",
+    "",
+    "## Environment",
+    "",
+    f"- Commit SHA: `{report['environment']['commit_sha']}`",
+    f"- Python version: `{report['environment']['python_version']}`",
+    f"- Playwright version: `{report['environment']['playwright_version']}`",
+    f"- Browser suites: `{', '.join(report['environment']['browser_suites'])}`",
     "",
     "## Stage Summary",
     "",

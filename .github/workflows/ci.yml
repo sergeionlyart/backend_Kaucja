@@ -17,9 +17,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: ./scripts/deps/install_from_lock.sh --group dev
 
       - name: Ruff check
         run: ruff check .
@@ -43,9 +41,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: ./scripts/deps/install_from_lock.sh --group dev
 
       - name: Install Playwright browser
         run: python -m playwright install chromium
