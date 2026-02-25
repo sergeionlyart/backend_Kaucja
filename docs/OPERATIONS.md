@@ -18,6 +18,55 @@ pytest -q
 python -c "from app.ui.gradio_app import build_app; build_app(); print('gradio_app_started')"
 ```
 
+## Live Provider Smoke
+
+Run local operational diagnostics for provider contracts:
+
+```bash
+python -m app.ops.live_smoke --output data/live_smoke_report.json
+```
+
+Strict mode (`skipped` becomes failure):
+
+```bash
+python -m app.ops.live_smoke --strict --output data/live_smoke_report.json
+```
+
+Report format is machine-readable JSON with:
+
+- `started_at`, `finished_at`, `overall_status`
+- `providers[]` entries:
+  - `name`
+  - `status` (`pass|fail|skipped`)
+  - `latency_ms`
+  - `error_code`
+  - `error_message`
+
+Status interpretation:
+
+- `pass`: provider call succeeded under project contract.
+- `fail`: provider call failed (taxonomy-aligned `error_code` where applicable).
+- `skipped`: diagnostic intentionally not executed (for example missing API key/SDK).
+
+Operational actions:
+
+- `overall_status=pass`:
+  - non-strict: all providers passed or were skipped;
+  - strict: all providers passed.
+- `overall_status=fail`:
+  - inspect `providers[].error_code/error_message`;
+  - check API key configuration and provider status;
+  - re-run smoke in strict mode after remediation.
+
+CI live-smoke workflow:
+
+- Workflow file: `.github/workflows/live-smoke.yml`
+- Triggers:
+  - `workflow_dispatch` (optional strict input),
+  - weekly schedule.
+- Report artifact: `live-smoke-report` (`artifacts/live_smoke_report.json`).
+- Main PR CI remains unchanged (`.github/workflows/ci.yml`).
+
 Restore limits and signing are configurable via `.env`:
 
 - `RESTORE_MAX_ENTRIES`
