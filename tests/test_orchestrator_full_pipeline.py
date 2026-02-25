@@ -197,6 +197,18 @@ def test_full_pipeline_success_persists_artifacts_db_and_metrics(
     assert (artifacts_root / "llm" / "response_parsed.json").is_file()
     assert (artifacts_root / "llm" / "validation.json").is_file()
 
+    manifest_path = artifacts_root / "run.json"
+    assert manifest_path.is_file()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["session_id"] == result.session_id
+    assert manifest["run_id"] == result.run_id
+    assert manifest["status"] == "completed"
+    assert "inputs" in manifest
+    assert "stages" in manifest
+    assert "artifacts" in manifest
+    assert "metrics" in manifest
+    assert "validation" in manifest
+
 
 def test_full_pipeline_llm_api_error_marks_run_failed(tmp_path: Path) -> None:
     orchestrator = _setup_orchestrator(

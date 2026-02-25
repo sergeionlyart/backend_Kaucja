@@ -5,6 +5,7 @@ import mimetypes
 import shutil
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, Sequence
 
@@ -15,6 +16,7 @@ from app.pipeline.validate_output import ValidationResult, validate_output
 from app.storage.artifacts import ArtifactsManager, DocumentArtifacts, RunArtifacts
 from app.storage.models import OCRStatus
 from app.storage.repo import StorageRepo
+from app.storage.run_manifest import init_run_manifest, update_run_manifest
 
 
 class OCRClientProtocol(Protocol):
@@ -108,6 +110,27 @@ class OCRPipelineOrchestrator:
         run_artifacts = self.artifacts_manager.ensure_run_structure(
             run.artifacts_root_path
         )
+        init_run_manifest(
+            artifacts_root_path=run.artifacts_root_path,
+            session_id=session.session_id,
+            run_id=run.run_id,
+            inputs=_build_manifest_inputs(
+                provider=provider,
+                model=model,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+                schema_version=prompt_version,
+                ocr_options=ocr_options,
+                llm_params={},
+            ),
+            artifacts={
+                "root": str(run_artifacts.artifacts_root_path.resolve()),
+                "run_log": str(run_artifacts.run_log_path.resolve()),
+                "documents": [],
+                "llm": {},
+            },
+            status="running",
+        )
         ocr_stage = self._run_ocr_documents(
             run_id=run.run_id,
             run_artifacts=run_artifacts,
@@ -133,6 +156,39 @@ class OCRPipelineOrchestrator:
             usage_json={},
             usage_normalized_json={},
             cost_json={},
+        )
+        update_run_manifest(
+            artifacts_root_path=run.artifacts_root_path,
+            updates={
+                "status": final_status,
+                "stages": {
+                    "ocr": {"status": final_status, "updated_at": _utc_now()},
+                    "llm": {"status": "skipped", "updated_at": _utc_now()},
+                    "finalize": {"status": final_status, "updated_at": _utc_now()},
+                },
+                "artifacts": {
+                    "documents": _manifest_document_entries(ocr_stage.documents),
+                },
+                "metrics": {
+                    "timings": {
+                        "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+                        "t_total_ms": ocr_stage.t_ocr_total_ms,
+                    },
+                    "usage": {},
+                    "usage_normalized": {},
+                    "cost": {},
+                },
+                "validation": {
+                    "valid": not ocr_stage.has_failures,
+                    "errors": []
+                    if not ocr_stage.has_failures
+                    else ["One or more documents failed OCR"],
+                },
+                "error_code": "OCR_STAGE_FAILED" if ocr_stage.has_failures else None,
+                "error_message": "One or more documents failed OCR"
+                if ocr_stage.has_failures
+                else None,
+            },
         )
         _append_run_log(
             run_artifacts.run_log_path,
@@ -163,6 +219,7 @@ class OCRPipelineOrchestrator:
             raise ValueError("At least one input file is required")
 
         started_at = time.perf_counter()
+        llm_runtime_params = llm_params or {}
         session = self.repo.create_session(session_id=session_id or None)
         run = self.repo.create_run(
             session_id=session.session_id,
@@ -172,6 +229,12 @@ class OCRPipelineOrchestrator:
             prompt_version=prompt_version,
             schema_version=prompt_version,
             status="running",
+            openai_reasoning_effort=_to_optional_param(
+                llm_runtime_params.get("openai_reasoning_effort")
+            ),
+            gemini_thinking_level=_to_optional_param(
+                llm_runtime_params.get("gemini_thinking_level")
+            ),
         )
 
         run_artifacts = self.artifacts_manager.ensure_run_structure(
@@ -179,6 +242,34 @@ class OCRPipelineOrchestrator:
         )
         llm_artifacts = self.artifacts_manager.create_llm_artifacts(
             artifacts_root_path=run.artifacts_root_path
+        )
+        init_run_manifest(
+            artifacts_root_path=run.artifacts_root_path,
+            session_id=session.session_id,
+            run_id=run.run_id,
+            inputs=_build_manifest_inputs(
+                provider=provider,
+                model=model,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+                schema_version=prompt_version,
+                ocr_options=ocr_options,
+                llm_params=llm_runtime_params,
+            ),
+            artifacts={
+                "root": str(run_artifacts.artifacts_root_path.resolve()),
+                "run_log": str(run_artifacts.run_log_path.resolve()),
+                "documents": [],
+                "llm": {
+                    "request_path": str(llm_artifacts.request_path.resolve()),
+                    "response_raw_path": str(llm_artifacts.response_raw_path.resolve()),
+                    "response_parsed_path": str(
+                        llm_artifacts.response_parsed_path.resolve()
+                    ),
+                    "validation_path": str(llm_artifacts.validation_path.resolve()),
+                },
+            },
+            status="running",
         )
 
         _append_run_log(
@@ -190,6 +281,20 @@ class OCRPipelineOrchestrator:
             run_artifacts=run_artifacts,
             input_paths=paths,
             ocr_options=ocr_options,
+        )
+        update_run_manifest(
+            artifacts_root_path=run.artifacts_root_path,
+            updates={
+                "stages": {
+                    "ocr": {
+                        "status": "failed" if ocr_stage.has_failures else "completed",
+                        "updated_at": _utc_now(),
+                    }
+                },
+                "artifacts": {
+                    "documents": _manifest_document_entries(ocr_stage.documents),
+                },
+            },
         )
 
         if ocr_stage.has_failures:
@@ -215,6 +320,23 @@ class OCRPipelineOrchestrator:
                 error_code="OCR_STAGE_FAILED",
                 error_message="One or more documents failed OCR",
             )
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "status": "failed",
+                    "stages": {
+                        "llm": {"status": "skipped", "updated_at": _utc_now()},
+                        "finalize": {"status": "failed", "updated_at": _utc_now()},
+                    },
+                    "metrics": metrics,
+                    "validation": {
+                        "valid": False,
+                        "errors": ["One or more documents failed OCR"],
+                    },
+                    "error_code": "OCR_STAGE_FAILED",
+                    "error_message": "One or more documents failed OCR",
+                },
+            )
 
             return FullPipelineResult(
                 session_id=session.session_id,
@@ -233,6 +355,12 @@ class OCRPipelineOrchestrator:
             )
 
         try:
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "stages": {"llm": {"status": "running", "updated_at": _utc_now()}}
+                },
+            )
             system_prompt, schema = self._load_prompt_assets(
                 prompt_name=prompt_name,
                 prompt_version=prompt_version,
@@ -250,7 +378,7 @@ class OCRPipelineOrchestrator:
                 user_content=packed_documents,
                 json_schema=schema,
                 model=model,
-                params=llm_params or {},
+                params=llm_runtime_params,
                 run_meta={
                     "session_id": session.session_id,
                     "run_id": run.run_id,
@@ -299,6 +427,19 @@ class OCRPipelineOrchestrator:
                 usage_normalized_json=llm_result.usage_normalized,
                 cost_json=llm_result.cost,
             )
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "stages": {
+                        "llm": {"status": "completed", "updated_at": _utc_now()}
+                    },
+                    "metrics": metrics,
+                    "validation": {
+                        "valid": validation.valid,
+                        "errors": validation.errors,
+                    },
+                },
+            )
 
             if not validation.valid:
                 error_message = "; ".join(validation.errors)
@@ -309,6 +450,20 @@ class OCRPipelineOrchestrator:
                     error_message=error_message,
                 )
                 _append_run_log(run_artifacts.run_log_path, "Validation failed")
+                update_run_manifest(
+                    artifacts_root_path=run.artifacts_root_path,
+                    updates={
+                        "status": "failed",
+                        "stages": {
+                            "finalize": {
+                                "status": "failed",
+                                "updated_at": _utc_now(),
+                            }
+                        },
+                        "error_code": "LLM_SCHEMA_INVALID",
+                        "error_message": error_message,
+                    },
+                )
                 return FullPipelineResult(
                     session_id=session.session_id,
                     run_id=run.run_id,
@@ -331,6 +486,17 @@ class OCRPipelineOrchestrator:
 
             self.repo.update_run_status(run_id=run.run_id, status="completed")
             _append_run_log(run_artifacts.run_log_path, "Run completed")
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "status": "completed",
+                    "stages": {
+                        "finalize": {"status": "completed", "updated_at": _utc_now()}
+                    },
+                    "error_code": None,
+                    "error_message": None,
+                },
+            )
 
             return FullPipelineResult(
                 session_id=session.session_id,
@@ -382,11 +548,37 @@ class OCRPipelineOrchestrator:
                 usage_normalized_json={},
                 cost_json={},
             )
+            metrics = {
+                "timings": {
+                    "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+                    "t_total_ms": _elapsed_ms(started_at),
+                },
+                "usage": {},
+                "usage_normalized": {},
+                "cost": {},
+            }
             self.repo.update_run_status(
                 run_id=run.run_id,
                 status="failed",
                 error_code="LLM_INVALID_JSON",
                 error_message=str(error),
+            )
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "status": "failed",
+                    "stages": {
+                        "llm": {"status": "failed", "updated_at": _utc_now()},
+                        "finalize": {"status": "failed", "updated_at": _utc_now()},
+                    },
+                    "metrics": metrics,
+                    "validation": {
+                        "valid": False,
+                        "errors": validation.errors,
+                    },
+                    "error_code": "LLM_INVALID_JSON",
+                    "error_message": str(error),
+                },
             )
             return FullPipelineResult(
                 session_id=session.session_id,
@@ -399,15 +591,7 @@ class OCRPipelineOrchestrator:
                 parsed_json=None,
                 validation_valid=False,
                 validation_errors=validation.errors,
-                metrics={
-                    "timings": {
-                        "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
-                        "t_total_ms": _elapsed_ms(started_at),
-                    },
-                    "usage": {},
-                    "usage_normalized": {},
-                    "cost": {},
-                },
+                metrics=metrics,
                 error_code="LLM_INVALID_JSON",
                 error_message=str(error),
             )
@@ -424,11 +608,37 @@ class OCRPipelineOrchestrator:
                 usage_normalized_json={},
                 cost_json={},
             )
+            metrics = {
+                "timings": {
+                    "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+                    "t_total_ms": _elapsed_ms(started_at),
+                },
+                "usage": {},
+                "usage_normalized": {},
+                "cost": {},
+            }
             self.repo.update_run_status(
                 run_id=run.run_id,
                 status="failed",
                 error_code="LLM_API_ERROR",
                 error_message=str(error),
+            )
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "status": "failed",
+                    "stages": {
+                        "llm": {"status": "failed", "updated_at": _utc_now()},
+                        "finalize": {"status": "failed", "updated_at": _utc_now()},
+                    },
+                    "metrics": metrics,
+                    "validation": {
+                        "valid": False,
+                        "errors": [str(error)],
+                    },
+                    "error_code": "LLM_API_ERROR",
+                    "error_message": str(error),
+                },
             )
             return FullPipelineResult(
                 session_id=session.session_id,
@@ -441,15 +651,7 @@ class OCRPipelineOrchestrator:
                 parsed_json=None,
                 validation_valid=False,
                 validation_errors=[str(error)],
-                metrics={
-                    "timings": {
-                        "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
-                        "t_total_ms": _elapsed_ms(started_at),
-                    },
-                    "usage": {},
-                    "usage_normalized": {},
-                    "cost": {},
-                },
+                metrics=metrics,
                 error_code="LLM_API_ERROR",
                 error_message=str(error),
             )
@@ -672,3 +874,59 @@ def _extract_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _build_manifest_inputs(
+    *,
+    provider: str,
+    model: str,
+    prompt_name: str,
+    prompt_version: str,
+    schema_version: str,
+    ocr_options: OCROptions,
+    llm_params: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "model": model,
+        "prompt_name": prompt_name,
+        "prompt_version": prompt_version,
+        "schema_version": schema_version,
+        "ocr_params": {
+            "model": ocr_options.model,
+            "table_format": ocr_options.table_format,
+            "include_image_base64": ocr_options.include_image_base64,
+        },
+        "llm_params": llm_params,
+    }
+
+
+def _manifest_document_entries(
+    documents: Sequence[OCRDocumentStageResult],
+) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for document in documents:
+        entries.append(
+            {
+                "doc_id": document.doc_id,
+                "ocr_status": document.ocr_status,
+                "pages_count": document.pages_count,
+                "combined_markdown_path": document.combined_markdown_path,
+                "ocr_artifacts_path": document.ocr_artifacts_path,
+                "ocr_error": document.ocr_error,
+            }
+        )
+    return entries
+
+
+def _to_optional_param(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text
+
+
+def _utc_now() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()

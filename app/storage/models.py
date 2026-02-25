@@ -57,3 +57,10 @@ class LLMOutputRecord:
     response_json_path: str
     response_valid: bool
     schema_validation_errors_path: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RunBundle:
+    run: RunRecord
+    documents: list[DocumentRecord]
+    llm_output: LLMOutputRecord | None

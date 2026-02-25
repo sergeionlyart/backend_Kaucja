@@ -12,6 +12,7 @@ from app.storage.models import (
     DocumentRecord,
     LLMOutputRecord,
     OCRStatus,
+    RunBundle,
     RunRecord,
     RunStatus,
     SessionRecord,
@@ -210,26 +211,88 @@ class StorageRepo:
         if row is None:
             return None
 
-        return RunRecord(
-            run_id=str(row["run_id"]),
-            session_id=str(row["session_id"]),
-            created_at=str(row["created_at"]),
-            provider=str(row["provider"]),
-            model=str(row["model"]),
-            openai_reasoning_effort=_to_optional_str(row["openai_reasoning_effort"]),
-            gemini_thinking_level=_to_optional_str(row["gemini_thinking_level"]),
-            prompt_name=str(row["prompt_name"]),
-            prompt_version=str(row["prompt_version"]),
-            schema_version=str(row["schema_version"]),
-            status=str(row["status"]),
-            error_code=_to_optional_str(row["error_code"]),
-            error_message=_to_optional_str(row["error_message"]),
-            timings_json=_from_json_text(row["timings_json"]),
-            usage_json=_from_json_text(row["usage_json"]),
-            usage_normalized_json=_from_json_text(row["usage_normalized_json"]),
-            cost_json=_from_json_text(row["cost_json"]),
-            artifacts_root_path=str(row["artifacts_root_path"]),
-        )
+        return _row_to_run_record(row)
+
+    def list_runs(
+        self,
+        *,
+        session_id: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        prompt_version: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 50,
+    ) -> list[RunRecord]:
+        filters: list[str] = []
+        params: list[object] = []
+
+        if session_id is not None and session_id.strip():
+            filters.append("session_id = ?")
+            params.append(session_id.strip())
+
+        if provider is not None and provider.strip():
+            filters.append("provider = ?")
+            params.append(provider.strip())
+
+        if model is not None and model.strip():
+            filters.append("model = ?")
+            params.append(model.strip())
+
+        if prompt_version is not None and prompt_version.strip():
+            filters.append("prompt_version = ?")
+            params.append(prompt_version.strip())
+
+        normalized_from = _normalize_date_from(date_from)
+        if normalized_from is not None:
+            filters.append("created_at >= ?")
+            params.append(normalized_from)
+
+        normalized_to = _normalize_date_to(date_to)
+        if normalized_to is not None:
+            filters.append("created_at <= ?")
+            params.append(normalized_to)
+
+        query = """
+            SELECT
+                run_id,
+                session_id,
+                created_at,
+                provider,
+                model,
+                openai_reasoning_effort,
+                gemini_thinking_level,
+                prompt_name,
+                prompt_version,
+                schema_version,
+                status,
+                error_code,
+                error_message,
+                timings_json,
+                usage_json,
+                usage_normalized_json,
+                cost_json,
+                artifacts_root_path
+            FROM runs
+        """
+        if filters:
+            query += f" WHERE {' AND '.join(filters)}"
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(limit, 1))
+
+        with connection(self.db_path) as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+
+        return [_row_to_run_record(row) for row in rows]
+
+    def get_run_bundle(self, run_id: str) -> RunBundle | None:
+        run = self.get_run(run_id)
+        if run is None:
+            return None
+
+        documents = self.list_documents(run_id=run_id)
+        llm_output = self.get_llm_output(run_id=run_id)
+        return RunBundle(run=run, documents=documents, llm_output=llm_output)
 
     def create_document(
         self,
@@ -482,6 +545,59 @@ def _to_optional_int(value: object) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _row_to_run_record(row: object) -> RunRecord:
+    return RunRecord(
+        run_id=str(row["run_id"]),
+        session_id=str(row["session_id"]),
+        created_at=str(row["created_at"]),
+        provider=str(row["provider"]),
+        model=str(row["model"]),
+        openai_reasoning_effort=_to_optional_str(row["openai_reasoning_effort"]),
+        gemini_thinking_level=_to_optional_str(row["gemini_thinking_level"]),
+        prompt_name=str(row["prompt_name"]),
+        prompt_version=str(row["prompt_version"]),
+        schema_version=str(row["schema_version"]),
+        status=str(row["status"]),
+        error_code=_to_optional_str(row["error_code"]),
+        error_message=_to_optional_str(row["error_message"]),
+        timings_json=_from_json_text(row["timings_json"]),
+        usage_json=_from_json_text(row["usage_json"]),
+        usage_normalized_json=_from_json_text(row["usage_normalized_json"]),
+        cost_json=_from_json_text(row["cost_json"]),
+        artifacts_root_path=str(row["artifacts_root_path"]),
+    )
+
+
+def _normalize_date_from(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+
+    if _looks_like_date_only(text):
+        return f"{text}T00:00:00+00:00"
+    return text
+
+
+def _normalize_date_to(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+
+    if _looks_like_date_only(text):
+        return f"{text}T23:59:59.999999+00:00"
+    return text
+
+
+def _looks_like_date_only(value: str) -> bool:
+    return len(value) == 10 and value[4] == "-" and value[7] == "-"
 
 
 def _to_json_text(payload: dict[str, Any]) -> str:
