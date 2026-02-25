@@ -12,8 +12,10 @@ from app.storage.run_manifest import init_run_manifest, update_run_manifest
 from app.storage.repo import StorageRepo
 from app.ui.gradio_app import (
     build_app,
+    compare_history_runs,
     list_history_rows,
     load_history_run,
+    refresh_history_for_ui,
     run_full_pipeline as run_full_pipeline_ui,
     save_prompt_as_new_version_for_ui,
 )
@@ -39,6 +41,37 @@ def _sample_parsed_payload() -> dict[str, Any]:
         ],
         "critical_gaps_summary": ["Missing deposit transfer receipt"],
         "next_questions_to_user": ["Please upload transfer receipt."],
+    }
+
+
+def _comparison_payload(
+    *, status: str, ask: str, gap: str, question: str
+) -> dict[str, Any]:
+    return {
+        "checklist": [
+            {
+                "item_id": "KAUCJA_PAYMENT_PROOF",
+                "importance": "critical",
+                "status": status,
+                "confidence": "medium",
+                "what_it_supports": "proof",
+                "missing_what_exactly": "receipt",
+                "request_from_user": {
+                    "type": "upload_document",
+                    "ask": ask,
+                    "examples": ["bank transfer confirmation"],
+                },
+                "findings": [
+                    {
+                        "doc_id": "0000001",
+                        "quote": "proof quote",
+                        "why_this_quote_matters": "matters",
+                    }
+                ],
+            }
+        ],
+        "critical_gaps_summary": [gap],
+        "next_questions_to_user": [question],
     }
 
 
@@ -100,6 +133,56 @@ def _create_prompt_version(
     (target / "meta.yaml").write_text(
         "created_at: 2026-02-25T00:00:00+00:00\n", encoding="utf-8"
     )
+
+
+def _seed_history_run_for_compare(
+    *,
+    repo: StorageRepo,
+    session_id: str,
+    provider: str,
+    model: str,
+    prompt_version: str,
+    payload: dict[str, Any],
+    tokens: int,
+    total_cost: float,
+    total_time_ms: float,
+) -> str:
+    run = repo.create_run(
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        prompt_name="kaucja_gap_analysis",
+        prompt_version=prompt_version,
+        schema_version=prompt_version,
+        status="running",
+    )
+
+    run_root = Path(run.artifacts_root_path)
+    llm_dir = run_root / "llm"
+    llm_dir.mkdir(parents=True, exist_ok=True)
+    parsed_path = llm_dir / "response_parsed.json"
+    parsed_path.write_text(json.dumps(payload), encoding="utf-8")
+    (llm_dir / "response_raw.txt").write_text(json.dumps(payload), encoding="utf-8")
+    (llm_dir / "validation.json").write_text(
+        json.dumps({"valid": True, "schema_errors": [], "invariant_errors": []}),
+        encoding="utf-8",
+    )
+
+    repo.upsert_llm_output(
+        run_id=run.run_id,
+        response_json_path=str(parsed_path),
+        response_valid=True,
+        schema_validation_errors_path=None,
+    )
+    repo.update_run_metrics(
+        run_id=run.run_id,
+        timings_json={"t_total_ms": total_time_ms},
+        usage_json={"input_tokens": max(tokens // 2, 1)},
+        usage_normalized_json={"total_tokens": tokens},
+        cost_json={"total_cost_usd": total_cost},
+    )
+    repo.update_run_status(run_id=run.run_id, status="completed")
+    return run.run_id
 
 
 def test_build_app_returns_blocks(tmp_path: Path) -> None:
@@ -394,3 +477,148 @@ def test_history_load_returns_saved_run_bundle_with_progress_and_log(
     assert "Validation: valid" in validation
     assert "total_tokens" in metrics
     assert parsed_state["checklist"][0]["item_id"] == "deposit_transfer"
+
+
+def test_refresh_history_for_ui_populates_compare_choices(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-compare")
+    first_run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="missing",
+            ask="Upload proof",
+            gap="missing proof",
+            question="please upload",
+        ),
+        tokens=80,
+        total_cost=0.08,
+        total_time_ms=100.0,
+    )
+    second_run_id = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="google",
+        model="gemini-3.1-pro-preview",
+        prompt_version="v002",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=120,
+        total_cost=0.12,
+        total_time_ms=70.0,
+    )
+
+    rows, compare_a, compare_b = refresh_history_for_ui(
+        repo=repo,
+        session_id=session.session_id,
+        provider="",
+        model="",
+        prompt_version="",
+        date_from="",
+        date_to="",
+        limit=20,
+    )
+
+    assert len(rows) == 2
+    assert first_run_id in compare_a["choices"]
+    assert second_run_id in compare_b["choices"]
+
+
+def test_compare_history_runs_returns_diff_for_two_runs(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-compare-flow")
+    run_a = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="missing",
+            ask="Upload transfer receipt",
+            gap="Missing transfer receipt",
+            question="Please upload transfer receipt",
+        ),
+        tokens=100,
+        total_cost=0.11,
+        total_time_ms=140.0,
+    )
+    run_b = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="google",
+        model="gemini-3.1-pro-preview",
+        prompt_version="v002",
+        payload=_comparison_payload(
+            status="confirmed",
+            ask="",
+            gap="",
+            question="",
+        ),
+        tokens=160,
+        total_cost=0.14,
+        total_time_ms=95.0,
+    )
+
+    (
+        compare_status,
+        compare_summary,
+        compare_rows,
+        compare_gaps,
+        compare_metrics,
+        compare_json,
+    ) = compare_history_runs(repo=repo, run_id_a=run_a, run_id_b=run_b)
+
+    assert "Comparison ready." in compare_status
+    assert "improved: 1" in compare_summary
+    assert "provider_changed=True" in compare_summary
+    assert compare_rows[0][0] == "KAUCJA_PAYMENT_PROOF"
+    assert compare_rows[0][-1] == "improved"
+    assert "critical_gaps_summary" in compare_gaps
+    assert "delta (B - A)" in compare_metrics
+    parsed = json.loads(compare_json)
+    assert parsed["run_a"]["run_id"] == run_a
+    assert parsed["run_b"]["run_id"] == run_b
+
+
+def test_compare_history_runs_handles_missing_run(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session("session-compare-missing")
+    run_a = _seed_history_run_for_compare(
+        repo=repo,
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_version="v001",
+        payload=_comparison_payload(
+            status="missing",
+            ask="Upload transfer receipt",
+            gap="Missing transfer receipt",
+            question="Please upload transfer receipt",
+        ),
+        tokens=100,
+        total_cost=0.11,
+        total_time_ms=140.0,
+    )
+
+    (
+        compare_status,
+        compare_summary,
+        compare_rows,
+        _compare_gaps,
+        _compare_metrics,
+        compare_json,
+    ) = compare_history_runs(repo=repo, run_id_a=run_a, run_id_b="missing-run")
+
+    assert "Comparison completed with warnings." in compare_status
+    assert "warnings:" in compare_summary
+    assert compare_rows[0][0] == "KAUCJA_PAYMENT_PROOF"
+    payload = json.loads(compare_json)
+    assert payload["run_b"]["exists"] is False

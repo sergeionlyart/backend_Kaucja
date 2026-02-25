@@ -54,7 +54,7 @@ def test_pipeline_ocr_stage_persists_documents_and_artifacts(tmp_path: Path) -> 
     )
 
     file_one = tmp_path / "one.pdf"
-    file_two = tmp_path / "two.pdf"
+    file_two = tmp_path / "two.docx"
     file_one.write_bytes(b"one")
     file_two.write_bytes(b"two")
 

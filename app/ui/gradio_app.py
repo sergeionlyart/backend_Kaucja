@@ -30,6 +30,7 @@ from app.ui.result_helpers import (
     checklist_item_ids,
     render_checklist_details,
 )
+from app.ui.run_comparison import compare_runs as compare_runs_payload
 from app.utils.error_taxonomy import ERROR_FRIENDLY_MESSAGES
 
 PreflightChecker = Callable[[str], str | None]
@@ -175,6 +176,65 @@ def list_history_rows(
             ]
         )
     return rows
+
+
+def refresh_history_for_ui(
+    *,
+    repo: StorageRepo,
+    session_id: str,
+    provider: str,
+    model: str,
+    prompt_version: str,
+    date_from: str,
+    date_to: str,
+    limit: float | int,
+) -> tuple[list[list[str]], Any, Any]:
+    rows = list_history_rows(
+        repo=repo,
+        session_id=session_id,
+        provider=provider,
+        model=model,
+        prompt_version=prompt_version,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    run_ids = [str(row[0]) for row in rows if row]
+    default_a = run_ids[0] if run_ids else None
+    default_b = run_ids[1] if len(run_ids) > 1 else default_a
+    return (
+        rows,
+        gr.update(choices=run_ids, value=default_a),
+        gr.update(choices=run_ids, value=default_b),
+    )
+
+
+def compare_history_runs(
+    *,
+    repo: StorageRepo,
+    run_id_a: str,
+    run_id_b: str,
+) -> tuple[str, str, list[list[str]], str, str, str]:
+    selected_a = run_id_a.strip()
+    selected_b = run_id_b.strip()
+    if not selected_a or not selected_b:
+        return _empty_compare_payload(
+            status_message="Comparison failed: select both run_id A and run_id B."
+        )
+
+    diff = compare_runs_payload(
+        repo=repo,
+        run_id_a=selected_a,
+        run_id_b=selected_b,
+    )
+    return (
+        _comparison_status_text(diff),
+        _comparison_summary_text(diff),
+        _comparison_checklist_rows(diff),
+        _comparison_gaps_text(diff),
+        _comparison_metrics_text(diff),
+        json.dumps(diff, ensure_ascii=False, indent=2),
+    )
 
 
 def load_history_run(
@@ -429,9 +489,7 @@ def build_app(
     )
 
     with gr.Blocks(title="Kaucja Case Sandbox") as app:
-        gr.Markdown(
-            "# Kaucja Case Sandbox - Iteration 6 (Prompt Management + Result UX)"
-        )
+        gr.Markdown("# Kaucja Case Sandbox - Iteration 8 (Run Comparison + DoD Audit)")
         gr.Markdown(
             "Analyze runs OCR -> LLM -> validate -> finalize with deterministic artifacts."
         )
@@ -634,6 +692,58 @@ def build_app(
             history_run_id = gr.Textbox(label="Run ID to load")
             load_history_button = gr.Button("Load Selected Run")
 
+        gr.Markdown("### Compare Runs")
+        with gr.Row():
+            compare_run_id_a = gr.Dropdown(
+                label="Run ID A",
+                choices=[],
+                value=None,
+            )
+            compare_run_id_b = gr.Dropdown(
+                label="Run ID B",
+                choices=[],
+                value=None,
+            )
+            compare_button = gr.Button("Compare Selected Runs")
+
+        compare_status_box = gr.Textbox(label="Compare Status", interactive=False)
+        compare_summary_box = gr.Textbox(
+            label="What Changed (improved/regressed/unchanged)",
+            lines=6,
+            interactive=False,
+        )
+        compare_checklist_table = gr.Dataframe(
+            headers=[
+                "item_id",
+                "status_a",
+                "status_b",
+                "confidence_a",
+                "confidence_b",
+                "findings_changed",
+                "request_changed",
+                "change",
+            ],
+            datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
+            interactive=False,
+            wrap=True,
+            label="Checklist Comparison",
+        )
+        compare_gaps_box = gr.Textbox(
+            label="Critical Gaps / Next Questions Comparison",
+            lines=10,
+            interactive=False,
+        )
+        compare_metrics_box = gr.Textbox(
+            label="Metrics Comparison (tokens/cost/timings)",
+            lines=10,
+            interactive=False,
+        )
+        compare_json_box = gr.Textbox(
+            label="Comparison Diff JSON",
+            lines=14,
+            interactive=False,
+        )
+
         analyze_button.click(
             fn=lambda current_session_id,
             uploaded,
@@ -710,7 +820,7 @@ def build_app(
             prompt_filter,
             date_from_filter,
             date_to_filter,
-            result_limit: list_history_rows(
+            result_limit: refresh_history_for_ui(
                 repo=storage_repo,
                 session_id=session_filter,
                 provider=provider_filter,
@@ -729,7 +839,7 @@ def build_app(
                 history_date_to,
                 history_limit,
             ],
-            outputs=[history_table],
+            outputs=[history_table, compare_run_id_a, compare_run_id_b],
         )
 
         load_history_button.click(
@@ -759,6 +869,23 @@ def build_app(
                 validation_box,
                 metrics_box,
                 parsed_json_state,
+            ],
+        )
+
+        compare_button.click(
+            fn=lambda selected_run_id_a, selected_run_id_b: compare_history_runs(
+                repo=storage_repo,
+                run_id_a=selected_run_id_a,
+                run_id_b=selected_run_id_b,
+            ),
+            inputs=[compare_run_id_a, compare_run_id_b],
+            outputs=[
+                compare_status_box,
+                compare_summary_box,
+                compare_checklist_table,
+                compare_gaps_box,
+                compare_metrics_box,
+                compare_json_box,
             ],
         )
 
@@ -843,6 +970,19 @@ def _empty_ui_payload(
         "",
         "",
         {},
+    )
+
+
+def _empty_compare_payload(
+    *, status_message: str
+) -> tuple[str, str, list[list[str]], str, str, str]:
+    return (
+        status_message,
+        "improved: 0 | regressed: 0 | unchanged: 0",
+        [],
+        "",
+        "",
+        "{}",
     )
 
 
@@ -1222,6 +1362,142 @@ def _to_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _comparison_status_text(diff: dict[str, Any]) -> str:
+    run_a = diff.get("run_a") if isinstance(diff.get("run_a"), dict) else {}
+    run_b = diff.get("run_b") if isinstance(diff.get("run_b"), dict) else {}
+    run_id_a = str(run_a.get("run_id") or "")
+    run_id_b = str(run_b.get("run_id") or "")
+    warnings = _to_string_list(diff.get("warnings"))
+    exists_a = bool(run_a.get("exists"))
+    exists_b = bool(run_b.get("exists"))
+
+    status = f"Comparison ready. run_a={run_id_a} run_b={run_id_b}"
+    if not exists_a or not exists_b:
+        status = (
+            f"Comparison completed with warnings. run_a={run_id_a} run_b={run_id_b}"
+        )
+    if warnings:
+        status += f" warnings={len(warnings)}"
+    return status
+
+
+def _comparison_summary_text(diff: dict[str, Any]) -> str:
+    counts = (
+        diff.get("summary_counts")
+        if isinstance(diff.get("summary_counts"), dict)
+        else {}
+    )
+    metadata = diff.get("metadata") if isinstance(diff.get("metadata"), dict) else {}
+    warnings = _to_string_list(diff.get("warnings"))
+    lines = [
+        (
+            f"improved: {int(counts.get('improved', 0))} | "
+            f"regressed: {int(counts.get('regressed', 0))} | "
+            f"unchanged: {int(counts.get('unchanged', 0))}"
+        ),
+        (
+            f"added: {int(counts.get('added', 0))} | "
+            f"removed: {int(counts.get('removed', 0))}"
+        ),
+        (
+            f"provider_changed={bool(metadata.get('provider_changed'))}, "
+            f"model_changed={bool(metadata.get('model_changed'))}, "
+            f"prompt_version_changed={bool(metadata.get('prompt_version_changed'))}"
+        ),
+    ]
+
+    if warnings:
+        lines.append("")
+        lines.append("warnings:")
+        lines.extend(f"- {warning}" for warning in warnings)
+
+    return "\n".join(lines)
+
+
+def _comparison_checklist_rows(diff: dict[str, Any]) -> list[list[str]]:
+    payload = diff.get("checklist_diff")
+    if not isinstance(payload, list):
+        return []
+
+    rows: list[list[str]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            [
+                str(item.get("item_id") or ""),
+                str(item.get("status_a") or ""),
+                str(item.get("status_b") or ""),
+                str(item.get("confidence_a") or ""),
+                str(item.get("confidence_b") or ""),
+                "yes" if bool(item.get("findings_changed")) else "no",
+                "yes" if bool(item.get("request_changed")) else "no",
+                str(item.get("change") or ""),
+            ]
+        )
+    return rows
+
+
+def _comparison_gaps_text(diff: dict[str, Any]) -> str:
+    critical_diff = (
+        diff.get("critical_gaps_diff")
+        if isinstance(diff.get("critical_gaps_diff"), dict)
+        else {}
+    )
+    question_diff = (
+        diff.get("next_questions_diff")
+        if isinstance(diff.get("next_questions_diff"), dict)
+        else {}
+    )
+    lines = ["critical_gaps_summary:"]
+    lines.extend(_comparison_list_lines(critical_diff))
+    lines.append("")
+    lines.append("next_questions_to_user:")
+    lines.extend(_comparison_list_lines(question_diff))
+    return "\n".join(lines)
+
+
+def _comparison_list_lines(payload: dict[str, Any]) -> list[str]:
+    only_in_a = _to_string_list(payload.get("only_in_a"))
+    only_in_b = _to_string_list(payload.get("only_in_b"))
+    common = _to_string_list(payload.get("common"))
+    return [
+        f"- only_in_a ({len(only_in_a)}): {', '.join(only_in_a) if only_in_a else '(empty)'}",
+        f"- only_in_b ({len(only_in_b)}): {', '.join(only_in_b) if only_in_b else '(empty)'}",
+        f"- common ({len(common)}): {', '.join(common) if common else '(empty)'}",
+    ]
+
+
+def _comparison_metrics_text(diff: dict[str, Any]) -> str:
+    metrics = diff.get("metrics_diff")
+    if not isinstance(metrics, dict):
+        return "{}"
+
+    run_a = metrics.get("run_a") if isinstance(metrics.get("run_a"), dict) else {}
+    run_b = metrics.get("run_b") if isinstance(metrics.get("run_b"), dict) else {}
+    delta_rows = metrics.get("delta") if isinstance(metrics.get("delta"), list) else []
+
+    lines = [
+        "run_a:",
+        json.dumps(run_a, ensure_ascii=False, indent=2),
+        "",
+        "run_b:",
+        json.dumps(run_b, ensure_ascii=False, indent=2),
+        "",
+        "delta (B - A):",
+    ]
+    for row in delta_rows:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or "")
+        value_a = row.get("value_a")
+        value_b = row.get("value_b")
+        delta = row.get("delta_b_minus_a")
+        lines.append(f"- {key}: A={value_a} B={value_b} delta={delta}")
+
+    return "\n".join(lines)
 
 
 def main() -> None:
