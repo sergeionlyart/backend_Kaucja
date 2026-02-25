@@ -1,67 +1,136 @@
 from __future__ import annotations
 
-import time
+from pathlib import Path
 from typing import Any
 
+from tests.browser.helpers import (
+    click_button,
+    expect_seeded_runs_visible,
+    expect_textbox_contains,
+    fill_textbox,
+    open_app,
+    set_checkbox,
+    textbox_value,
+    upload_file,
+)
 
-def test_browser_app_renders_core_sections(page: Any, browser_base_url: str) -> None:
-    page.goto(browser_base_url, wait_until="domcontentloaded")
 
-    page.get_by_role("heading", name="Kaucja Case Sandbox").wait_for(state="visible")
-    page.get_by_role("button", name="Analyze").wait_for(state="visible")
-    page.get_by_text("Prompt Management").wait_for(state="visible")
-    page.get_by_text("Run History").wait_for(state="visible")
-    page.get_by_text("Compare Runs").wait_for(state="visible")
-
-
-def test_browser_history_load_and_compare_flow(
+def test_p0_app_starts_and_core_sections_render(
     page: Any, browser_base_url: str
 ) -> None:
-    page.goto(browser_base_url, wait_until="domcontentloaded")
+    open_app(page=page, base_url=browser_base_url)
 
-    page.get_by_role("button", name="Refresh History").click()
-    page.get_by_text("e2e-run-b").first.wait_for(state="visible")
-    page.get_by_role("button", name="Compare Selected Runs").click()
-    _wait_for_textbox_contains(
-        page=page,
-        label="Compare Status",
-        expected_substring="Comparison ready.",
-    )
 
-    page.get_by_label("Run ID to load").fill("e2e-run-b")
-    page.get_by_role("button", name="Load Selected Run").click()
-    _wait_for_textbox_contains(
-        page=page,
-        label="Status",
+def test_p0_history_loads_seeded_run_and_outputs_render(
+    page: Any, browser_base_url: str
+) -> None:
+    open_app(page=page, base_url=browser_base_url)
+
+    click_button(page, "history_refresh_button")
+    expect_seeded_runs_visible(page)
+
+    fill_textbox(page, "history_run_id_input", "e2e-run-a")
+    click_button(page, "history_load_button")
+
+    expect_textbox_contains(
+        page,
+        elem_id="run_status_box",
         expected_substring="History loaded.",
     )
+    expect_textbox_contains(
+        page,
+        elem_id="summary_box",
+        expected_substring="critical_gaps_summary",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="raw_json_box",
+        expected_substring='"checklist"',
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="validation_box",
+        expected_substring="Validation:",
+    )
 
-    summary_value = page.get_by_label(
-        "Summary (critical gaps + next questions)"
-    ).input_value()
-    assert "critical_gaps_summary" in summary_value
 
-
-def _wait_for_textbox_contains(
-    *,
-    page: Any,
-    label: str,
-    expected_substring: str,
-    timeout_seconds: float = 20.0,
+def test_p0_compare_seeded_runs_returns_diff_and_metrics(
+    page: Any, browser_base_url: str
 ) -> None:
-    textbox = page.get_by_role("textbox", name=label, exact=True)
-    deadline = time.monotonic() + timeout_seconds
-    last_value = ""
+    open_app(page=page, base_url=browser_base_url)
 
-    while time.monotonic() < deadline:
-        last_value = textbox.input_value()
-        if expected_substring in last_value:
-            return
-        time.sleep(0.2)
+    click_button(page, "history_refresh_button")
+    expect_seeded_runs_visible(page)
+    click_button(page, "compare_button")
 
-    raise AssertionError(
-        (
-            f"Textbox '{label}' did not contain '{expected_substring}' "
-            f"within {timeout_seconds:.1f}s. Last value: {last_value!r}"
-        )
+    expect_textbox_contains(
+        page,
+        elem_id="compare_status_box",
+        expected_substring="Comparison ready.",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="compare_json_box",
+        expected_substring="checklist_diff",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="compare_metrics_box",
+        expected_substring="delta (B - A)",
+    )
+
+
+def test_p0_export_run_bundle_from_history(page: Any, browser_base_url: str) -> None:
+    open_app(page=page, base_url=browser_base_url)
+
+    click_button(page, "history_refresh_button")
+    expect_seeded_runs_visible(page)
+    fill_textbox(page, "history_run_id_input", "e2e-run-a")
+    click_button(page, "history_export_button")
+
+    expect_textbox_contains(
+        page,
+        elem_id="export_status_box",
+        expected_substring="Export completed.",
+    )
+    zip_path = textbox_value(page, "export_path_box")
+    assert zip_path.endswith("_bundle.zip")
+    assert Path(zip_path).is_file()
+
+
+def test_p0_restore_verify_only_for_exported_zip(
+    page: Any, browser_base_url: str
+) -> None:
+    open_app(page=page, base_url=browser_base_url)
+
+    click_button(page, "history_refresh_button")
+    expect_seeded_runs_visible(page)
+    fill_textbox(page, "history_run_id_input", "e2e-run-a")
+    click_button(page, "history_export_button")
+    expect_textbox_contains(
+        page,
+        elem_id="export_status_box",
+        expected_substring="Export completed.",
+    )
+    zip_path = Path(textbox_value(page, "export_path_box"))
+    assert zip_path.is_file()
+
+    upload_file(page, "restore_zip_file_input", zip_path)
+    set_checkbox(page, "restore_verify_only_checkbox", True)
+    click_button(page, "restore_button")
+
+    expect_textbox_contains(
+        page,
+        elem_id="restore_status_box",
+        expected_substring="Verification completed.",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="restore_details_box",
+        expected_substring="manifest_verification=",
+    )
+    expect_textbox_contains(
+        page,
+        elem_id="restore_details_box",
+        expected_substring="verify_only=True",
     )

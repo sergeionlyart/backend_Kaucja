@@ -10,12 +10,14 @@ export KAUCJA_SQLITE_PATH="${KAUCJA_SQLITE_PATH:-$KAUCJA_DATA_DIR/kaucja_e2e.sql
 export KAUCJA_GRADIO_SERVER_NAME="${KAUCJA_GRADIO_SERVER_NAME:-127.0.0.1}"
 export KAUCJA_GRADIO_SERVER_PORT="${KAUCJA_GRADIO_SERVER_PORT:-7861}"
 export KAUCJA_BROWSER_BASE_URL="${KAUCJA_BROWSER_BASE_URL:-http://127.0.0.1:${KAUCJA_GRADIO_SERVER_PORT}}"
+export KAUCJA_BROWSER_ARTIFACTS_DIR="${KAUCJA_BROWSER_ARTIFACTS_DIR:-$ROOT_DIR/artifacts/browser}"
 export KAUCJA_RUN_BROWSER_TESTS=1
 
 "$ROOT_DIR/scripts/browser/seed_data.sh"
 
 APP_LOG_PATH="${KAUCJA_BROWSER_APP_LOG_PATH:-$ROOT_DIR/data/browser_smoke_app.log}"
 mkdir -p "$(dirname "$APP_LOG_PATH")"
+mkdir -p "$KAUCJA_BROWSER_ARTIFACTS_DIR"
 
 "$ROOT_DIR/scripts/browser/start_e2e_app.sh" >"$APP_LOG_PATH" 2>&1 &
 APP_PID=$!
@@ -53,4 +55,4 @@ print(f"app_not_ready url={url}")
 raise SystemExit(1)
 PY
 
-pytest -q tests/browser
+pytest -q tests/browser --junitxml "$KAUCJA_BROWSER_ARTIFACTS_DIR/junit.xml"

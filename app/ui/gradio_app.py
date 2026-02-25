@@ -811,7 +811,10 @@ def build_app(
     )
 
     with gr.Blocks(title="Kaucja Case Sandbox") as app:
-        gr.Markdown("# Kaucja Case Sandbox - Iteration 8 (Run Comparison + DoD Audit)")
+        gr.Markdown(
+            "# Kaucja Case Sandbox - Iteration 8 (Run Comparison + DoD Audit)",
+            elem_id="app_title",
+        )
         gr.Markdown(
             "Analyze runs OCR -> LLM -> validate -> finalize with deterministic artifacts."
         )
@@ -875,20 +878,44 @@ def build_app(
             )
 
         with gr.Row():
-            analyze_button = gr.Button("Analyze", variant="primary")
-
-        with gr.Row():
-            status_box = gr.Textbox(label="Status", interactive=False)
-            progress_box = gr.Textbox(
-                label="Progress (OCR -> LLM -> validate -> finalize)", interactive=False
+            analyze_button = gr.Button(
+                "Analyze",
+                variant="primary",
+                elem_id="analyze_button",
             )
-            error_box = gr.Textbox(label="User-friendly Error", interactive=False)
 
         with gr.Row():
-            run_id_box = gr.Textbox(label="Run ID", interactive=False)
-            session_id_box = gr.Textbox(label="Session ID", interactive=False)
+            status_box = gr.Textbox(
+                label="Status",
+                interactive=False,
+                elem_id="run_status_box",
+            )
+            progress_box = gr.Textbox(
+                label="Progress (OCR -> LLM -> validate -> finalize)",
+                interactive=False,
+                elem_id="run_progress_box",
+            )
+            error_box = gr.Textbox(
+                label="User-friendly Error",
+                interactive=False,
+                elem_id="run_error_box",
+            )
+
+        with gr.Row():
+            run_id_box = gr.Textbox(
+                label="Run ID",
+                interactive=False,
+                elem_id="run_id_box",
+            )
+            session_id_box = gr.Textbox(
+                label="Session ID",
+                interactive=False,
+                elem_id="session_id_box",
+            )
             artifacts_root_box = gr.Textbox(
-                label="Artifacts Root Path", interactive=False
+                label="Artifacts Root Path",
+                interactive=False,
+                elem_id="artifacts_root_box",
             )
 
         with gr.Row():
@@ -944,10 +971,26 @@ def build_app(
             label="Summary (critical gaps + next questions)",
             lines=8,
             interactive=False,
+            elem_id="summary_box",
         )
-        raw_json_box = gr.Textbox(label="Raw JSON", lines=12, interactive=False)
-        validation_box = gr.Textbox(label="Validation", lines=6, interactive=False)
-        metrics_box = gr.Textbox(label="Metrics", lines=8, interactive=False)
+        raw_json_box = gr.Textbox(
+            label="Raw JSON",
+            lines=12,
+            interactive=False,
+            elem_id="raw_json_box",
+        )
+        validation_box = gr.Textbox(
+            label="Validation",
+            lines=6,
+            interactive=False,
+            elem_id="validation_box",
+        )
+        metrics_box = gr.Textbox(
+            label="Metrics",
+            lines=8,
+            interactive=False,
+            elem_id="metrics_box",
+        )
 
         gr.Markdown("## Prompt Management")
         prompt_status_box = gr.Textbox(label="Prompt Status", interactive=False)
@@ -968,30 +1011,51 @@ def build_app(
             save_prompt_button = gr.Button("Save as new version")
         save_prompt_box = gr.Textbox(label="Save Prompt Result", interactive=False)
 
-        gr.Markdown("## Run History")
+        gr.Markdown("## Run History", elem_id="history_section")
         with gr.Row():
-            history_session_id = gr.Textbox(label="Filter: session_id", value="")
+            history_session_id = gr.Textbox(
+                label="Filter: session_id",
+                value="",
+                elem_id="history_session_filter",
+            )
             history_provider = gr.Dropdown(
                 label="Filter: provider",
                 choices=[""] + provider_choices,
                 value="",
+                elem_id="history_provider_filter",
             )
             history_model = gr.Dropdown(
                 label="Filter: model",
                 choices=[""] + model_choices,
                 value="",
+                elem_id="history_model_filter",
             )
             history_prompt_version = gr.Dropdown(
                 label="Filter: prompt_version",
                 choices=[""] + (prompt_versions or [default_prompt_version]),
                 value="",
+                elem_id="history_prompt_version_filter",
             )
 
         with gr.Row():
-            history_date_from = gr.Textbox(label="Filter: date_from (YYYY-MM-DD)")
-            history_date_to = gr.Textbox(label="Filter: date_to (YYYY-MM-DD)")
-            history_limit = gr.Number(label="Limit", value=20, precision=0)
-            history_refresh_button = gr.Button("Refresh History")
+            history_date_from = gr.Textbox(
+                label="Filter: date_from (YYYY-MM-DD)",
+                elem_id="history_date_from_filter",
+            )
+            history_date_to = gr.Textbox(
+                label="Filter: date_to (YYYY-MM-DD)",
+                elem_id="history_date_to_filter",
+            )
+            history_limit = gr.Number(
+                label="Limit",
+                value=20,
+                precision=0,
+                elem_id="history_limit_filter",
+            )
+            history_refresh_button = gr.Button(
+                "Refresh History",
+                elem_id="history_refresh_button",
+            )
 
         history_table = gr.Dataframe(
             headers=[
@@ -1008,83 +1072,147 @@ def build_app(
             interactive=False,
             wrap=True,
             label="Runs",
+            elem_id="history_runs_table",
         )
 
         with gr.Row():
-            history_run_id = gr.Textbox(label="Run ID to load")
+            history_run_id = gr.Textbox(
+                label="Run ID to load",
+                elem_id="history_run_id_input",
+            )
             history_confirm_run_id = gr.Textbox(
                 label="Confirm Run ID for Delete",
                 value="",
+                elem_id="history_confirm_run_id_input",
             )
             delete_with_backup = gr.Checkbox(
                 label="Create backup ZIP before delete",
                 value=False,
+                elem_id="delete_with_backup_checkbox",
             )
-            load_history_button = gr.Button("Load Selected Run")
-            export_history_button = gr.Button("Export run bundle (zip)")
-            delete_history_button = gr.Button("Delete run", variant="stop")
+            load_history_button = gr.Button(
+                "Load Selected Run",
+                elem_id="history_load_button",
+            )
+            export_history_button = gr.Button(
+                "Export run bundle (zip)",
+                elem_id="history_export_button",
+            )
+            delete_history_button = gr.Button(
+                "Delete run",
+                variant="stop",
+                elem_id="history_delete_button",
+            )
 
         with gr.Row():
-            export_status_box = gr.Textbox(label="Export Status", interactive=False)
-            export_path_box = gr.Textbox(label="Export ZIP Path", interactive=False)
-        export_file_box = gr.File(label="Download ZIP", interactive=False)
+            export_status_box = gr.Textbox(
+                label="Export Status",
+                interactive=False,
+                elem_id="export_status_box",
+            )
+            export_path_box = gr.Textbox(
+                label="Export ZIP Path",
+                interactive=False,
+                elem_id="export_path_box",
+            )
+        export_file_box = gr.File(
+            label="Download ZIP",
+            interactive=False,
+            elem_id="export_file_box",
+        )
         with gr.Row():
-            restore_zip_file = gr.File(label="Restore ZIP File", type="filepath")
+            restore_zip_file = gr.File(
+                label="Restore ZIP File",
+                type="filepath",
+                elem_id="restore_zip_file_input",
+            )
             restore_overwrite_existing = gr.Checkbox(
                 label="Overwrite existing run",
                 value=False,
+                elem_id="restore_overwrite_checkbox",
             )
             restore_verify_only = gr.Checkbox(
                 label="Verify only (no restore)",
                 value=False,
+                elem_id="restore_verify_only_checkbox",
             )
             restore_require_signature = gr.Checkbox(
                 label="Require signature (strict)",
                 value=restore_require_signature_default,
+                elem_id="restore_require_signature_checkbox",
             )
-            restore_button = gr.Button("Restore run bundle")
+            restore_button = gr.Button(
+                "Restore run bundle",
+                elem_id="restore_button",
+            )
         with gr.Row():
-            restore_status_box = gr.Textbox(label="Restore Status", interactive=False)
+            restore_status_box = gr.Textbox(
+                label="Restore Status",
+                interactive=False,
+                elem_id="restore_status_box",
+            )
             restore_details_box = gr.Textbox(
                 label="Restore Technical Details",
                 interactive=False,
+                elem_id="restore_details_box",
             )
         with gr.Row():
-            restore_run_id_box = gr.Textbox(label="Restored Run ID", interactive=False)
+            restore_run_id_box = gr.Textbox(
+                label="Restored Run ID",
+                interactive=False,
+                elem_id="restore_run_id_box",
+            )
             restore_artifacts_path_box = gr.Textbox(
                 label="Restored Artifacts Path",
                 interactive=False,
+                elem_id="restore_artifacts_path_box",
             )
         with gr.Row():
-            delete_status_box = gr.Textbox(label="Delete Status", interactive=False)
+            delete_status_box = gr.Textbox(
+                label="Delete Status",
+                interactive=False,
+                elem_id="delete_status_box",
+            )
             delete_backup_path_box = gr.Textbox(
                 label="Delete Backup ZIP Path",
                 interactive=False,
+                elem_id="delete_backup_path_box",
             )
             delete_details_box = gr.Textbox(
                 label="Delete Technical Details",
                 interactive=False,
+                elem_id="delete_details_box",
             )
 
-        gr.Markdown("### Compare Runs")
+        gr.Markdown("### Compare Runs", elem_id="compare_section")
         with gr.Row():
             compare_run_id_a = gr.Dropdown(
                 label="Run ID A",
                 choices=[],
                 value=None,
+                elem_id="compare_run_id_a",
             )
             compare_run_id_b = gr.Dropdown(
                 label="Run ID B",
                 choices=[],
                 value=None,
+                elem_id="compare_run_id_b",
             )
-            compare_button = gr.Button("Compare Selected Runs")
+            compare_button = gr.Button(
+                "Compare Selected Runs",
+                elem_id="compare_button",
+            )
 
-        compare_status_box = gr.Textbox(label="Compare Status", interactive=False)
+        compare_status_box = gr.Textbox(
+            label="Compare Status",
+            interactive=False,
+            elem_id="compare_status_box",
+        )
         compare_summary_box = gr.Textbox(
             label="What Changed (improved/regressed/unchanged)",
             lines=6,
             interactive=False,
+            elem_id="compare_summary_box",
         )
         compare_checklist_table = gr.Dataframe(
             headers=[
@@ -1101,21 +1229,25 @@ def build_app(
             interactive=False,
             wrap=True,
             label="Checklist Comparison",
+            elem_id="compare_checklist_table",
         )
         compare_gaps_box = gr.Textbox(
             label="Critical Gaps / Next Questions Comparison",
             lines=10,
             interactive=False,
+            elem_id="compare_gaps_box",
         )
         compare_metrics_box = gr.Textbox(
             label="Metrics Comparison (tokens/cost/timings)",
             lines=10,
             interactive=False,
+            elem_id="compare_metrics_box",
         )
         compare_json_box = gr.Textbox(
             label="Comparison Diff JSON",
             lines=14,
             interactive=False,
+            elem_id="compare_json_box",
         )
 
         analyze_button.click(

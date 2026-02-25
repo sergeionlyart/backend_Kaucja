@@ -51,16 +51,55 @@ Single command (seed + start app + wait + run tests):
 ./scripts/browser/run_smoke.sh
 ```
 
+This command runs P0 browser regression baseline (5 cases):
+
+1. app start + key sections
+2. history load seeded run
+3. compare seeded runs
+4. export run bundle
+5. restore verify-only
+
 Direct pytest mode (if app already running):
 
 ```bash
 export KAUCJA_RUN_BROWSER_TESTS=1
 export KAUCJA_BROWSER_BASE_URL=http://127.0.0.1:7861
-pytest -q tests/browser
+pytest -q tests/browser --junitxml artifacts/browser/junit.xml
 ```
 
 ## Results and Logs
 
 - Pytest output: terminal.
 - App log (for smoke runner): `data/browser_smoke_app.log`.
+- Browser diagnostics: `artifacts/browser/`:
+  - `junit.xml`
+  - per-test Playwright traces/screenshots/videos on failure
 - Seeded artifacts root: `data/e2e/sessions/e2e-session-001/runs/`.
+
+## CI Execution
+
+Browser regression workflow:
+
+- file: `.github/workflows/browser-smoke.yml`
+- triggers:
+  - `workflow_dispatch`
+  - weekly `schedule`
+
+Workflow steps:
+
+1. install project dependencies
+2. install Playwright Chromium
+3. run `./scripts/browser/run_smoke.sh`
+4. upload diagnostics artifacts
+
+## Troubleshooting Flakes
+
+- Symptom: app not reachable in browser tests
+  - check `data/browser_smoke_app.log`
+  - verify `KAUCJA_GRADIO_SERVER_PORT` is free
+- Symptom: selectors fail after UI change
+  - keep/update `elem_id` in `app/ui/gradio_app.py`
+  - avoid text-only selectors in tests
+- Symptom: restore/export case fails intermittently
+  - ensure seed step succeeded (`status=ok`)
+  - verify exported path exists in `export_path_box`
