@@ -44,3 +44,18 @@ def test_create_document_artifacts_creates_expected_layout(tmp_path: Path) -> No
     assert document.tables_dir.is_dir()
     assert document.images_dir.is_dir()
     assert document.page_renders_dir.is_dir()
+
+
+def test_create_llm_artifacts_creates_expected_files(tmp_path: Path) -> None:
+    manager = ArtifactsManager(tmp_path / "data")
+    run_artifacts = manager.create_run_artifacts(session_id="s-004", run_id="r-004")
+
+    llm_artifacts = manager.create_llm_artifacts(
+        artifacts_root_path=run_artifacts.artifacts_root_path
+    )
+
+    assert llm_artifacts.llm_dir.is_dir()
+    assert llm_artifacts.request_path.name == "request.txt"
+    assert llm_artifacts.response_raw_path.name == "response_raw.txt"
+    assert llm_artifacts.response_parsed_path.name == "response_parsed.json"
+    assert llm_artifacts.validation_path.name == "validation.json"

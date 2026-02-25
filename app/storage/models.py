@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from typing import Literal
 
 RunStatus = Literal["created", "running", "completed", "failed"]
@@ -29,6 +30,10 @@ class RunRecord:
     gemini_thinking_level: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    timings_json: dict[str, Any] | None = None
+    usage_json: dict[str, Any] | None = None
+    usage_normalized_json: dict[str, Any] | None = None
+    cost_json: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,3 +49,11 @@ class DocumentRecord:
     pages_count: int | None
     ocr_artifacts_path: str | None
     ocr_error: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LLMOutputRecord:
+    run_id: str
+    response_json_path: str
+    response_valid: bool
+    schema_validation_errors_path: str | None

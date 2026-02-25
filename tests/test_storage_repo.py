@@ -122,3 +122,65 @@ def test_storage_repo_rejects_duplicate_doc_id_in_same_run(tmp_path: Path) -> No
             ocr_status="pending",
             ocr_artifacts_path=str(tmp_path / "ocr"),
         )
+
+
+def test_storage_repo_updates_run_metrics(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session()
+    run = repo.create_run(
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_name="kaucja_gap_analysis",
+        prompt_version="v001",
+        schema_version="v001",
+        status="running",
+    )
+
+    repo.update_run_metrics(
+        run_id=run.run_id,
+        timings_json={"t_total_ms": 100.0},
+        usage_json={"raw": 1},
+        usage_normalized_json={"total_tokens": 10},
+        cost_json={"llm_cost_usd": 0.1},
+    )
+
+    updated = repo.get_run(run.run_id)
+    assert updated is not None
+    assert updated.timings_json == {"t_total_ms": 100.0}
+    assert updated.usage_json == {"raw": 1}
+    assert updated.usage_normalized_json == {"total_tokens": 10}
+    assert updated.cost_json == {"llm_cost_usd": 0.1}
+
+
+def test_storage_repo_upsert_llm_output(tmp_path: Path) -> None:
+    repo = StorageRepo(db_path=tmp_path / "kaucja.sqlite3")
+    session = repo.create_session()
+    run = repo.create_run(
+        session_id=session.session_id,
+        provider="openai",
+        model="gpt-5.1",
+        prompt_name="kaucja_gap_analysis",
+        prompt_version="v001",
+        schema_version="v001",
+        status="running",
+    )
+
+    repo.upsert_llm_output(
+        run_id=run.run_id,
+        response_json_path=str(tmp_path / "parsed.json"),
+        response_valid=False,
+        schema_validation_errors_path=str(tmp_path / "validation.json"),
+    )
+    repo.upsert_llm_output(
+        run_id=run.run_id,
+        response_json_path=str(tmp_path / "parsed_v2.json"),
+        response_valid=True,
+        schema_validation_errors_path=None,
+    )
+
+    llm_output = repo.get_llm_output(run_id=run.run_id)
+    assert llm_output is not None
+    assert llm_output.response_json_path.endswith("parsed_v2.json")
+    assert llm_output.response_valid is True
+    assert llm_output.schema_validation_errors_path is None

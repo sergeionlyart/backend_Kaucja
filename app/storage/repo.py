@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from app.storage.artifacts import ArtifactsManager
 from app.storage.db import connection, init_db
 from app.storage.models import (
     DocumentRecord,
+    LLMOutputRecord,
     OCRStatus,
     RunRecord,
     RunStatus,
@@ -143,6 +146,38 @@ class StorageRepo:
         if result.rowcount == 0:
             raise KeyError(f"Run not found: {run_id}")
 
+    def update_run_metrics(
+        self,
+        *,
+        run_id: str,
+        timings_json: dict[str, Any],
+        usage_json: dict[str, Any],
+        usage_normalized_json: dict[str, Any],
+        cost_json: dict[str, Any],
+    ) -> None:
+        with connection(self.db_path) as conn:
+            result = conn.execute(
+                """
+                UPDATE runs
+                SET
+                    timings_json = ?,
+                    usage_json = ?,
+                    usage_normalized_json = ?,
+                    cost_json = ?
+                WHERE run_id = ?
+                """,
+                (
+                    _to_json_text(timings_json),
+                    _to_json_text(usage_json),
+                    _to_json_text(usage_normalized_json),
+                    _to_json_text(cost_json),
+                    run_id,
+                ),
+            )
+
+        if result.rowcount == 0:
+            raise KeyError(f"Run not found: {run_id}")
+
     def get_run(self, run_id: str) -> RunRecord | None:
         with connection(self.db_path) as conn:
             row = conn.execute(
@@ -161,6 +196,10 @@ class StorageRepo:
                     status,
                     error_code,
                     error_message,
+                    timings_json,
+                    usage_json,
+                    usage_normalized_json,
+                    cost_json,
                     artifacts_root_path
                 FROM runs
                 WHERE run_id = ?
@@ -185,6 +224,10 @@ class StorageRepo:
             status=str(row["status"]),
             error_code=_to_optional_str(row["error_code"]),
             error_message=_to_optional_str(row["error_message"]),
+            timings_json=_from_json_text(row["timings_json"]),
+            usage_json=_from_json_text(row["usage_json"]),
+            usage_normalized_json=_from_json_text(row["usage_normalized_json"]),
+            cost_json=_from_json_text(row["cost_json"]),
             artifacts_root_path=str(row["artifacts_root_path"]),
         )
 
@@ -349,6 +392,65 @@ class StorageRepo:
 
         return [_row_to_document_record(row) for row in rows]
 
+    def upsert_llm_output(
+        self,
+        *,
+        run_id: str,
+        response_json_path: str,
+        response_valid: bool,
+        schema_validation_errors_path: str | None,
+    ) -> None:
+        with connection(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO llm_outputs (
+                    run_id,
+                    response_json_path,
+                    response_valid,
+                    schema_validation_errors_path
+                )
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    response_json_path = excluded.response_json_path,
+                    response_valid = excluded.response_valid,
+                    schema_validation_errors_path = excluded.schema_validation_errors_path
+                """,
+                (
+                    run_id,
+                    response_json_path,
+                    1 if response_valid else 0,
+                    schema_validation_errors_path,
+                ),
+            )
+
+    def get_llm_output(self, *, run_id: str) -> LLMOutputRecord | None:
+        with connection(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    run_id,
+                    response_json_path,
+                    response_valid,
+                    schema_validation_errors_path
+                FROM llm_outputs
+                WHERE run_id = ?
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return LLMOutputRecord(
+            run_id=str(row["run_id"]),
+            response_json_path=str(row["response_json_path"]),
+            response_valid=bool(row["response_valid"]),
+            schema_validation_errors_path=_to_optional_str(
+                row["schema_validation_errors_path"]
+            ),
+        )
+
 
 def _utc_now() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
@@ -380,3 +482,22 @@ def _to_optional_int(value: object) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _to_json_text(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _from_json_text(value: object) -> dict[str, Any] | None:
+    text = _to_optional_str(value)
+    if text is None:
+        return None
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {"_raw": text}
+
+    if not isinstance(parsed, dict):
+        return {"_value": parsed}
+    return parsed
