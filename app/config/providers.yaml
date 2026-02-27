@@ -35,6 +35,9 @@ llm_providers:
       gemini-3.1-flash-preview:
         id: gemini-3.1-flash-preview
         structured_output_json_schema: true
+      gemini-2.5-flash:
+        id: gemini-2.5-flash
+        structured_output_json_schema: true
 
 ocr_providers:
   mistral:

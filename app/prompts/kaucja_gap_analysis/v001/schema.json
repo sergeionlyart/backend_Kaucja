@@ -25,10 +25,23 @@
       ],
       "properties": {
         "parties": {
-          "type": "object",
-          "description": "Facts about parties (tenant/landlord, etc.). Each field is Fact.",
-          "additionalProperties": {
-            "$ref": "#/$defs/fact"
+          "type": "array",
+          "description": "Facts about parties (tenant/landlord, etc.).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "role",
+              "fact"
+            ],
+            "properties": {
+              "role": {
+                "type": "string"
+              },
+              "fact": {
+                "$ref": "#/$defs/fact"
+              }
+            }
           }
         },
         "property_address": {
@@ -38,17 +51,43 @@
           "$ref": "#/$defs/fact"
         },
         "key_dates": {
-          "type": "object",
-          "description": "Key dates (signing, start, end, move-out, protocol, etc.). Each field is Fact.",
-          "additionalProperties": {
-            "$ref": "#/$defs/fact"
+          "type": "array",
+          "description": "Key dates (signing, start, end, move-out, protocol, etc.).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "fact"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "fact": {
+                "$ref": "#/$defs/fact"
+              }
+            }
           }
         },
         "money": {
-          "type": "object",
-          "description": "Monetary facts (deposit, rent, deductions, etc.). Each field is Fact.",
-          "additionalProperties": {
-            "$ref": "#/$defs/fact"
+          "type": "array",
+          "description": "Monetary facts (deposit, rent, deductions, etc.).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "fact"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "fact": {
+                "$ref": "#/$defs/fact"
+              }
+            }
           }
         },
         "notes": {
@@ -146,7 +185,12 @@
         "sources"
       ],
       "properties": {
-        "value": {},
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "type": "string",
           "enum": [

@@ -55,11 +55,11 @@ def _valid_output(schema: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "case_facts": {
-            "parties": {"tenant": _fact()},
+            "parties": [{"role": "tenant", "fact": _fact()}],
             "property_address": _fact(),
             "lease_type": _fact(),
-            "key_dates": {"lease_start": _fact()},
-            "money": {"kaucja": _fact()},
+            "key_dates": [{"name": "lease_start", "fact": _fact()}],
+            "money": [{"name": "kaucja", "fact": _fact()}],
             "notes": [],
         },
         "checklist": checklist,

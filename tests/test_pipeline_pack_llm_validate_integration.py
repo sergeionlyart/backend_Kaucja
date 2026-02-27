@@ -84,11 +84,11 @@ def _valid_parsed_json(schema: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "case_facts": {
-            "parties": {"tenant": fact},
+            "parties": [{"role": "tenant", "fact": fact}],
             "property_address": fact,
             "lease_type": fact,
-            "key_dates": {"start": fact},
-            "money": {"deposit": fact},
+            "key_dates": [{"name": "start", "fact": fact}],
+            "money": [{"name": "deposit", "fact": fact}],
             "notes": [],
         },
         "checklist": checklist,

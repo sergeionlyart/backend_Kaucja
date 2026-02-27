@@ -9,11 +9,14 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         env_prefix="KAUCJA_",
         extra="ignore",
@@ -113,7 +116,9 @@ class Settings(BaseSettings):
     )
     mistral_api_key: str | None = Field(
         default=None,
-        validation_alias=AliasChoices("KAUCJA_MISTRAL_API_KEY", "MISTRAL_API_KEY"),
+        validation_alias=AliasChoices(
+            "KAUCJA_MISTRAL_API_KEY", "MISTRAL_API_KEY", "OCR_API_KEY"
+        ),
     )
 
     @property

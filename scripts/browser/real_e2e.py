@@ -8,7 +8,7 @@ def run_real_e2e(provider_name: str):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto("http://127.0.0.1:7861")
+        page.goto("http://127.0.0.1:7860")
 
         # Wait for app load
         page.locator("#analyze_button").wait_for()
@@ -17,6 +17,9 @@ def run_real_e2e(provider_name: str):
         if provider_name.lower() != "openai":
             page.get_by_label("Provider").first.click()
             page.get_by_role("option", name="Google").click()
+            time.sleep(1)
+            page.get_by_label("Model").first.click()
+            page.get_by_role("option", name="gemini-2.5-flash").first.click()
             time.sleep(1)
 
         # Upload Document
