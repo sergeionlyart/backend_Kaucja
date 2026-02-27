@@ -46,6 +46,19 @@ Run browser smoke (seed + start + test in one command):
 
 Reference guide: `docs/BROWSER_TESTS.md`.
 
+## Live E2E Verification (Requires External APIs)
+
+To execute a real browser-driven End-to-End test that uploads a fixture document and runs the full OCR + LLM pipeline against both OpenAI and Google Gemini providers:
+
+1. Ensure `MISTRAL_API_KEY`, `OPENAI_API_KEY`, and `GOOGLE_API_KEY` are valid in `.env`.
+2. Start the Gradio app in the background (`./scripts/start.sh`).
+3. Run the automated Playwright verifier:
+
+```bash
+source .venv/bin/activate
+python scripts/browser/real_e2e.py
+```
+
 ## Live Provider Smoke
 
 Run local operational diagnostics for provider contracts:
