@@ -1251,7 +1251,17 @@ def build_app(
         )
 
         analyze_button.click(
-            fn=lambda current_session_id, uploaded, selected_provider, selected_model, selected_prompt_name, selected_prompt_version, selected_ocr_model, selected_table_format, selected_include_images, selected_reasoning, selected_thinking: (
+            fn=lambda current_session_id,
+            uploaded,
+            selected_provider,
+            selected_model,
+            selected_prompt_name,
+            selected_prompt_version,
+            selected_ocr_model,
+            selected_table_format,
+            selected_include_images,
+            selected_reasoning,
+            selected_thinking: (
                 run_full_pipeline(
                     orchestrator=full_orchestrator,
                     prompt_name=selected_prompt_name,
@@ -1312,7 +1322,13 @@ def build_app(
         )
 
         history_refresh_button.click(
-            fn=lambda session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
+            fn=lambda session_filter,
+            provider_filter,
+            model_filter,
+            prompt_filter,
+            date_from_filter,
+            date_to_filter,
+            result_limit: (
                 refresh_history_for_ui(
                     repo=storage_repo,
                     session_id=session_filter,
@@ -1377,7 +1393,17 @@ def build_app(
         )
 
         restore_button.click(
-            fn=lambda selected_zip_file, overwrite_existing_flag, verify_only_flag, require_signature_flag, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
+            fn=lambda selected_zip_file,
+            overwrite_existing_flag,
+            verify_only_flag,
+            require_signature_flag,
+            session_filter,
+            provider_filter,
+            model_filter,
+            prompt_filter,
+            date_from_filter,
+            date_to_filter,
+            result_limit: (
                 restore_history_run_bundle(
                     repo=storage_repo,
                     zip_file_path=selected_zip_file,
@@ -1421,7 +1447,16 @@ def build_app(
         )
 
         delete_history_button.click(
-            fn=lambda selected_run_id, confirmed_run_id, create_backup_before_delete, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
+            fn=lambda selected_run_id,
+            confirmed_run_id,
+            create_backup_before_delete,
+            session_filter,
+            provider_filter,
+            model_filter,
+            prompt_filter,
+            date_from_filter,
+            date_to_filter,
+            result_limit: (
                 delete_history_run(
                     repo=storage_repo,
                     run_id=selected_run_id,
@@ -1506,7 +1541,12 @@ def build_app(
         )
 
         save_prompt_button.click(
-            fn=lambda selected_prompt_name, selected_prompt_version, edited_prompt, current_schema, author, note: (
+            fn=lambda selected_prompt_name,
+            selected_prompt_version,
+            edited_prompt,
+            current_schema,
+            author,
+            note: (
                 save_prompt_as_new_version_for_ui(
                     prompt_manager=prompt_manager,
                     prompt_name=selected_prompt_name,
