@@ -28,7 +28,7 @@ from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
+    retry_if_exception,
 )
 from app.utils.error_taxonomy import (
     is_retryable_llm_exception,
@@ -186,6 +186,7 @@ def _run_probe_with_timeout(
             latency_ms=payload.latency_ms,
             error_code=payload.error_code,
             error_message=payload.error_message,
+            attempts=payload.attempts,
         )
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -304,7 +305,7 @@ def _probe_openai(settings: Settings) -> ProviderSmokeResult:
         )
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception(_is_transient),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         reraise=True,
@@ -384,7 +385,7 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
         )
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception(_is_transient),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         reraise=True,
@@ -464,7 +465,7 @@ def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
         )
 
     @retry(
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception(_is_transient),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         reraise=True,

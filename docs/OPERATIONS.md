@@ -56,7 +56,12 @@ To execute a real browser-driven End-to-End test that uploads a fixture document
 
 ```bash
 source .venv/bin/activate
-python scripts/browser/real_e2e.py
+python scripts/browser/real_e2e.py \
+    --base-url "http://127.0.0.1:7860" \
+    --file-path "fixtures/1/Faktura PGE.pdf" \
+    --providers "openai,google" \
+    --timeout-seconds 120 \
+    --output-report "artifacts/e2e_report.json"
 ```
 
 ## Live Provider Smoke

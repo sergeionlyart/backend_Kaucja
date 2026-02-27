@@ -32,6 +32,14 @@ To verify your API keys and provider connectivity without starting the full UI:
 ./scripts/smoke.sh
 ```
 
+## Running the Final Go-Live Readiness Check
+
+To run the complete automated validation (boots server -> checks API contracts -> runs headless UI operations -> creates consolidated report) simply run:
+
+```bash
+./scripts/release/run_go_live_check.sh
+```
+
 ## Quality Gates and Local Checks
 
 Run checks before committing:
