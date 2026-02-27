@@ -37,6 +37,8 @@ For a zero-knowledge user, execute the following sequentially from a new termina
 
 ## Technical Snapshot
 
+- **Quality Gates:** `ruff format --check .` passed without deviations.
+
 ### Evidence Artifacts Run (Timestamp: `1772209356`)
 
 - **Diagnostic Go-Live JSON/MD Packages:**
