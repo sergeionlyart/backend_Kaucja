@@ -967,6 +967,20 @@ class OCRPipelineOrchestrator:
                 packed_documents.append(
                     (doc_id, Path(ocr_result.combined_markdown_path))
                 )
+                if ocr_result.converted_pdf_path:
+                    try:
+                        orig_size = original_path.stat().st_size
+                        conv_size = Path(ocr_result.converted_pdf_path).stat().st_size
+                        _append_run_log(
+                            run_artifacts.run_log_path,
+                            f"Doc {doc_id}: TXT pre-processed to PDF (size: {orig_size}B -> {conv_size}B) via {ocr_result.converted_pdf_path}",
+                        )
+                    except Exception as sz_err:  # noqa: BLE001
+                        _append_run_log(
+                            run_artifacts.run_log_path,
+                            f"Doc {doc_id}: TXT converted to PDF but stats failed: {sz_err}",
+                        )
+
                 _append_run_log(run_artifacts.run_log_path, f"Doc {doc_id}: OCR ok")
             except Exception as error:  # noqa: BLE001
                 has_failures = True
@@ -1026,16 +1040,52 @@ class OCRPipelineOrchestrator:
         prompt_version: str,
     ) -> tuple[str, dict[str, Any]]:
         prompt_dir = self.prompt_root / prompt_name / prompt_version
-        system_prompt_path = prompt_dir / "system_prompt.txt"
-        schema_path = prompt_dir / "schema.json"
+        requested_prompt_path = prompt_dir / "system_prompt.txt"
+        requested_schema_path = prompt_dir / "schema.json"
 
-        if not system_prompt_path.exists():
-            raise FileNotFoundError(f"Prompt not found: {system_prompt_path}")
-        if not schema_path.exists():
-            raise FileNotFoundError(f"Schema not found: {schema_path}")
+        if not requested_prompt_path.exists():
+            raise FileNotFoundError(
+                f"Requested Prompt not found: {requested_prompt_path}"
+            )
+        if not requested_schema_path.exists():
+            raise FileNotFoundError(
+                f"Requested Schema not found: {requested_schema_path}"
+            )
 
-        system_prompt = system_prompt_path.read_text(encoding="utf-8")
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        system_prompt = requested_prompt_path.read_text(encoding="utf-8")
+        schema_text = requested_schema_path.read_text(encoding="utf-8")
+
+        # Enforce canonical TechSpec Lock: the requested files MUST match the canonical versions.
+        canonical_prompt_path = Path("app/prompts/canonical_prompt.txt")
+        canonical_schema_path = Path("app/schemas/canonical_schema.json")
+
+        from app.utils.error_taxonomy import TechspecDriftError
+
+        if not canonical_prompt_path.exists():
+            raise TechspecDriftError("Canonical TechSpec system_prompt.txt is missing.")
+
+        if not canonical_schema_path.exists():
+            raise TechspecDriftError("Canonical TechSpec schema.json is missing.")
+
+        canonical_prompt_text = canonical_prompt_path.read_text(encoding="utf-8")
+        if system_prompt != canonical_prompt_text:
+            raise TechspecDriftError(
+                f"Requested prompt version '{prompt_version}' violates the byte-for-byte canonical TechSpec lock."
+            )
+
+        canonical_schema_text = canonical_schema_path.read_text(encoding="utf-8")
+        try:
+            canonical_schema_json = json.loads(canonical_schema_text)
+        except json.JSONDecodeError as error:
+            raise TechspecDriftError(f"Canonical JSON schema invalid: {error}")
+
+        requested_schema_json = json.loads(schema_text)
+        if requested_schema_json != canonical_schema_json:
+            raise TechspecDriftError(
+                f"Requested schema version '{prompt_version}' violates the exact canonical TechSpec lock."
+            )
+
+        schema = json.loads(schema_text)
 
         if not isinstance(schema, dict):
             raise ValueError("Schema must be a JSON object")

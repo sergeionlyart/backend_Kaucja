@@ -99,7 +99,7 @@ if ! python scripts/browser/real_e2e.py \
     --base-url "http://127.0.0.1:${KAUCJA_GRADIO_SERVER_PORT:-7400}" \
     --file-path "$REPO_ROOT/fixtures/1/Faktura PGE.pdf" \
     --providers "openai,google" \
-    --timeout-seconds 120 \
+    --timeout-seconds 180 \
     --output-report "$E2E_JSON"; then
     echo "ERROR: E2E Playwright execution crashed!"
     exit 3

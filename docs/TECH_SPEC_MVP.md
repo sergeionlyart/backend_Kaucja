@@ -912,21 +912,45 @@ MVP считается готовым, если:
       \],  
       "properties": {  
         "parties": {  
-          "type": "object",  
-          "description": "Факты о сторонах (tenant/landlord и т.п.). Каждое поле — объект Fact.",  
-          "additionalProperties": { "$ref": "\#/$defs/fact" }  
+          "type": "array",  
+          "description": "Факты о сторонах (tenant/landlord и т.п.).",  
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "fact"],
+            "properties": {
+              "role": {"type": "string"},
+              "fact": {"$ref": "#/$defs/fact"}
+            }
+          }
         },  
         "property\_address": { "$ref": "\#/$defs/fact" },  
         "lease\_type": { "$ref": "\#/$defs/fact" },  
         "key\_dates": {  
-          "type": "object",  
-          "description": "Ключевые даты (подписание, начало, окончание, выезд, протокол и т.п.). Каждое поле — объект Fact.",  
-          "additionalProperties": { "$ref": "\#/$defs/fact" }  
+          "type": "array",  
+          "description": "Ключевые даты (подписание, начало, окончание, выезд, протокол и т.п.).",  
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "fact"],
+            "properties": {
+              "name": {"type": "string"},
+              "fact": {"$ref": "#/$defs/fact"}
+            }
+          }
         },  
         "money": {  
-          "type": "object",  
-          "description": "Денежные параметры (kaucja, czynsz, удержания и т.п.). Каждое поле — объект Fact.",  
-          "additionalProperties": { "$ref": "\#/$defs/fact" }  
+          "type": "array",  
+          "description": "Денежные параметры (kaucja, czynsz, удержания и т.п.).",  
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "fact"],
+            "properties": {
+              "name": {"type": "string"},
+              "fact": {"$ref": "#/$defs/fact"}
+            }
+          }
         },  
         "notes": {  
           "type": "array",  
@@ -988,7 +1012,9 @@ MVP считается готовым, если:
       "additionalProperties": false,  
       "required": \["value", "status", "sources"\],  
       "properties": {  
-        "value": {},  
+        "value": {
+          "type": ["string", "number", "boolean", "null"]
+        },  
         "status": {  
           "type": "string",  
           "enum": \["confirmed", "missing", "ambiguous", "conflict"\]  

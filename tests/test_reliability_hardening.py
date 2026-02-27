@@ -232,6 +232,7 @@ def _llm_result(parsed_json: dict[str, Any]) -> LLMResult:
 def _setup_orchestrator(
     *,
     tmp_path: Path,
+    monkeypatch: Any,
     ocr_client: Any,
     llm_clients: dict[str, Any],
 ) -> OCRPipelineOrchestrator:
@@ -240,19 +241,50 @@ def _setup_orchestrator(
         db_path=tmp_path / "kaucja.sqlite3",
         artifacts_manager=artifacts_manager,
     )
+
+    prompt_root = tmp_path / "prompts"
+    prompt_dir = prompt_root / "kaucja_gap_analysis" / "v001"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    canonical_prompt_text = Path("app/prompts/canonical_prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    canonical_schema_text = Path("app/schemas/canonical_schema.json").read_text(
+        encoding="utf-8"
+    )
+    (prompt_dir / "system_prompt.txt").write_text(
+        canonical_prompt_text, encoding="utf-8"
+    )
+    (prompt_dir / "schema.json").write_text(canonical_schema_text, encoding="utf-8")
+
+    app_prompts = tmp_path / "app" / "prompts"
+    app_schemas = tmp_path / "app" / "schemas"
+    app_prompts.mkdir(parents=True, exist_ok=True)
+    app_schemas.mkdir(parents=True, exist_ok=True)
+    (app_prompts / "canonical_prompt.txt").write_text(
+        canonical_prompt_text, encoding="utf-8"
+    )
+    (app_schemas / "canonical_schema.json").write_text(
+        canonical_schema_text, encoding="utf-8"
+    )
+
+    monkeypatch.chdir(tmp_path)
+
     return OCRPipelineOrchestrator(
         repo=repo,
         artifacts_manager=artifacts_manager,
         ocr_client=ocr_client,
         llm_clients=llm_clients,
-        prompt_root=Path("app/prompts"),
+        prompt_root=prompt_root,
         sleep_fn=lambda _: None,
     )
 
 
-def test_ocr_retry_success_after_first_transient_failure(tmp_path: Path) -> None:
+def test_ocr_retry_success_after_first_transient_failure(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     ocr_client = OCRFailOnceClient()
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=ocr_client,
         llm_clients={},
@@ -275,11 +307,12 @@ def test_ocr_retry_success_after_first_transient_failure(tmp_path: Path) -> None
     assert ocr_client.attempts == 2
 
 
-def test_llm_retry_on_5xx_then_success(tmp_path: Path) -> None:
+def test_llm_retry_on_5xx_then_success(tmp_path: Path, monkeypatch: Any) -> None:
     schema = _load_schema()
     payload = _valid_llm_payload(schema)
     llm_client = LLMRetryOnceClient(payload)
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(),
         llm_clients={"openai": llm_client},
@@ -301,9 +334,10 @@ def test_llm_retry_on_5xx_then_success(tmp_path: Path) -> None:
     assert llm_client.attempts == 2
 
 
-def test_no_retry_for_llm_invalid_json(tmp_path: Path) -> None:
+def test_no_retry_for_llm_invalid_json(tmp_path: Path, monkeypatch: Any) -> None:
     llm_client = LLMInvalidJsonClient()
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(),
         llm_clients={"openai": llm_client},
@@ -321,17 +355,19 @@ def test_no_retry_for_llm_invalid_json(tmp_path: Path) -> None:
         ocr_options=OCROptions(model="mistral-ocr-latest"),
     )
 
+    print(result.error_message)
     assert result.error_code == "LLM_INVALID_JSON"
     assert llm_client.attempts == 1
 
 
-def test_no_retry_for_schema_invalid_output(tmp_path: Path) -> None:
+def test_no_retry_for_schema_invalid_output(tmp_path: Path, monkeypatch: Any) -> None:
     schema = _load_schema()
     invalid_payload = _valid_llm_payload(schema)
     invalid_payload["checklist"] = invalid_payload["checklist"][:-1]
 
     llm_client = LLMSchemaInvalidClient(invalid_payload)
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(),
         llm_clients={"openai": llm_client},
@@ -353,9 +389,12 @@ def test_no_retry_for_schema_invalid_output(tmp_path: Path) -> None:
     assert llm_client.attempts == 1
 
 
-def test_context_too_large_branch_persists_failure(tmp_path: Path) -> None:
+def test_context_too_large_branch_persists_failure(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     llm_client = NeverCalledLLMClient()
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(content="X" * 2000),
         llm_clients={"openai": llm_client},
@@ -389,9 +428,12 @@ def test_context_too_large_branch_persists_failure(tmp_path: Path) -> None:
     assert "context threshold" in manifest["error_message"]
 
 
-def test_llm_storage_error_maps_to_storage_error(tmp_path: Path) -> None:
+def test_llm_storage_error_maps_to_storage_error(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     llm_client = LLMStorageErrorClient()
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(),
         llm_clients={"openai": llm_client},
@@ -414,9 +456,12 @@ def test_llm_storage_error_maps_to_storage_error(tmp_path: Path) -> None:
     assert llm_client.attempts == 1
 
 
-def test_llm_unknown_error_maps_to_unknown_error(tmp_path: Path) -> None:
+def test_llm_unknown_error_maps_to_unknown_error(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     llm_client = LLMUnknownErrorClient()
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(),
         llm_clients={"openai": llm_client},
@@ -440,10 +485,11 @@ def test_llm_unknown_error_maps_to_unknown_error(tmp_path: Path) -> None:
 
 
 def test_storage_error_during_failure_persistence_returns_storage_error(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     llm_client = LLMUnknownErrorClient()
     orchestrator = _setup_orchestrator(
+        monkeypatch=monkeypatch,
         tmp_path=tmp_path,
         ocr_client=OCRSimpleClient(),
         llm_clients={"openai": llm_client},
