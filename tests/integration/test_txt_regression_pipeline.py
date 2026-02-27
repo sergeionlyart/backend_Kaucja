@@ -89,3 +89,71 @@ def test_integration_txt_to_pdf_in_pipeline(tmp_path: Path, monkeypatch: Any) ->
         encoding="utf-8"
     )
     assert "Dummy processed text from mock." in md_content
+
+    # Validate that run.log captured the pre-processing
+    run_logs = list(tmp_path.rglob("run.log"))
+    assert len(run_logs) == 1, "Exactly one run.log should be created"
+    log_content = run_logs[0].read_text(encoding="utf-8")
+    assert "TXT pre-processed to PDF (size:" in log_content
+
+
+def test_integration_txt_to_pdf_conversion_failure(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    # 1. Arrange Mocks
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    src_txt = docs_dir / "broken.txt"
+    src_txt.write_text("This text won't convert.", encoding="utf-8")
+
+    upload_mock = MockUploadService()
+    process_mock = MockProcessService()
+
+    ocr_client = MistralOCRClient(
+        api_key="dummy",
+        upload_service=upload_mock,
+        process_service=process_mock,
+    )
+
+    canonical_schema_text = Path("app/schemas/canonical_schema.json").read_text(
+        encoding="utf-8"
+    )
+
+    llm_payload = _valid_llm_payload(json.loads(canonical_schema_text))
+    llm_client = SuccessLLMClient(parsed_json=llm_payload)
+
+    orchestrator = _setup_orchestrator(
+        tmp_path, monkeypatch=monkeypatch, llm_clients={"openai": llm_client}
+    )
+    orchestrator.ocr_client = ocr_client
+
+    # Force the conversion to fail
+    def _mock_fail_convert(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("Mocked PDF conversion catastrophe")
+
+    monkeypatch.setattr(
+        "app.utils.pdf_converter.convert_txt_to_pdf", _mock_fail_convert
+    )
+
+    # 3. Act
+    result = orchestrator.run_full_pipeline(
+        input_files=[str(src_txt)],
+        session_id=None,
+        provider="openai",
+        model="gpt-4.5",
+        prompt_name="kaucja_gap_analysis",
+        prompt_version="v001",
+        ocr_options=OCROptions(),
+    )
+
+    # 4. Assert
+    assert result.run_status == "failed"
+    assert result.error_code == "TXT_PDF_CONVERSION_ERROR"
+
+    # Assert details
+    error_msg = result.error_message
+    assert error_msg is not None
+    assert "Failed for doc_id" in error_msg
+    assert "broken.txt" in error_msg
+    assert "size=24 bytes" in error_msg  # "This text won't convert." is 24 bytes
+    assert "Mocked PDF conversion catastrophe" in error_msg

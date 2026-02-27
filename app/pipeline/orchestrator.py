@@ -1069,7 +1069,7 @@ class OCRPipelineOrchestrator:
 
         canonical_prompt_text = canonical_prompt_path.read_text(encoding="utf-8")
         if system_prompt != canonical_prompt_text:
-            raise ValueError(
+            raise TechspecDriftError(
                 f"Requested prompt version '{prompt_version}' violates the byte-for-byte canonical TechSpec lock."
             )
 
@@ -1081,7 +1081,7 @@ class OCRPipelineOrchestrator:
 
         requested_schema_json = json.loads(schema_text)
         if requested_schema_json != canonical_schema_json:
-            raise ValueError(
+            raise TechspecDriftError(
                 f"Requested schema version '{prompt_version}' violates the exact canonical TechSpec lock."
             )
 
