@@ -11,8 +11,8 @@ In this final phase before merge, we synced the branch with `origin/main` and ex
 - **./scripts/release/run_go_live_check.sh**: `GO` (OpenAI + Google + Mistral OCR passed locally on live smoke & playwright ui tests)
 
 ## Artifacts
-- **Pull Request:** [https://github.com/sergeionlyart/backend_Kaucja/pull/2](https://github.com/sergeionlyart/backend_Kaucja/pull/2)
-- **Commit Hash HEAD:** `707ee6eb1b264a14707f76722b654de9ec6730db`
+- **Pull Request:** [https://github.com/sergeionlyart/backend_Kaucja/pull/2](https://github.com/sergeionlyart/backend_Kaucja/pull/2) (Base: `main`, Head: `codex/iteration-31-techspec-lock-and-txt-pdf`)
+- **Commit Hash HEAD:** `be5c5cf43be13a866ec4f8213c1701e976c70a47` (Gate execution verified against parent code commit `707ee6e`, `be5c5cf` is documentation-only)
 - **Preflight Run Path:** `artifacts/release_preflight/20260227T220453Z`
 - **Go-Live Run Path:** `artifacts/go_live/1772229922`
 
