@@ -28,6 +28,18 @@ Iteration 29 acts as the final polish to bring the **Kaucja / Legal Copilot UN**
 The final diagnostic pass successfully identified, tested, generated, and validated complete artifact packages containing (`run.json`, `logs/run.log`, `llm/response_parsed.json`, `llm/validation.json`, and `ocr/combined.md`).
 
 For record tracking, exact verified artifacts were saved here:
-- **OpenAI Package:** `data/sessions/a13a5a27-5b2c-46a7-af79-b44b08b84d6e/runs/b9c41fd9-a052-474a-8bf8-d94a3f81944f/`
-- **Google Package:** `data/sessions/7d76716a-26fa-4891-9937-0a5d8107b64a/runs/42804999-b163-43ae-8ea6-410409926b62/`
-- **Go-Live Consolidated Execution Package:** `artifacts/go_live/1772203193/`
+- **Go-Live Consolidated Execution Package:** `artifacts/go_live/1772206923/`
+  - JSON: `artifacts/go_live/1772206923/report.json`
+  - MD: `artifacts/go_live/1772206923/report.md`
+
+- **OpenAI Package:** `data/sessions/283431e6-5d57-4060-938b-86418e5a6855/runs/5f420dda-2b1b-49bf-925e-e6a93153201e/`
+  - config: `.../run.json`
+  - logs: `.../logs/run.log`
+  - ocr: `.../documents/smoke-doc/ocr/combined.md` (and similarly for actual pdf)
+  - llm: `.../llm/response_parsed.json`, `.../llm/validation.json`
+
+- **Google Package:** `data/sessions/a5d66f2c-1774-4d7c-8e20-24388701a18d/runs/911848ef-8da4-4d52-ade1-53d58c5d785e/`
+  - config: `.../run.json`
+  - logs: `.../logs/run.log`
+  - ocr: `.../documents/smoke-doc/ocr/combined.md` (and similarly for actual pdf)
+  - llm: `.../llm/response_parsed.json`, `.../llm/validation.json`
