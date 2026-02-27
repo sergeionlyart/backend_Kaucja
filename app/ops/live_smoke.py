@@ -339,7 +339,7 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
             user_content='Return {"pong":"ok"}.',
             json_schema=_SMOKE_RESPONSE_SCHEMA,
             model=model_name,
-            params={"gemini_thinking_level": "low", "max_output_tokens": 32},
+            params={"gemini_thinking_level": "low", "max_output_tokens": 256},
             run_meta={"schema_name": "live_provider_smoke_google"},
         )
         if not isinstance(result.parsed_json.get("pong"), str):

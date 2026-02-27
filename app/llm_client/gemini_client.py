@@ -124,7 +124,13 @@ class GeminiLLMClient:
         except ImportError as error:
             raise RuntimeError("google-genai package is not installed") from error
 
-        client = genai.Client(api_key=self._api_key)
+        # Keep a persistent client reference to prevent socket closures.
+        # See Iteration 24 live_smoke bug.
+        client = getattr(self, "_genai_client", None)
+        if client is None:
+            client = genai.Client(api_key=self._api_key)
+            self._genai_client = client
+
         self._generate_service = client.models
         return self._generate_service
 

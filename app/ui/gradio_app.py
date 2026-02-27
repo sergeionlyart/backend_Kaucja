@@ -2119,13 +2119,50 @@ def _comparison_metrics_text(diff: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _run_startup_checks(settings: Settings) -> None:
+    print("=== Kaucja E2E Environment Checks ===")
+    missing_critical = []
+    if not settings.mistral_api_key:
+        missing_critical.append("MISTRAL_API_KEY (Required for OCR)")
+    if not settings.openai_api_key:
+        print("[-] OPENAI_API_KEY is missing (OpenAI provider will be disabled)")
+    if not settings.google_api_key:
+        print("[-] GOOGLE_API_KEY is missing (Google Gemini provider will be disabled)")
+
+    if missing_critical:
+        print("\n[!] CRITICAL WARNING: Missing essential configuration:")
+        for item in missing_critical:
+            print(f"    - {item}")
+        print("Please review your .env file before running pipelines.\n")
+    else:
+        print("[+] Environment looks healthy.\n")
+
+
 def main() -> None:
     settings = get_settings()
+    _run_startup_checks(settings)
+
     app = build_app()
-    app.launch(
-        server_name=settings.gradio_server_name,
-        server_port=settings.gradio_server_port,
-    )
+    target_port = settings.gradio_server_port
+    max_port = target_port + 5
+
+    for port in range(target_port, max_port + 1):
+        try:
+            print(f"Attempting to start Gradio app on port {port}...")
+            app.launch(
+                server_name=settings.gradio_server_name,
+                server_port=port,
+            )
+            return
+        except OSError as e:
+            if "Cannot find empty port" in str(e) or "Address already in use" in str(e):
+                print(f"[!] Port {port} is occupied. Trying next...")
+            else:
+                raise
+
+    print(f"\n[ERROR] Failed to find an open port between {target_port} and {max_port}.")
+    print("If you started multiple instances, please close them.")
+    print(f"Try running: `lsof -ti:{target_port} | xargs kill -9`")
 
 
 if __name__ == "__main__":

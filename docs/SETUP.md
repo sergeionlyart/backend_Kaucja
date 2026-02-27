@@ -1,22 +1,34 @@
 # Local Bootstrap
 
+The easiest way to set up the environment and install dependencies is to use the bootstrap script:
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+./scripts/bootstrap.sh
 ```
 
-Run checks:
+## Running the UI
+
+Start the Gradio application using the startup wrapper (which automatically activates the `.venv` and handles port selection):
 
 ```bash
+./scripts/start.sh
+```
+
+## Running Smoke Diagnostics
+
+To verify your API keys and provider connectivity without starting the full UI:
+
+```bash
+./scripts/smoke.sh
+```
+
+## Quality Gates and Local Checks
+
+Run checks before committing:
+
+```bash
+source .venv/bin/activate
 ruff format .
 ruff check .
 pytest -q
-```
-
-Run UI:
-
-```bash
-python -m app.ui.gradio_app
 ```
