@@ -38,7 +38,16 @@ class Settings(BaseSettings):
     default_ocr_include_image_base64: bool = True
 
     gradio_server_name: str = "127.0.0.1"
-    gradio_server_port: int = Field(default=7860, ge=1, le=65535)
+    gradio_server_port: int = Field(default=7400, ge=1, le=65535)
+    gradio_server_port_max: int = Field(
+        default=7450,
+        ge=1,
+        le=65535,
+        validation_alias=AliasChoices(
+            "KAUCJA_GRADIO_SERVER_PORT_MAX",
+            "GRADIO_SERVER_PORT_MAX",
+        ),
+    )
     e2e_mode: bool = Field(
         default=False,
         validation_alias=AliasChoices("KAUCJA_E2E_MODE", "E2E_MODE"),

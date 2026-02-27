@@ -24,6 +24,13 @@ Start the Gradio application using the startup wrapper (which automatically acti
 ./scripts/start.sh
 ```
 
+Default port policy:
+
+- primary UI port: `7400`
+- fallback scan range: `7400-7450`
+- reserved on this machine for Kaucja: `7400-7450`
+- do not use legacy ports `7860/7861` for Kaucja on this machine
+
 ## Running Smoke Diagnostics
 
 To verify your API keys and provider connectivity without starting the full UI:

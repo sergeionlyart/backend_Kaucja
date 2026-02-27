@@ -96,7 +96,7 @@ echo "[+] Live Smoke Validation Passed."
 echo "4. Executing Full Real E2E Playwright Automation..."
 E2E_JSON="$REPORT_DIR/e2e_report.json"
 if ! python scripts/browser/real_e2e.py \
-    --base-url "http://127.0.0.1:7860" \
+    --base-url "http://127.0.0.1:${KAUCJA_GRADIO_SERVER_PORT:-7400}" \
     --file-path "$REPO_ROOT/fixtures/1/Faktura PGE.pdf" \
     --providers "openai,google" \
     --timeout-seconds 120 \

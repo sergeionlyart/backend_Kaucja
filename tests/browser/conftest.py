@@ -13,7 +13,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def browser_base_url() -> str:
-    return os.getenv("KAUCJA_BROWSER_BASE_URL", "http://127.0.0.1:7861")
+    return os.getenv("KAUCJA_BROWSER_BASE_URL", "http://127.0.0.1:7401")
 
 
 @pytest.fixture(scope="session")

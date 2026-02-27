@@ -2155,7 +2155,7 @@ def main() -> None:
 
     app = build_app()
     target_port = settings.gradio_server_port
-    max_port = target_port + 5
+    max_port = max(target_port, settings.gradio_server_port_max)
 
     for port in range(target_port, max_port + 1):
         try:
@@ -2175,7 +2175,10 @@ def main() -> None:
         f"\n[ERROR] Failed to find an open port between {target_port} and {max_port}."
     )
     print("If you started multiple instances, please close them.")
-    print(f"Try running: `lsof -ti:{target_port} | xargs kill -9`")
+    print(
+        "Try checking occupied ports with: "
+        f"`lsof -nP -iTCP:{target_port}-{max_port} -sTCP:LISTEN`"
+    )
 
 
 if __name__ == "__main__":

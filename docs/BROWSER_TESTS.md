@@ -79,7 +79,9 @@ This creates deterministic history fixtures:
 
 Default URL:
 
-- `http://127.0.0.1:7861`
+- `http://127.0.0.1:7401`
+- allowed local Kaucja port range: `7400-7450`
+- do not use `7860/7861` for Kaucja browser test runs on this machine
 
 ## Run Browser Regression
 
@@ -140,7 +142,7 @@ Direct pytest mode (if app already running):
 
 ```bash
 export KAUCJA_RUN_BROWSER_TESTS=1
-export KAUCJA_BROWSER_BASE_URL=http://127.0.0.1:7861
+export KAUCJA_BROWSER_BASE_URL=http://127.0.0.1:7401
 pytest -q -o addopts= tests/browser -m "browser_p0 or browser_p1" --junitxml artifacts/browser/junit.xml
 ```
 

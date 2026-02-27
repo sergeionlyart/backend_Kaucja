@@ -7,7 +7,7 @@ async def get_screenshot():
         browser = await p.chromium.launch()
         page = await browser.new_page()
         try:
-            await page.goto("http://127.0.0.1:7861", timeout=15000)
+            await page.goto("http://127.0.0.1:7401", timeout=15000)
         except Exception:
             pass
         await page.screenshot(

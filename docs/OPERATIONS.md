@@ -9,6 +9,13 @@ pip install -e ".[dev]"
 python -m app.ui.gradio_app
 ```
 
+## Port Policy (This Machine)
+
+- Kaucja runtime ports: `7400-7450`
+- default UI port: `7400`
+- browser e2e default port: `7401`
+- do not run Kaucja on `7860/7861` on this machine to avoid collisions with other local apps
+
 Optional quality gate before commit:
 
 ```bash
@@ -57,7 +64,7 @@ To execute a real browser-driven End-to-End test that uploads a fixture document
 ```bash
 source .venv/bin/activate
 python scripts/browser/real_e2e.py \
-    --base-url "http://127.0.0.1:7860" \
+    --base-url "http://127.0.0.1:7400" \
     --file-path "fixtures/1/Faktura PGE.pdf" \
     --providers "openai,google" \
     --timeout-seconds 120 \

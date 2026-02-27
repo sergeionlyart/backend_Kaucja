@@ -44,7 +44,7 @@ async def run_case(case_id, url):
 async def main():
     print("Starting Playwright workaround...")
     # P0: Create Quote
-    await run_case("P0_01", "http://127.0.0.1:7861")
+    await run_case("P0_01", "http://127.0.0.1:7401")
     # We will just generate artifacts for the first P0 case to prove the failure.
     # The rest of the cases will be marked as blocked by P0 failure in the report.
 
