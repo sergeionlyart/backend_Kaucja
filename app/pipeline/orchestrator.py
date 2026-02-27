@@ -1025,14 +1025,14 @@ class OCRPipelineOrchestrator:
         prompt_name: str,
         prompt_version: str,
     ) -> tuple[str, dict[str, Any]]:
-        prompt_dir = self.prompt_root / prompt_name / prompt_version
-        system_prompt_path = prompt_dir / "system_prompt.txt"
-        schema_path = prompt_dir / "schema.json"
+        # Hardcoded to canonical artifacts to ensure TechSpec lock.
+        system_prompt_path = Path("app/prompts/canonical_prompt.txt")
+        schema_path = Path("app/schemas/canonical_schema.json")
 
         if not system_prompt_path.exists():
-            raise FileNotFoundError(f"Prompt not found: {system_prompt_path}")
+            raise FileNotFoundError(f"Canonical Prompt not found: {system_prompt_path}")
         if not schema_path.exists():
-            raise FileNotFoundError(f"Schema not found: {schema_path}")
+            raise FileNotFoundError(f"Canonical Schema not found: {schema_path}")
 
         system_prompt = system_prompt_path.read_text(encoding="utf-8")
         schema = json.loads(schema_path.read_text(encoding="utf-8"))

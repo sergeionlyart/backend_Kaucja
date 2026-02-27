@@ -121,11 +121,11 @@ def _valid_llm_payload(schema: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "case_facts": {
-            "parties": [{"role": "tenant", "fact": fact}],
+            "parties": {"tenant": fact},
             "property_address": fact,
             "lease_type": fact,
-            "key_dates": [{"name": "start", "fact": fact}],
-            "money": [{"name": "deposit", "fact": fact}],
+            "key_dates": {"start": fact},
+            "money": {"deposit": fact},
             "notes": [],
         },
         "checklist": checklist,

@@ -39,6 +39,17 @@ class MistralOCRClient:
         options: OCROptions,
         output_dir: Path,
     ) -> OCRResult:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Intercept .txt files and convert them to .pdf natively.
+        # Mistral OCR rejects plain text directly, but handles PDF perfectly.
+        if input_path.suffix.lower() == ".txt":
+            from app.utils.pdf_converter import convert_txt_to_pdf
+
+            pdf_path = output_dir / f"{input_path.stem}_converted.pdf"
+            convert_txt_to_pdf(input_path, pdf_path)
+            input_path = pdf_path
+
         _validate_supported_input(input_path)
 
         output_dir.mkdir(parents=True, exist_ok=True)
