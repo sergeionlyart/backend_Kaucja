@@ -37,19 +37,19 @@ For a zero-knowledge user, execute the following sequentially from a new termina
 
 ## Technical Snapshot
 
-### Evidence Artifacts Run (Timestamp: `1772208806`)
+### Evidence Artifacts Run (Timestamp: `1772209356`)
 
 - **Diagnostic Go-Live JSON/MD Packages:**
-  - `artifacts/go_live/1772208806/report.json`
-  - `artifacts/go_live/1772208806/report.md`
+  - `artifacts/go_live/1772209356/report.json`
+  - `artifacts/go_live/1772209356/report.md`
 
-- **OpenAI Headless E2E Run Context (`26...5238`)**:
-  - Validated Session: `data/sessions/aee1affc-c6b5-4006-a52e-783970cd44ee/runs/26fcd304-11a8-45da-adbe-e0e99ee75238/`
+- **OpenAI Headless E2E Run Context (`02...3ac2`)**:
+  - Validated Session: `data/sessions/005bf879-2776-4780-a7d9-d76a5b8e00c6/runs/a7acf15c-bc76-40c7-bb92-a76a67b0d6f5/`
   - Logs Output: `.../logs/run.log`
   - Model Trace: `.../llm/validation.json`
 
-- **Google Gemini Headless E2E Run Context (`82...f92a`)**:
-  - Validated Session: `data/sessions/70bf9681-a4dc-4565-b4b3-a96730c7b8e0/runs/8295f3cf-c372-4eeb-a775-b5508839f92a/`
+- **Google Gemini Headless E2E Run Context (`02...3ac2`)**:
+  - Validated Session: `data/sessions/91ab0d17-7327-458b-8d09-53a1eb666b71/runs/561980e4-71d4-4c2a-a099-fc30df5e4c32/`
   - Logs Output: `.../logs/run.log`
   - Model Trace: `.../llm/validation.json`
 
