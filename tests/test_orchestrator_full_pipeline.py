@@ -144,12 +144,27 @@ def _setup_orchestrator(
     repo = StorageRepo(
         db_path=tmp_path / "kaucja.sqlite3", artifacts_manager=artifacts_manager
     )
+
+    prompt_root = tmp_path / "prompts"
+    prompt_dir = prompt_root / "kaucja_gap_analysis" / "v001"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    canonical_prompt_text = Path("app/prompts/canonical_prompt.txt").read_text(
+        encoding="utf-8"
+    )
+    canonical_schema_text = Path("app/schemas/canonical_schema.json").read_text(
+        encoding="utf-8"
+    )
+    (prompt_dir / "system_prompt.txt").write_text(
+        canonical_prompt_text, encoding="utf-8"
+    )
+    (prompt_dir / "schema.json").write_text(canonical_schema_text, encoding="utf-8")
+
     return OCRPipelineOrchestrator(
         repo=repo,
         artifacts_manager=artifacts_manager,
         ocr_client=FakeOCRClient(),
         llm_clients=llm_clients,
-        prompt_root=Path("app/prompts"),
+        prompt_root=prompt_root,
     )
 
 

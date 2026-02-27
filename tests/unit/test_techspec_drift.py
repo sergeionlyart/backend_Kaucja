@@ -21,6 +21,8 @@ def test_techspec_prompt_drift() -> None:
     )
 
 
+
+
 def test_techspec_schema_drift() -> None:
     """Verifies that the canonical schema is exactly what is inside the TechSpec MVP document."""
     techspec_mvp_path = Path("docs/TECH_SPEC_MVP.md")
@@ -36,30 +38,31 @@ def test_techspec_schema_drift() -> None:
         canonical_schema_path.read_text(encoding="utf-8")
     )
 
-    # Extract the schema out of the Markdown file
-    # We look for the start and end of the JSON block under section 12.3
-    lines = techspec_mvp_content.splitlines()
-    in_schema_block = False
-    schema_lines = []
-
-    for line in lines:
-        if "## **12.3 JSON Schema ответа (версия v001)**" in line:
-            in_schema_block = True
-            continue
-
-        if in_schema_block:
-            if line.startswith("{"):
-                schema_lines.append(line)
-            elif schema_lines and line.startswith("}"):
-                schema_lines.append(line)
-                break  # Reached the end of the schema block
-            elif schema_lines:
-                schema_lines.append(line)
-
-    extracted_schema_text = "\n".join(schema_lines)
-    assert extracted_schema_text, (
-        "Failed to extract JSON schema snippet from TECH_SPEC_MVP.md"
+    # Extract the schema out of the Markdown file robustly.
+    # The JSON schema inside Section 12.3 is an unfenced block starting with `{` and ending with `}`.
+    schema_start_idx = techspec_mvp_content.find(
+        "## **12.3 JSON Schema ответа (версия v001)**"
     )
+    assert schema_start_idx != -1, "Failed to locate section 12.3 in TECH_SPEC_MVP.md"
+
+    # Find the actual json block payload start by looking for the very first `{`
+    json_start = techspec_mvp_content.find("{", schema_start_idx)
+    assert json_start != -1, (
+        "Failed to locate start of JSON schema block under section 12.3"
+    )
+
+    # We find the furthest terminating `}` that balances the dictionary safely.
+    # For a deterministic schema this is the last `}` before the next `---` or end of file.
+    next_section = techspec_mvp_content.find("---", json_start)
+    if next_section == -1:
+        next_section = len(techspec_mvp_content)
+
+    extracted_schema_text = techspec_mvp_content[json_start:next_section].strip()
+
+    # Trim any trailing markdown non-json text if trailing formatting exists.
+    last_brace = extracted_schema_text.rfind("}")
+    assert last_brace != -1, "Failed to find closing brace of JSON schema"
+    extracted_schema_text = extracted_schema_text[: last_brace + 1]
 
     # Unescape Markdown special characters \_, \[, \] and \# that might exist in the raw markdown code block
     extracted_schema_text = (

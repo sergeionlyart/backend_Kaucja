@@ -27,3 +27,4 @@ class OCRResult:
     page_renders_dir: str
     quality_path: str
     quality_warnings: list[str]
+    converted_pdf_path: str | None = None

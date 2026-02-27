@@ -23,6 +23,7 @@ ErrorCode = Literal[
     "LIVE_SMOKE_TIMEOUT",
     "LIVE_SMOKE_MISSING_API_KEY",
     "LIVE_SMOKE_SDK_NOT_INSTALLED",
+    "TXT_PDF_CONVERSION_ERROR",
 ]
 
 ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
@@ -53,11 +54,16 @@ ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
     "LIVE_SMOKE_SDK_NOT_INSTALLED": (
         "Live smoke skipped provider because SDK package is not installed."
     ),
+    "TXT_PDF_CONVERSION_ERROR": "A .txt file failed to safely convert into a compatible .pdf payload for the OCR service.",
 }
 
 
 class UnsupportedFileTypeError(ValueError):
     """Raised when OCR input file type is unsupported."""
+
+
+class TXTPDFConversionError(ValueError):
+    """Raised when a .txt to .pdf conversion fails before OCR."""
 
 
 class OCRParseError(ValueError):
@@ -71,6 +77,8 @@ class ContextTooLargeError(ValueError):
 def classify_ocr_error(error: Exception) -> ErrorCode:
     if isinstance(error, UnsupportedFileTypeError):
         return "FILE_UNSUPPORTED"
+    if isinstance(error, TXTPDFConversionError):
+        return "TXT_PDF_CONVERSION_ERROR"
     if isinstance(error, OCRParseError | json.JSONDecodeError):
         return "OCR_PARSE_ERROR"
 

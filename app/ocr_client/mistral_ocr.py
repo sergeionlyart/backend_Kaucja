@@ -8,7 +8,11 @@ from typing import Any, Protocol
 
 from app.ocr_client.quality import evaluate_ocr_quality
 from app.ocr_client.types import OCROptions, OCRResult
-from app.utils.error_taxonomy import OCRParseError, UnsupportedFileTypeError
+from app.utils.error_taxonomy import (
+    OCRParseError,
+    UnsupportedFileTypeError,
+    TXTPDFConversionError,
+)
 
 
 class OCRProcessService(Protocol):
@@ -41,14 +45,19 @@ class MistralOCRClient:
     ) -> OCRResult:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Intercept .txt files and convert them to .pdf natively.
-        # Mistral OCR rejects plain text directly, but handles PDF perfectly.
+        converted_pdf_path = None
         if input_path.suffix.lower() == ".txt":
             from app.utils.pdf_converter import convert_txt_to_pdf
 
             pdf_path = output_dir / f"{input_path.stem}_converted.pdf"
-            convert_txt_to_pdf(input_path, pdf_path)
+            try:
+                convert_txt_to_pdf(input_path, pdf_path)
+            except Exception as error:
+                raise TXTPDFConversionError(
+                    f"TXT conversion failed: {error}"
+                ) from error
             input_path = pdf_path
+            converted_pdf_path = str(pdf_path.resolve())
 
         _validate_supported_input(input_path)
 
@@ -132,6 +141,7 @@ class MistralOCRClient:
             page_renders_dir=str(page_renders_dir.resolve()),
             quality_path=str(quality_path.resolve()),
             quality_warnings=quality_warnings,
+            converted_pdf_path=converted_pdf_path,
         )
 
     def _request_ocr(self, *, input_path: Path, options: OCROptions) -> dict[str, Any]:

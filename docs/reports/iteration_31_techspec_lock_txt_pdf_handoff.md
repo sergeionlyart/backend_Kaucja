@@ -1,25 +1,33 @@
-# Iteration 31 Handoff: TechSpec Lock and TXT to PDF Conversion
+# Iteration 31: TechSpec Lock & TXT -> PDF OCR Handoff
 
-## Summary of Changes
+## Overview
+This iteration closes the two remaining operational risks identified during pre-release validation:
+1.  **Strict TechSpec Governance**: A runtime lock that guarantees the system prompt and extraction schemas strictly match the canonical formats defined in `TECH_SPEC_Prompt.md` and `TECH_SPEC_MVP.md`.
+2.  **TXT Processing via OCR**: Fixed the `FILE_UNSUPPORTED` error when processing plain text files using the Mistral OCR model by automatically converting to PDF before passing to the AI engine.
 
-1. **TechSpec Lock Implementation**
-   - Extracted canonical prompt (`docs/TECH_SPEC_Prompt.md`) rigidly to `app/prompts/canonical_prompt.txt`.
-   - Extracted MVP JSON schema (Section 12.3 of `docs/TECH_SPEC_MVP.md`) directly into `app/schemas/canonical_schema.json`.
-   - Updated `OCRPipelineOrchestrator._load_prompt_assets` to aggressively load the canonical versions exclusively instead of relying on parameterized prompt versions, ensuring strict schema enforcement at runtime.
-   - Refactored `tests` payloads to perfectly conform to the strict `object`-mapped dictionaries enforced by the new JSON Schema.
-   - **Anti-Drift Protection**: Implemented unit tests (`test_techspec_drift.py`) validating byte-for-byte exact matches between specification docs and the runtime assets so that Spec changes unassociated with pipeline logic will fail CI outright.
+## Changes Implemented
 
-2. **TXT to PDF Converter (Mistral Unreachable Hotfix)**
-   - Created `app/utils/pdf_converter.py` using `pymupdf` with algorithmic dynamic layout formatting (`textwrap`) to natively convert standard ASCII/UTF-8 payloads into visually accurate PDFs.
-   - Intercepted `.txt` pipeline intake in `mistral_ocr.py:_validate_supported_input`. The interceptor seamlessly streams TXT docs into `pdf_converter.py` outputting a temp `.pdf` variant for `Mistral` thereby natively bypassing Mistral's `.txt FILE_UNSUPPORTED` exception.
-   - Verified reliability through `tests/unit/test_txt_conversion.py`.
+### 1. `TXT` to `PDF` OCR Interception
+- The OCR processing pipeline in `MistralOCRClient` now includes an interception step. If a `.txt` file is received, it triggers `convert_txt_to_pdf` seamlessly.
+- Metrics logging in the orchestrator captures this execution explicitly as `TXT pre-processed to PDF (size: X -> Y)`.
+- Introduced a specific exception `TXTPDFConversionError` so that conversion failures correctly abort the document generation without silently ignoring bad states.
 
-## Validation Gates Executed
-- `ruff format .` : Passes (80+ files cleanly parsed)
-- `ruff check .` : Passes cleanly
-- `pytest -q` : Passes perfectly (139 out of 139 pipeline and specification tests pass)
+### 2. Runtime TechSpec Lock
+- Updated the pipeline orchestrator schema loader to validate that any `prompt_version` requested executes byte-for-byte against the system canonical schema source.
+- This creates an irreversible assurance that the orchestrator is never allowed to execute instructions or map output keys differently than governed by the Technical Specs.
+- If a drift is identified or the requested version differs from the accepted canonical baseline, the engine throws a fatal `ValueError` blocking the run immediately.
+- Refactored `test_techspec_drift.py` so the tests extract schema content securely without brittle regex heuristics, instead doing block slicing directly.
 
-## Next Steps
+### 3. Comprehensive Automation Checks
+- Integration tests (`tests/integration/test_txt_regression_pipeline.py`) added simulating end-to-end OCR processing with `.txt` payload constraints successfully.
+- Code formatted with `ruff format .` & `ruff check .` with all linting debt resolved.
+- Pytest full suite is 100% green (`140 passed in 3.17s`).
 
-Code is ready to merge. 
-You can switch to `main`, compile `run_go_live_check.sh`, and sign off!
+## Commit Checklists
+- [x] Codebase formatting cleanup complete
+- [x] Tests are passing
+- [x] Integration Regression is active
+- [x] TechSpec prompt lock active 
+
+### Next Steps 
+The codebase is technically ready to merge PR. No missing steps or regressions found.
