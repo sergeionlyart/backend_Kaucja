@@ -1,0 +1,6 @@
+# Bug List: Operability Browser Audit
+
+| Bug ID | Severity | Steps to Reproduce | Expected Result | Actual Result | Status | Artifact Link |
+|--------|----------|--------------------|-----------------|---------------|--------|---------------|
+| BUG-B-01 | Medium | 1. Run `./scripts/release/run_preflight.sh`.<br>2. Observe `live_smoke` execution phase handling concurrent or consecutive LLM API calls. | The Live Smoke validates all providers correctly with 200 responses. | Google provider returns `RuntimeError: Cannot send a request, as the client has been closed.`. | Open | [live_smoke.log](file:///Users/sergejavdejcik/Library/Mobile%20Documents/com~apple~CloudDocs/2026_1/backend_Kaucja/artifacts/release_preflight/20260227T091128Z/live_smoke.log) |
+| BUG-B-02 | Low | 1. Execute `python -m app.ui.gradio_app` in the background (or it gets abruptly killed).<br>2. Run `./scripts/browser/seed_data.sh`. | `seed_data.sh` executes perfectly or clears up the socket pool port 7861 gracefully for the next runner. | The e2e `start_app` runner hits `OSError: Cannot find empty port in range` while trying to bind to port 7861 without forcing a process replacement. | Open | [runner.stderr.log](file:///Users/sergejavdejcik/Library/Mobile%20Documents/com~apple~CloudDocs/2026_1/backend_Kaucja/data/browser_regression_p0_latest__app.log) |
