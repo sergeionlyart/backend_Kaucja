@@ -1,342 +1,344 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "kaucja_gap_analysis_v001",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "case_facts",
-    "checklist",
-    "critical_gaps_summary",
-    "next_questions_to_user",
-    "conflicts_and_red_flags",
-    "ocr_quality_warnings"
-  ],
-  "properties": {
-    "case_facts": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "parties",
-        "property_address",
-        "lease_type",
-        "key_dates",
-        "money",
-        "notes"
-      ],
-      "properties": {
-        "parties": {
-          "type": "array",
-          "description": "Facts about parties (tenant/landlord, etc.).",
-          "items": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "kaucja_gap_analysis_v001",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "case_facts",
+        "checklist",
+        "critical_gaps_summary",
+        "next_questions_to_user",
+        "conflicts_and_red_flags",
+        "ocr_quality_warnings"
+    ],
+    "properties": {
+        "case_facts": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "role",
-              "fact"
+                "parties",
+                "property_address",
+                "lease_type",
+                "key_dates",
+                "money",
+                "notes"
             ],
             "properties": {
-              "role": {
-                "type": "string"
-              },
-              "fact": {
-                "$ref": "#/$defs/fact"
-              }
+                "parties": {
+                    "type": "array",
+                    "description": "Факты о сторонах (tenant/landlord и т.п.).",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "role",
+                            "fact"
+                        ],
+                        "properties": {
+                            "role": {
+                                "type": "string"
+                            },
+                            "fact": {
+                                "$ref": "#/$defs/fact"
+                            }
+                        }
+                    }
+                },
+                "property_address": {
+                    "$ref": "#/$defs/fact"
+                },
+                "lease_type": {
+                    "$ref": "#/$defs/fact"
+                },
+                "key_dates": {
+                    "type": "array",
+                    "description": "Ключевые даты (подписание, начало, окончание, выезд, протокол и т.п.).",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "fact"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "fact": {
+                                "$ref": "#/$defs/fact"
+                            }
+                        }
+                    }
+                },
+                "money": {
+                    "type": "array",
+                    "description": "Денежные параметры (kaucja, czynsz, удержания и т.п.).",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "fact"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "fact": {
+                                "$ref": "#/$defs/fact"
+                            }
+                        }
+                    }
+                },
+                "notes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
             }
-          }
         },
-        "property_address": {
-          "$ref": "#/$defs/fact"
-        },
-        "lease_type": {
-          "$ref": "#/$defs/fact"
-        },
-        "key_dates": {
-          "type": "array",
-          "description": "Key dates (signing, start, end, move-out, protocol, etc.).",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "name",
-              "fact"
-            ],
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "fact": {
-                "$ref": "#/$defs/fact"
-              }
+        "checklist": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "$ref": "#/$defs/checklist_item"
             }
-          }
         },
-        "money": {
-          "type": "array",
-          "description": "Monetary facts (deposit, rent, deductions, etc.).",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "name",
-              "fact"
-            ],
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "fact": {
-                "$ref": "#/$defs/fact"
-              }
-            }
-          }
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "checklist": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/checklist_item"
-      }
-    },
-    "critical_gaps_summary": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "next_questions_to_user": {
-      "type": "array",
-      "maxItems": 10,
-      "items": {
-        "type": "string"
-      }
-    },
-    "conflicts_and_red_flags": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "type",
-          "description",
-          "related_doc_ids"
-        ],
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": [
-              "conflict",
-              "red_flag"
-            ]
-          },
-          "description": {
-            "type": "string"
-          },
-          "related_doc_ids": {
+        "critical_gaps_summary": {
             "type": "array",
             "items": {
-              "$ref": "#/$defs/doc_id"
+                "type": "string"
             }
-          }
+        },
+        "next_questions_to_user": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+                "type": "string"
+            }
+        },
+        "conflicts_and_red_flags": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "type",
+                    "description",
+                    "related_doc_ids"
+                ],
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": [
+                            "conflict",
+                            "red_flag"
+                        ]
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "related_doc_ids": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/$defs/doc_id"
+                        }
+                    }
+                }
+            }
+        },
+        "ocr_quality_warnings": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
         }
-      }
     },
-    "ocr_quality_warnings": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    }
-  },
-  "$defs": {
-    "doc_id": {
-      "type": "string",
-      "pattern": "^[0-9]{7}$"
-    },
-    "fact_source": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "doc_id",
-        "quote"
-      ],
-      "properties": {
+    "$defs": {
         "doc_id": {
-          "$ref": "#/$defs/doc_id"
+            "type": "string",
+            "pattern": "^[0-9]{7}$"
         },
-        "quote": {
-          "type": "string"
-        }
-      }
-    },
-    "fact": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "value",
-        "status",
-        "sources"
-      ],
-      "properties": {
-        "value": {
-          "type": [
-            "string",
-            "null"
-          ]
+        "fact_source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "doc_id",
+                "quote"
+            ],
+            "properties": {
+                "doc_id": {
+                    "$ref": "#/$defs/doc_id"
+                },
+                "quote": {
+                    "type": "string"
+                }
+            }
         },
-        "status": {
-          "type": "string",
-          "enum": [
-            "confirmed",
-            "missing",
-            "ambiguous",
-            "conflict"
-          ]
+        "fact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "value",
+                "status",
+                "sources"
+            ],
+            "properties": {
+                "value": {
+                    "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "null"
+                    ]
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "confirmed",
+                        "missing",
+                        "ambiguous",
+                        "conflict"
+                    ]
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/fact_source"
+                    }
+                }
+            }
         },
-        "sources": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/fact_source"
-          }
-        }
-      }
-    },
-    "finding": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "doc_id",
-        "quote",
-        "why_this_quote_matters"
-      ],
-      "properties": {
-        "doc_id": {
-          "$ref": "#/$defs/doc_id"
-        },
-        "quote": {
-          "type": "string",
-          "maxLength": 400
-        },
-        "why_this_quote_matters": {
-          "type": "string"
-        }
-      }
-    },
-    "request_from_user": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "ask",
-        "examples"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "upload_document",
-            "provide_info"
-          ]
-        },
-        "ask": {
-          "type": "string"
-        },
-        "examples": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "checklist_item": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "item_id",
-        "importance",
-        "status",
-        "what_it_supports",
-        "findings",
-        "missing_what_exactly",
-        "request_from_user",
-        "confidence"
-      ],
-      "properties": {
-        "item_id": {
-          "type": "string",
-          "enum": [
-            "CONTRACT_EXISTS",
-            "CONTRACT_SIGNED_AND_DATED",
-            "PROPERTY_ADDRESS_CONFIRMED",
-            "LEASE_TYPE_CONFIRMED",
-            "KAUCJA_CLAUSE_PRESENT",
-            "KAUCJA_AMOUNT_STATED",
-            "KAUCJA_PAYMENT_PROOF",
-            "CZYNSZ_AT_DEPOSIT_DATE",
-            "CZYNSZ_AT_RETURN_DATE",
-            "MOVE_IN_PROTOCOL",
-            "MOVE_OUT_PROTOCOL",
-            "VACATE_DATE_PROOF",
-            "KEY_HANDOVER_PROOF",
-            "METER_READINGS_AT_EXIT",
-            "UTILITIES_SETTLEMENT",
-            "RENT_AND_FEES_PAID",
-            "LANDLORD_DEDUCTIONS_EXPLAINED",
-            "PHOTOS_VIDEOS_CONDITION",
-            "PRECOURT_DEMAND_LETTER",
-            "DELIVERY_PROOF",
-            "LANDLORD_RESPONSE",
-            "TENANT_BANK_ACCOUNT_FOR_RETURN"
-          ]
-        },
-        "importance": {
-          "type": "string",
-          "enum": [
-            "critical",
-            "recommended"
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "confirmed",
-            "missing",
-            "ambiguous",
-            "conflict"
-          ]
-        },
-        "what_it_supports": {
-          "type": "string"
-        },
-        "findings": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/finding"
-          }
-        },
-        "missing_what_exactly": {
-          "type": "string"
+        "finding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "doc_id",
+                "quote",
+                "why_this_quote_matters"
+            ],
+            "properties": {
+                "doc_id": {
+                    "$ref": "#/$defs/doc_id"
+                },
+                "quote": {
+                    "type": "string",
+                    "maxLength": 400
+                },
+                "why_this_quote_matters": {
+                    "type": "string"
+                }
+            }
         },
         "request_from_user": {
-          "$ref": "#/$defs/request_from_user"
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "type",
+                "ask",
+                "examples"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "upload_document",
+                        "provide_info"
+                    ]
+                },
+                "ask": {
+                    "type": "string"
+                },
+                "examples": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
         },
-        "confidence": {
-          "type": "string",
-          "enum": [
-            "high",
-            "medium",
-            "low"
-          ]
+        "checklist_item": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "item_id",
+                "importance",
+                "status",
+                "what_it_supports",
+                "findings",
+                "missing_what_exactly",
+                "request_from_user",
+                "confidence"
+            ],
+            "properties": {
+                "item_id": {
+                    "type": "string",
+                    "enum": [
+                        "CONTRACT_EXISTS",
+                        "CONTRACT_SIGNED_AND_DATED",
+                        "PROPERTY_ADDRESS_CONFIRMED",
+                        "LEASE_TYPE_CONFIRMED",
+                        "KAUCJA_CLAUSE_PRESENT",
+                        "KAUCJA_AMOUNT_STATED",
+                        "KAUCJA_PAYMENT_PROOF",
+                        "CZYNSZ_AT_DEPOSIT_DATE",
+                        "CZYNSZ_AT_RETURN_DATE",
+                        "MOVE_IN_PROTOCOL",
+                        "MOVE_OUT_PROTOCOL",
+                        "VACATE_DATE_PROOF",
+                        "KEY_HANDOVER_PROOF",
+                        "METER_READINGS_AT_EXIT",
+                        "UTILITIES_SETTLEMENT",
+                        "RENT_AND_FEES_PAID",
+                        "LANDLORD_DEDUCTIONS_EXPLAINED",
+                        "PHOTOS_VIDEOS_CONDITION",
+                        "PRECOURT_DEMAND_LETTER",
+                        "DELIVERY_PROOF",
+                        "LANDLORD_RESPONSE",
+                        "TENANT_BANK_ACCOUNT_FOR_RETURN"
+                    ]
+                },
+                "importance": {
+                    "type": "string",
+                    "enum": [
+                        "critical",
+                        "recommended"
+                    ]
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "confirmed",
+                        "missing",
+                        "ambiguous",
+                        "conflict"
+                    ]
+                },
+                "what_it_supports": {
+                    "type": "string"
+                },
+                "findings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/finding"
+                    }
+                },
+                "missing_what_exactly": {
+                    "type": "string"
+                },
+                "request_from_user": {
+                    "$ref": "#/$defs/request_from_user"
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": [
+                        "high",
+                        "medium",
+                        "low"
+                    ]
+                }
+            }
         }
-      }
     }
-  }
 }

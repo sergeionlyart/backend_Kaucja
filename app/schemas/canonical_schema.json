@@ -25,10 +25,23 @@
             ],
             "properties": {
                 "parties": {
-                    "type": "object",
-                    "description": "Факты о сторонах (tenant/landlord и т.п.). Каждое поле — объект Fact.",
-                    "additionalProperties": {
-                        "$ref": "#/$defs/fact"
+                    "type": "array",
+                    "description": "Факты о сторонах (tenant/landlord и т.п.).",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "role",
+                            "fact"
+                        ],
+                        "properties": {
+                            "role": {
+                                "type": "string"
+                            },
+                            "fact": {
+                                "$ref": "#/$defs/fact"
+                            }
+                        }
                     }
                 },
                 "property_address": {
@@ -38,17 +51,43 @@
                     "$ref": "#/$defs/fact"
                 },
                 "key_dates": {
-                    "type": "object",
-                    "description": "Ключевые даты (подписание, начало, окончание, выезд, протокол и т.п.). Каждое поле — объект Fact.",
-                    "additionalProperties": {
-                        "$ref": "#/$defs/fact"
+                    "type": "array",
+                    "description": "Ключевые даты (подписание, начало, окончание, выезд, протокол и т.п.).",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "fact"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "fact": {
+                                "$ref": "#/$defs/fact"
+                            }
+                        }
                     }
                 },
                 "money": {
-                    "type": "object",
-                    "description": "Денежные параметры (kaucja, czynsz, удержания и т.п.). Каждое поле — объект Fact.",
-                    "additionalProperties": {
-                        "$ref": "#/$defs/fact"
+                    "type": "array",
+                    "description": "Денежные параметры (kaucja, czynsz, удержания и т.п.).",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "fact"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string"
+                            },
+                            "fact": {
+                                "$ref": "#/$defs/fact"
+                            }
+                        }
                     }
                 },
                 "notes": {
@@ -146,7 +185,14 @@
                 "sources"
             ],
             "properties": {
-                "value": {},
+                "value": {
+                    "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "null"
+                    ]
+                },
                 "status": {
                     "type": "string",
                     "enum": [
