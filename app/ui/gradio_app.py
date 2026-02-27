@@ -1251,30 +1251,22 @@ def build_app(
         )
 
         analyze_button.click(
-            fn=lambda current_session_id,
-            uploaded,
-            selected_provider,
-            selected_model,
-            selected_prompt_name,
-            selected_prompt_version,
-            selected_ocr_model,
-            selected_table_format,
-            selected_include_images,
-            selected_reasoning,
-            selected_thinking: run_full_pipeline(
-                orchestrator=full_orchestrator,
-                prompt_name=selected_prompt_name,
-                current_session_id=current_session_id,
-                uploaded_files=uploaded,
-                provider=selected_provider,
-                model=selected_model,
-                prompt_version=selected_prompt_version,
-                ocr_model=selected_ocr_model,
-                table_format=selected_table_format,
-                include_image_base64=selected_include_images,
-                openai_reasoning_effort=selected_reasoning,
-                gemini_thinking_level=selected_thinking,
-                preflight_checker=runtime_preflight,
+            fn=lambda current_session_id, uploaded, selected_provider, selected_model, selected_prompt_name, selected_prompt_version, selected_ocr_model, selected_table_format, selected_include_images, selected_reasoning, selected_thinking: (
+                run_full_pipeline(
+                    orchestrator=full_orchestrator,
+                    prompt_name=selected_prompt_name,
+                    current_session_id=current_session_id,
+                    uploaded_files=uploaded,
+                    provider=selected_provider,
+                    model=selected_model,
+                    prompt_version=selected_prompt_version,
+                    ocr_model=selected_ocr_model,
+                    table_format=selected_table_format,
+                    include_image_base64=selected_include_images,
+                    openai_reasoning_effort=selected_reasoning,
+                    gemini_thinking_level=selected_thinking,
+                    preflight_checker=runtime_preflight,
+                )
             ),
             inputs=[
                 session_state,
@@ -1320,21 +1312,17 @@ def build_app(
         )
 
         history_refresh_button.click(
-            fn=lambda session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: refresh_history_for_ui(
-                repo=storage_repo,
-                session_id=session_filter,
-                provider=provider_filter,
-                model=model_filter,
-                prompt_version=prompt_filter,
-                date_from=date_from_filter,
-                date_to=date_to_filter,
-                limit=result_limit,
+            fn=lambda session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
+                refresh_history_for_ui(
+                    repo=storage_repo,
+                    session_id=session_filter,
+                    provider=provider_filter,
+                    model=model_filter,
+                    prompt_version=prompt_filter,
+                    date_from=date_from_filter,
+                    date_to=date_to_filter,
+                    limit=result_limit,
+                )
             ),
             inputs=[
                 history_session_id,
@@ -1389,31 +1377,23 @@ def build_app(
         )
 
         restore_button.click(
-            fn=lambda selected_zip_file,
-            overwrite_existing_flag,
-            verify_only_flag,
-            require_signature_flag,
-            session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: restore_history_run_bundle(
-                repo=storage_repo,
-                zip_file_path=selected_zip_file,
-                overwrite_existing=overwrite_existing_flag,
-                verify_only=verify_only_flag,
-                require_signature=require_signature_flag,
-                signing_key=bundle_signing_key,
-                safety_limits=restore_safety_limits,
-                session_id=session_filter,
-                provider=provider_filter,
-                model=model_filter,
-                prompt_version=prompt_filter,
-                date_from=date_from_filter,
-                date_to=date_to_filter,
-                limit=result_limit,
+            fn=lambda selected_zip_file, overwrite_existing_flag, verify_only_flag, require_signature_flag, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
+                restore_history_run_bundle(
+                    repo=storage_repo,
+                    zip_file_path=selected_zip_file,
+                    overwrite_existing=overwrite_existing_flag,
+                    verify_only=verify_only_flag,
+                    require_signature=require_signature_flag,
+                    signing_key=bundle_signing_key,
+                    safety_limits=restore_safety_limits,
+                    session_id=session_filter,
+                    provider=provider_filter,
+                    model=model_filter,
+                    prompt_version=prompt_filter,
+                    date_from=date_from_filter,
+                    date_to=date_to_filter,
+                    limit=result_limit,
+                )
             ),
             inputs=[
                 restore_zip_file,
@@ -1441,28 +1421,21 @@ def build_app(
         )
 
         delete_history_button.click(
-            fn=lambda selected_run_id,
-            confirmed_run_id,
-            create_backup_before_delete,
-            session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: delete_history_run(
-                repo=storage_repo,
-                run_id=selected_run_id,
-                confirm_run_id=confirmed_run_id,
-                create_backup_zip=create_backup_before_delete,
-                signing_key=bundle_signing_key,
-                session_id=session_filter,
-                provider=provider_filter,
-                model=model_filter,
-                prompt_version=prompt_filter,
-                date_from=date_from_filter,
-                date_to=date_to_filter,
-                limit=result_limit,
+            fn=lambda selected_run_id, confirmed_run_id, create_backup_before_delete, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
+                delete_history_run(
+                    repo=storage_repo,
+                    run_id=selected_run_id,
+                    confirm_run_id=confirmed_run_id,
+                    create_backup_zip=create_backup_before_delete,
+                    signing_key=bundle_signing_key,
+                    session_id=session_filter,
+                    provider=provider_filter,
+                    model=model_filter,
+                    prompt_version=prompt_filter,
+                    date_from=date_from_filter,
+                    date_to=date_to_filter,
+                    limit=result_limit,
+                )
             ),
             inputs=[
                 history_run_id,
@@ -1521,30 +1494,28 @@ def build_app(
         )
 
         prompt_version.change(
-            fn=lambda selected_prompt_name,
-            selected_prompt_version: on_prompt_version_change(
-                prompt_manager=prompt_manager,
-                prompt_name=selected_prompt_name,
-                prompt_version=selected_prompt_version,
+            fn=lambda selected_prompt_name, selected_prompt_version: (
+                on_prompt_version_change(
+                    prompt_manager=prompt_manager,
+                    prompt_name=selected_prompt_name,
+                    prompt_version=selected_prompt_version,
+                )
             ),
             inputs=[prompt_name, prompt_version],
             outputs=[system_prompt_editor, schema_viewer, prompt_status_box],
         )
 
         save_prompt_button.click(
-            fn=lambda selected_prompt_name,
-            selected_prompt_version,
-            edited_prompt,
-            current_schema,
-            author,
-            note: save_prompt_as_new_version_for_ui(
-                prompt_manager=prompt_manager,
-                prompt_name=selected_prompt_name,
-                source_version=selected_prompt_version,
-                system_prompt_text=edited_prompt,
-                schema_text=current_schema,
-                author=author,
-                note=note,
+            fn=lambda selected_prompt_name, selected_prompt_version, edited_prompt, current_schema, author, note: (
+                save_prompt_as_new_version_for_ui(
+                    prompt_manager=prompt_manager,
+                    prompt_name=selected_prompt_name,
+                    source_version=selected_prompt_version,
+                    system_prompt_text=edited_prompt,
+                    schema_text=current_schema,
+                    author=author,
+                    note=note,
+                )
             ),
             inputs=[
                 prompt_name,
@@ -2160,7 +2131,9 @@ def main() -> None:
             else:
                 raise
 
-    print(f"\n[ERROR] Failed to find an open port between {target_port} and {max_port}.")
+    print(
+        f"\n[ERROR] Failed to find an open port between {target_port} and {max_port}."
+    )
     print("If you started multiple instances, please close them.")
     print(f"Try running: `lsof -ti:{target_port} | xargs kill -9`")
 
