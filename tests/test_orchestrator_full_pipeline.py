@@ -138,6 +138,7 @@ def _valid_llm_payload(schema: dict[str, Any]) -> dict[str, Any]:
 
 def _setup_orchestrator(
     tmp_path: Path,
+    monkeypatch: Any,
     llm_clients: dict[str, Any],
 ) -> OCRPipelineOrchestrator:
     artifacts_manager = ArtifactsManager(tmp_path / "data")
@@ -159,6 +160,20 @@ def _setup_orchestrator(
     )
     (prompt_dir / "schema.json").write_text(canonical_schema_text, encoding="utf-8")
 
+    # To pass TechSpec Fail-Closed logic which checks 'app/prompts/...' relative to cwd:
+    app_prompts = tmp_path / "app" / "prompts"
+    app_schemas = tmp_path / "app" / "schemas"
+    app_prompts.mkdir(parents=True, exist_ok=True)
+    app_schemas.mkdir(parents=True, exist_ok=True)
+    (app_prompts / "canonical_prompt.txt").write_text(
+        canonical_prompt_text, encoding="utf-8"
+    )
+    (app_schemas / "canonical_schema.json").write_text(
+        canonical_schema_text, encoding="utf-8"
+    )
+
+    monkeypatch.chdir(tmp_path)
+
     return OCRPipelineOrchestrator(
         repo=repo,
         artifacts_manager=artifacts_manager,
@@ -169,12 +184,14 @@ def _setup_orchestrator(
 
 
 def test_full_pipeline_success_persists_artifacts_db_and_metrics(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     schema = _load_schema()
     llm_payload = _valid_llm_payload(schema)
     orchestrator = _setup_orchestrator(
-        tmp_path, {"openai": SuccessLLMClient(llm_payload)}
+        tmp_path,
+        monkeypatch=monkeypatch,
+        llm_clients={"openai": SuccessLLMClient(llm_payload)},
     )
 
     file_one = tmp_path / "one.pdf"
@@ -225,10 +242,13 @@ def test_full_pipeline_success_persists_artifacts_db_and_metrics(
     assert "validation" in manifest
 
 
-def test_full_pipeline_llm_api_error_marks_run_failed(tmp_path: Path) -> None:
+def test_full_pipeline_llm_api_error_marks_run_failed(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     orchestrator = _setup_orchestrator(
         tmp_path,
-        {"openai": FailingLLMClient(RuntimeError("API down"))},
+        monkeypatch=monkeypatch,
+        llm_clients={"openai": FailingLLMClient(RuntimeError("API down"))},
     )
 
     file_one = tmp_path / "one.pdf"
@@ -254,14 +274,16 @@ def test_full_pipeline_llm_api_error_marks_run_failed(tmp_path: Path) -> None:
 
 
 def test_full_pipeline_schema_invalid_marks_run_failed_and_persists_validation(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     schema = _load_schema()
     invalid_payload = _valid_llm_payload(schema)
     invalid_payload["checklist"] = invalid_payload["checklist"][:-1]
 
     orchestrator = _setup_orchestrator(
-        tmp_path, {"openai": SuccessLLMClient(invalid_payload)}
+        tmp_path,
+        monkeypatch=monkeypatch,
+        llm_clients={"openai": SuccessLLMClient(invalid_payload)},
     )
 
     file_one = tmp_path / "one.pdf"
@@ -292,10 +314,13 @@ def test_full_pipeline_schema_invalid_marks_run_failed_and_persists_validation(
     assert Path(llm_output.schema_validation_errors_path).is_file()
 
 
-def test_full_pipeline_invalid_json_marks_run_failed(tmp_path: Path) -> None:
+def test_full_pipeline_invalid_json_marks_run_failed(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     orchestrator = _setup_orchestrator(
         tmp_path,
-        {
+        monkeypatch=monkeypatch,
+        llm_clients={
             "openai": FailingLLMClient(
                 json.JSONDecodeError("Expecting value", "not-json", 0)
             )

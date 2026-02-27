@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
+from typing import Any
 
 from app.ocr_client.mistral_ocr import MistralOCRClient
-from app.ocr_client.types import OCROptions, OCRResult
+from app.ocr_client.types import OCROptions
 from tests.test_orchestrator_full_pipeline import (
     SuccessLLMClient,
     _valid_llm_payload,
@@ -10,111 +11,60 @@ from tests.test_orchestrator_full_pipeline import (
 )
 
 
-# Re-use the existing pipeline Mocks for isolated tests
-class _MockTXTInterceptorMistralOCRClient(MistralOCRClient):
-    """
-    Simulates Mistral OCR Client intercepting a .txt file.
-    Instead of actually calling Mistral APIs, it fakes the filesystem outputs
-    that the orchestrator relies upon to proceed.
-    """
+class MockUploadService:
+    def __init__(self) -> None:
+        self.uploaded_files: list[Path] = []
 
-    def process_document(
-        self,
-        *,
-        input_path: Path,
-        doc_id: str,
-        options: OCROptions,
-        output_dir: Path,
-    ) -> OCRResult:
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        if input_path.suffix.lower() == ".txt":
-            from app.utils.pdf_converter import convert_txt_to_pdf
-
-            pdf_path = output_dir / f"{input_path.stem}_converted.pdf"
-            try:
-                convert_txt_to_pdf(input_path, pdf_path)
-            except Exception as error:
-                from app.utils.error_taxonomy import TXTPDFConversionError
-
-                raise TXTPDFConversionError(
-                    f"TXT conversion failed: {error}"
-                ) from error
-            input_path = pdf_path
-        combined_path = output_dir / "combined.md"
-        raw_response_path = output_dir / "raw_response.json"
-        quality_path = output_dir / "quality.json"
-
-        combined_path.write_text(
-            "Dummy processed text from interceptor.", encoding="utf-8"
-        )
-        raw_response_path.write_text('{"pages": []}', encoding="utf-8")
-        quality_path.write_text('{"warnings": [], "bad_pages": []}', encoding="utf-8")
-
-        return OCRResult(
-            doc_id=doc_id,
-            ocr_model="mistral-ocr-latest",
-            pages_count=1,
-            combined_markdown_path=str(combined_path.resolve()),
-            raw_response_path=str(raw_response_path.resolve()),
-            tables_dir=str((output_dir / "tables").resolve()),
-            images_dir=str((output_dir / "images").resolve()),
-            page_renders_dir=str((output_dir / "page_renders").resolve()),
-            quality_path=str(quality_path.resolve()),
-            quality_warnings=[],
-            converted_pdf_path=str(pdf_path.resolve())
-            if "pdf_path" in locals()
-            else None,
-        )
+    def upload(self, *, file: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        self.uploaded_files.append(file["file_name"])
+        return {"id": "mock-pdf-id"}
 
 
-def test_integration_txt_to_pdf_in_pipeline(tmp_path: Path) -> None:
+class MockProcessService:
+    def process(self, *, document: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"pages": [{"markdown": "Dummy processed text from mock."}]}
+
+
+def test_integration_txt_to_pdf_in_pipeline(tmp_path: Path, monkeypatch: Any) -> None:
     # 1. Arrange Mocks
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     src_txt = docs_dir / "sample.txt"
     src_txt.write_text("This is an integration test plain text file.", encoding="utf-8")
 
-    # 2. Setup Valid Context constraints
-    prompt_root = tmp_path / "prompts"
-    prompt_dir = prompt_root / "default_analyzer" / "v1.0.0"
-    prompt_dir.mkdir(parents=True)
-    canonical_prompt_text = Path("app/prompts/canonical_prompt.txt").read_text(
-        encoding="utf-8"
+    upload_mock = MockUploadService()
+    process_mock = MockProcessService()
+
+    ocr_client = MistralOCRClient(
+        api_key="dummy",
+        upload_service=upload_mock,
+        process_service=process_mock,
     )
+
+    # Needs to bypass the canonical validation natively just like the previous tests.
     canonical_schema_text = Path("app/schemas/canonical_schema.json").read_text(
         encoding="utf-8"
     )
 
-    (prompt_dir / "system_prompt.txt").write_text(
-        canonical_prompt_text, encoding="utf-8"
-    )
-    (prompt_dir / "schema.json").write_text(canonical_schema_text, encoding="utf-8")
-
-    # Mock OCR and LLM setup
-    ocr_client = _MockTXTInterceptorMistralOCRClient(
-        api_key="dummy",
-        process_service=None,
-        upload_service=None,  # type: ignore
-    )
     llm_payload = _valid_llm_payload(json.loads(canonical_schema_text))
     llm_client = SuccessLLMClient(parsed_json=llm_payload)
 
+    # 2. Setup Full Orchestrator (it will chdir and mock canonical prompt roots inside)
+    orchestrator = _setup_orchestrator(
+        tmp_path, monkeypatch=monkeypatch, llm_clients={"openai": llm_client}
+    )
 
-    orchestrator = _setup_orchestrator(tmp_path, {"openai": llm_client})
-
-    # Patch the orchestrator mocks with our custom ones designed to explicitly pass TXT through Interceptor
+    # Override with our OCR client containing the mocked services
     orchestrator.ocr_client = ocr_client
-    orchestrator.prompt_root = prompt_root
 
     # 3. Act
     result = orchestrator.run_full_pipeline(
         input_files=[str(src_txt)],
         session_id=None,
         provider="openai",
-        model="gpt-4o",
-        prompt_name="default_analyzer",
-        prompt_version="v1.0.0",
+        model="gpt-4.5",
+        prompt_name="kaucja_gap_analysis",
+        prompt_version="v001",
         ocr_options=OCROptions(),
     )
 
@@ -124,7 +74,13 @@ def test_integration_txt_to_pdf_in_pipeline(tmp_path: Path) -> None:
     )
     assert result.error_code is None
 
-    # Validation that the converted PDF is the one supplied to OCR
+    # Assert that TXT->PDF conversion fired and actual PDF was uploaded.
+    assert len(upload_mock.uploaded_files) == 1
+    uploaded_file = upload_mock.uploaded_files[0]
+    assert Path(uploaded_file).suffix.lower() == ".pdf"
+    assert Path(uploaded_file).stem == "sample_converted"
+
+    # Validation that pipeline integrated correctly end to end through mocked states
     docs_scanned = result.documents
     assert len(docs_scanned) == 1
     assert docs_scanned[0].ocr_status == "ok"
@@ -132,4 +88,4 @@ def test_integration_txt_to_pdf_in_pipeline(tmp_path: Path) -> None:
     md_content = Path(docs_scanned[0].combined_markdown_path).read_text(
         encoding="utf-8"
     )
-    assert "Dummy processed text from interceptor." in md_content
+    assert "Dummy processed text from mock." in md_content

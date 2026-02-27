@@ -1059,24 +1059,31 @@ class OCRPipelineOrchestrator:
         canonical_prompt_path = Path("app/prompts/canonical_prompt.txt")
         canonical_schema_path = Path("app/schemas/canonical_schema.json")
 
-        if canonical_prompt_path.exists():
-            canonical_prompt_text = canonical_prompt_path.read_text(encoding="utf-8")
-            if system_prompt != canonical_prompt_text:
-                raise ValueError(
-                    f"Requested prompt version '{prompt_version}' violates the byte-for-byte canonical TechSpec lock."
-                )
+        from app.utils.error_taxonomy import TechspecDriftError
 
-        if canonical_schema_path.exists():
-            canonical_schema_text = canonical_schema_path.read_text(encoding="utf-8")
-            try:
-                canonical_schema_json = json.loads(canonical_schema_text)
-                requested_schema_json = json.loads(schema_text)
-                if requested_schema_json != canonical_schema_json:
-                    raise ValueError(
-                        f"Requested schema version '{prompt_version}' violates the exact canonical TechSpec lock."
-                    )
-            except json.JSONDecodeError:
-                pass  # Handled by the next block if requested schema is invalid
+        if not canonical_prompt_path.exists():
+            raise TechspecDriftError("Canonical TechSpec system_prompt.txt is missing.")
+
+        if not canonical_schema_path.exists():
+            raise TechspecDriftError("Canonical TechSpec schema.json is missing.")
+
+        canonical_prompt_text = canonical_prompt_path.read_text(encoding="utf-8")
+        if system_prompt != canonical_prompt_text:
+            raise ValueError(
+                f"Requested prompt version '{prompt_version}' violates the byte-for-byte canonical TechSpec lock."
+            )
+
+        canonical_schema_text = canonical_schema_path.read_text(encoding="utf-8")
+        try:
+            canonical_schema_json = json.loads(canonical_schema_text)
+        except json.JSONDecodeError as error:
+            raise TechspecDriftError(f"Canonical JSON schema invalid: {error}")
+
+        requested_schema_json = json.loads(schema_text)
+        if requested_schema_json != canonical_schema_json:
+            raise ValueError(
+                f"Requested schema version '{prompt_version}' violates the exact canonical TechSpec lock."
+            )
 
         schema = json.loads(schema_text)
 

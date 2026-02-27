@@ -74,6 +74,10 @@ class ContextTooLargeError(ValueError):
     """Raised before LLM call when packed input exceeds configured threshold."""
 
 
+class TechspecDriftError(ValueError):
+    """Raised when Canonical TechSpec assets are missing or invalid."""
+
+
 def classify_ocr_error(error: Exception) -> ErrorCode:
     if isinstance(error, UnsupportedFileTypeError):
         return "FILE_UNSUPPORTED"

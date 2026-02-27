@@ -53,8 +53,11 @@ class MistralOCRClient:
             try:
                 convert_txt_to_pdf(input_path, pdf_path)
             except Exception as error:
+                size_bytes = input_path.stat().st_size if input_path.exists() else 0
                 raise TXTPDFConversionError(
-                    f"TXT conversion failed: {error}"
+                    f"[TXT->PDF Conversion] Failed for doc_id='{doc_id}', "
+                    f"file='{input_path.name}' (size={size_bytes} bytes). "
+                    f"Reason: {error}"
                 ) from error
             input_path = pdf_path
             converted_pdf_path = str(pdf_path.resolve())

@@ -21,8 +21,6 @@ def test_techspec_prompt_drift() -> None:
     )
 
 
-
-
 def test_techspec_schema_drift() -> None:
     """Verifies that the canonical schema is exactly what is inside the TechSpec MVP document."""
     techspec_mvp_path = Path("docs/TECH_SPEC_MVP.md")
