@@ -98,7 +98,7 @@ class Settings(BaseSettings):
         ),
     )
     live_smoke_provider_timeout_seconds: float = Field(
-        default=30.0,
+        default=60.0,
         gt=0,
         validation_alias=AliasChoices(
             "KAUCJA_LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS",

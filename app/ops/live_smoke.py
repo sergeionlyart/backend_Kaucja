@@ -24,6 +24,18 @@ from app.utils.error_taxonomy import (
     classify_ocr_error,
 )
 
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+from app.utils.error_taxonomy import (
+    is_retryable_llm_exception,
+    is_retryable_ocr_exception,
+    extract_http_status_code,
+)
+
 ProviderStatus = Literal["pass", "fail", "skipped"]
 
 _SMOKE_RESPONSE_SCHEMA: dict[str, object] = {
@@ -47,6 +59,7 @@ class ProviderSmokeResult:
     latency_ms: float | None
     error_code: str | None
     error_message: str | None
+    attempts: int = 1
 
 
 ProviderProbe = Callable[[Settings], ProviderSmokeResult]
@@ -255,12 +268,33 @@ def _provider_to_dict(provider: ProviderSmokeResult) -> dict[str, object]:
         "latency_ms": latency,
         "name": provider.name,
         "status": provider.status,
+        "attempts": provider.attempts,
     }
+
+
+class _AttemptTracker:
+    def __init__(self) -> None:
+        self.count = 0
+
+
+def _is_transient(e: Exception) -> bool:
+    if is_retryable_llm_exception(e) or is_retryable_ocr_exception(e):
+        return True
+
+    status_code = extract_http_status_code(e)
+    if status_code in {408, 429, 500, 502, 503, 504}:
+        return True
+
+    if "Connection" in str(e) or "Timeout" in str(e):
+        return True
+
+    return False
 
 
 def _probe_openai(settings: Settings) -> ProviderSmokeResult:
     provider_name = "openai"
     start = time.perf_counter()
+    tracker = _AttemptTracker()
 
     if not settings.openai_api_key:
         return _skipped_result(
@@ -269,7 +303,14 @@ def _probe_openai(settings: Settings) -> ProviderSmokeResult:
             error_message="OPENAI_API_KEY is not configured.",
         )
 
-    try:
+    @retry(
+        retry=retry_if_exception_type(Exception),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=10),
+        reraise=True,
+    )
+    def _execute() -> None:
+        tracker.count += 1
         model_name = _resolve_llm_model(
             settings=settings,
             provider_name=provider_name,
@@ -291,6 +332,9 @@ def _probe_openai(settings: Settings) -> ProviderSmokeResult:
         )
         if not isinstance(result.parsed_json.get("pong"), str):
             raise ValueError("OpenAI structured output missing string field 'pong'.")
+
+    try:
+        _execute()
     except Exception as error:  # noqa: BLE001
         if _is_sdk_missing_error(error):
             return _skipped_result(
@@ -298,14 +342,30 @@ def _probe_openai(settings: Settings) -> ProviderSmokeResult:
                 error_code="LIVE_SMOKE_SDK_NOT_INSTALLED",
                 error_message=str(error),
             )
-        return _failed_result(
+        fail = _failed_result(
             name=provider_name,
             start_time=start,
             error_code=classify_llm_api_error(error),
             error_message=build_error_details(error),
         )
+        return ProviderSmokeResult(
+            name=fail.name,
+            status=fail.status,
+            latency_ms=fail.latency_ms,
+            error_code=fail.error_code,
+            error_message=fail.error_message,
+            attempts=tracker.count,
+        )
 
-    return _passed_result(name=provider_name, start_time=start)
+    pass_res = _passed_result(name=provider_name, start_time=start)
+    return ProviderSmokeResult(
+        name=pass_res.name,
+        status=pass_res.status,
+        latency_ms=pass_res.latency_ms,
+        error_code=pass_res.error_code,
+        error_message=pass_res.error_message,
+        attempts=tracker.count,
+    )
 
 
 _probe_openai.provider_name = "openai"  # type: ignore[attr-defined]
@@ -314,6 +374,7 @@ _probe_openai.provider_name = "openai"  # type: ignore[attr-defined]
 def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
     provider_name = "google"
     start = time.perf_counter()
+    tracker = _AttemptTracker()
 
     if not settings.google_api_key:
         return _skipped_result(
@@ -322,7 +383,14 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
             error_message="GOOGLE_API_KEY is not configured.",
         )
 
-    try:
+    @retry(
+        retry=retry_if_exception_type(Exception),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=10),
+        reraise=True,
+    )
+    def _execute() -> None:
+        tracker.count += 1
         model_name = _resolve_llm_model(
             settings=settings,
             provider_name=provider_name,
@@ -344,6 +412,9 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
         )
         if not isinstance(result.parsed_json.get("pong"), str):
             raise ValueError("Gemini structured output missing string field 'pong'.")
+
+    try:
+        _execute()
     except Exception as error:  # noqa: BLE001
         if _is_sdk_missing_error(error):
             return _skipped_result(
@@ -351,14 +422,30 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
                 error_code="LIVE_SMOKE_SDK_NOT_INSTALLED",
                 error_message=str(error),
             )
-        return _failed_result(
+        fail = _failed_result(
             name=provider_name,
             start_time=start,
             error_code=classify_llm_api_error(error),
             error_message=build_error_details(error),
         )
+        return ProviderSmokeResult(
+            name=fail.name,
+            status=fail.status,
+            latency_ms=fail.latency_ms,
+            error_code=fail.error_code,
+            error_message=fail.error_message,
+            attempts=tracker.count,
+        )
 
-    return _passed_result(name=provider_name, start_time=start)
+    pass_res = _passed_result(name=provider_name, start_time=start)
+    return ProviderSmokeResult(
+        name=pass_res.name,
+        status=pass_res.status,
+        latency_ms=pass_res.latency_ms,
+        error_code=pass_res.error_code,
+        error_message=pass_res.error_message,
+        attempts=tracker.count,
+    )
 
 
 _probe_gemini.provider_name = "google"  # type: ignore[attr-defined]
@@ -367,6 +454,7 @@ _probe_gemini.provider_name = "google"  # type: ignore[attr-defined]
 def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
     provider_name = "mistral_ocr"
     start = time.perf_counter()
+    tracker = _AttemptTracker()
 
     if not settings.mistral_api_key:
         return _skipped_result(
@@ -375,7 +463,14 @@ def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
             error_message="MISTRAL_API_KEY is not configured.",
         )
 
-    try:
+    @retry(
+        retry=retry_if_exception_type(Exception),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=10),
+        reraise=True,
+    )
+    def _execute() -> None:
+        tracker.count += 1
         model_name = _resolve_ocr_model(settings=settings)
         client = MistralOCRClient(api_key=settings.mistral_api_key)
         with TemporaryDirectory() as temp_dir:
@@ -396,6 +491,9 @@ def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
             )
             if result.pages_count < 1:
                 raise ValueError("Mistral OCR returned zero pages in smoke run.")
+
+    try:
+        _execute()
     except Exception as error:  # noqa: BLE001
         if _is_sdk_missing_error(error):
             return _skipped_result(
@@ -403,14 +501,30 @@ def _probe_mistral_ocr(settings: Settings) -> ProviderSmokeResult:
                 error_code="LIVE_SMOKE_SDK_NOT_INSTALLED",
                 error_message=str(error),
             )
-        return _failed_result(
+        fail = _failed_result(
             name=provider_name,
             start_time=start,
             error_code=classify_ocr_error(error),
             error_message=build_error_details(error),
         )
+        return ProviderSmokeResult(
+            name=fail.name,
+            status=fail.status,
+            latency_ms=fail.latency_ms,
+            error_code=fail.error_code,
+            error_message=fail.error_message,
+            attempts=tracker.count,
+        )
 
-    return _passed_result(name=provider_name, start_time=start)
+    pass_res = _passed_result(name=provider_name, start_time=start)
+    return ProviderSmokeResult(
+        name=pass_res.name,
+        status=pass_res.status,
+        latency_ms=pass_res.latency_ms,
+        error_code=pass_res.error_code,
+        error_message=pass_res.error_message,
+        attempts=tracker.count,
+    )
 
 
 _probe_mistral_ocr.provider_name = "mistral_ocr"  # type: ignore[attr-defined]
