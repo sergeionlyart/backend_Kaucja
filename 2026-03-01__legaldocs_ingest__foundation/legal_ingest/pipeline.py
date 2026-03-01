@@ -55,7 +55,10 @@ def extract_metadata(pages, mime: str, raw_bytes: bytes, doc_type: str):
 
     if mime == "application/json":
         try:
-            data = json.loads(raw_bytes)
+            payload = json.loads(raw_bytes)
+            data = (
+                payload.get("data", payload) if isinstance(payload, dict) else payload
+            )
             case_number = data.get("courtCases", [{}])[0].get("caseNumber", "")
             judgment_type = data.get("judgmentType", "WYROK")
             court = data.get("courtType", "")
@@ -233,6 +236,10 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                     config.ocr,
                     str(source.url),
                 )
+                if pages and any(p.extraction.method == "OCR3" for p in pages):
+                    parse_method = "OCR3"
+                else:
+                    parse_method = "PDF_TEXT"
             elif mime == "text/html":
                 pages = parse_html(
                     fetch_result.raw_bytes, doc_uid, source_hash, config.parsers.html
@@ -324,7 +331,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                     total_chars=total_chars,
                     total_tokens_est=total_tokens,
                     parse_method=parse_method,
-                    ocr_used=False,
+                    ocr_used=(parse_method == "OCR3"),
                 ),
                 pageindex_tree=tree_nested,
             )

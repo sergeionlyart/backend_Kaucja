@@ -51,8 +51,8 @@ python -m legal_ingest ingest --config configs/config.sample.yml
 
 ## Physical Paths
 - **Report Document**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/walkthrough.md`
-- **Current Run Directory**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/783c1fee8d86443bbefe659aa2bec818/`
-- **run_report.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/783c1fee8d86443bbefe659aa2bec818/run_report.json`
-- **logs.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/783c1fee8d86443bbefe659aa2bec818/logs.jsonl`
-- **SAOS pages.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/90a2aedca48a4cddcefbbeb671a5a92a54b38dcd37b02dbba697bf95f68a5c37/pages.jsonl`
-- **SAOS citations.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/90a2aedca48a4cddcefbbeb671a5a92a54b38dcd37b02dbba697bf95f68a5c37/citations.jsonl`
+- **Current Run Directory**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/d4f39ce842c24d6989539f5c408cda9a/`
+- **run_report.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/d4f39ce842c24d6989539f5c408cda9a/run_report.json`
+- **logs.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/d4f39ce842c24d6989539f5c408cda9a/logs.jsonl`
+- **SAOS pages.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/pages.jsonl`
+- **SAOS citations.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/citations.jsonl`
