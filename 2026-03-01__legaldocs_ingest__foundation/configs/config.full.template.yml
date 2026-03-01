@@ -1,0 +1,96 @@
+run:
+  run_id: "auto"
+  dry_run: true
+  artifact_dir: "artifacts"
+  http:
+    timeout_seconds: 30
+    retry_backoff_seconds: 2.0
+    max_retries: 3
+    user_agent: "legal-ingest/1.0"
+
+mongo:
+  uri: "mongodb://localhost:27017"
+  db: "legal_rag_iter4_full"
+
+ocr:
+  use_fallback: true
+  api_key_env: "MISTRAL_API_KEY"
+  mistral_model: "mistral-ocr-latest"
+  min_avg_chars_per_page: 50.0
+  max_empty_page_ratio: 0.3
+  alpha_ratio: 0.8
+  table_format: "markdown"
+  include_image_base64: false
+
+parsers:
+  pdf:
+    extract_images: false
+  html:
+    extract_links: true
+
+sources:
+  # ======== SAOS Judgments (API extraction) ========
+  - source_id: "pl_saos_api_set"
+    url: "https://www.saos.org.pl"
+    fetch_strategy: "saos_search"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    saos_search_params:
+      judgmentTypes: "POSTANOWIENIE,WYROK"
+      # Date bounds could be specified here depending on target subset
+
+  # ======== EUR-Lex Documents (HTML/PDF) ========
+  - source_id: "eu_eurlex_dir_1993_13"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:31993L0013"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "EU"
+    language: "en"
+    license_tag: "OFFICIAL"
+    external_ids:
+      celex: "31993L0013"
+
+  # ======== ISAP / Dziennik Ustaw (PDF) ========
+  - source_id: "pl_szkolnictwo_wyzsze_2018"
+    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU20180001668/U/D20181668Lj.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      eli: "eli:DU/2018/1668"
+
+  - source_id: "pl_kodeks_karny_1997"
+    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU19970880553/U/D19970553Lj.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      eli: "eli:DU/1997/553"
+
+  # ======== SN Judgments (PDF/HTML) ========
+  - source_id: "pl_sn_V_CSK_480-18_pdf"
+    url: "https://www.sn.pl/sites/orzecznictwo/Orzeczenia3/V%20CSK%20480-18.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      sn_sygnatura: "V CSK 480/18"
+
+  # ======== LEX/Legalis Commercial (HTML - Requires specific auth structure) ========
+  - source_id: "pl_lex_kc_art_118"
+    url: "TODO_FROM_SOURCESET" # https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "COMMERCIAL"
+    external_ids:
+      article: "118"

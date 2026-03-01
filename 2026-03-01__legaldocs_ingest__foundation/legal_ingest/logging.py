@@ -16,6 +16,12 @@ def get_log_context() -> dict:
     return {k: v for k, v in _log_ctx.__dict__.items() if not k.startswith("_")}
 
 
+def clear_log_context(keys: list[str]):
+    for k in keys:
+        if hasattr(_log_ctx, k):
+            delattr(_log_ctx, k)
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         ctx = get_log_context()
@@ -24,10 +30,10 @@ class JsonFormatter(logging.Formatter):
                 "%Y-%m-%dT%H:%M:%SZ"
             ),
             "level": record.levelname,
-            "run_id": ctx.get("run_id"),
-            "source_id": ctx.get("source_id"),
-            "doc_uid": ctx.get("doc_uid"),
-            "stage": ctx.get("stage"),
+            "run_id": getattr(record, "run_id", ctx.get("run_id")),
+            "source_id": getattr(record, "source_id", ctx.get("source_id")),
+            "doc_uid": getattr(record, "doc_uid", ctx.get("doc_uid")),
+            "stage": getattr(record, "stage", ctx.get("stage")),
             "msg": record.getMessage(),
         }
 

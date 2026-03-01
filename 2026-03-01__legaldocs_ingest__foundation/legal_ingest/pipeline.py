@@ -4,10 +4,11 @@ import uuid
 import hashlib
 import re
 from datetime import datetime
+import time
 import traceback
 
 from .config import PipelineConfig
-from .logging import setup_logging, set_log_context
+from .logging import setup_logging, set_log_context, clear_log_context
 from .store.models import (
     IngestRun,
     RunStats,
@@ -145,6 +146,8 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
     stats.sources_total = len(expanded_sources)
 
     for i, source in enumerate(config.sources):
+        clear_log_context(["source_id", "doc_uid", "stage"])
+
         if limit is not None and i >= limit:
             logger.info("Reached limit, stopping", extra={"metrics": {"limit": limit}})
             break
@@ -157,6 +160,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
         try:
             # 1. Fetch
             set_log_context(stage="fetch")
+            t0 = time.time()
             fetch_result = fetch_source(config.run.http, source)
 
             source_hash = generate_source_hash(fetch_result.raw_bytes)
@@ -186,7 +190,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
             logger.info(
                 "Fetched source",
-                extra={"metrics": {"bytes": len(fetch_result.raw_bytes)}},
+                extra={
+                    "stage": "fetch",
+                    "duration_ms": int((time.time() - t0) * 1000),
+                    "metrics": {"bytes": len(fetch_result.raw_bytes)},
+                },
             )
 
             # 2. DocumentSource Create
@@ -205,6 +213,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
             # 3. Detect & Parse
             set_log_context(stage="parse")
+            t0 = time.time()
             pages = []
             parse_method = "PDF_TEXT"
 
@@ -259,10 +268,15 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
             else:
                 raise ValueError(f"Unsupported MIME type: {mime}")
 
+            logger.info(
+                "Parsed source",
+                extra={"stage": "parse", "duration_ms": int((time.time() - t0) * 1000)},
+            )
             stats.pages_written += len(pages)
 
             # 4. Extract Metadata & Build Tree
             set_log_context(stage="normalize")
+            t0 = time.time()
             title, date_published, date_decision = extract_metadata(
                 pages, mime, fetch_result.raw_bytes, source.doc_type_hint
             )
@@ -279,6 +293,13 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                     fetch_result.raw_bytes, doc_uid, source_hash
                 )
 
+            logger.info(
+                "Normalized source",
+                extra={
+                    "stage": "normalize",
+                    "duration_ms": int((time.time() - t0) * 1000),
+                },
+            )
             stats.citations_written += len(citations)
             stats.nodes_written += len(nodes)
 
@@ -342,6 +363,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
             # Save to Mongo
             set_log_context(stage="save")
+            t0 = time.time()
             if not config.run.dry_run:
                 save_document_pipeline_results(
                     config.mongo,
@@ -359,7 +381,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
             logger.info(
                 "Document saved successfully",
-                extra={"metrics": {"pages": len(pages), "nodes": len(nodes)}},
+                extra={
+                    "stage": "save",
+                    "duration_ms": int((time.time() - t0) * 1000),
+                    "metrics": {"pages": len(pages), "nodes": len(nodes)},
+                },
             )
 
         except Exception as e:
@@ -377,6 +403,44 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 )
             )
 
+            # Create ERROR artifact
+            err_hash = "ERROR"
+            err_doc_model = Document(
+                _id=doc_uid,
+                doc_uid=doc_uid,
+                doc_type=source.doc_type_hint,
+                jurisdiction=source.jurisdiction,
+                language=source.language,
+                source_system=doc_uid.split(":")[0],
+                title="ERROR",
+                source_urls=[str(source.url)],
+                external_ids=source.external_ids or {},
+                license_tag=source.license_tag,
+                access_status="ERROR",
+                current_source_hash=err_hash,
+                mime="unknown",
+                page_count=0,
+                content_stats=ContentStats(
+                    total_chars=0,
+                    total_tokens_est=0,
+                    parse_method="PDF_TEXT",
+                    ocr_used=False,
+                ),
+                pageindex_tree=[],
+            )
+
+            if not config.run.dry_run:
+                doc_norm_dir = os.path.join(
+                    config.run.artifact_dir, "docs", doc_uid, "normalized", err_hash
+                )
+                os.makedirs(doc_norm_dir, exist_ok=True)
+                with open(
+                    os.path.join(doc_norm_dir, "document.json"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(
+                        err_doc_model.model_dump_json(by_alias=True, indent=2) + "\n"
+                    )
+
     # Finalize
     run_model.stats = stats
     run_model.finished_at = datetime.utcnow()
@@ -389,5 +453,6 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
         f.write(run_model.model_dump_json(by_alias=True, indent=2))
 
     logger.info(
-        "Pipeline run finished", extra={"stage": "finalize", "metrics": stats.model_dump()}
+        "Pipeline run finished",
+        extra={"stage": "finalize", "metrics": stats.model_dump()},
     )

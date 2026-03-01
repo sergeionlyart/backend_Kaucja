@@ -18,6 +18,10 @@ Successfully implemented and thoroughly tested Iteration 2 for the `legal_ingest
 3. **Nodes Invariants (`tree.py`)**: 
    - Root index boundaries forced to pure `page_count` constraints (removing minimum length of 1 bounding assumptions). 
    - `test_tree.py` proves `page_count=0` yields `[0, 0)` perfectly preserving logic spans.
+4. **Pipeline Error Edge Cases (Iter 4)**:
+   - Exception handling gracefully builds partial `Document` graphs mapping `access_status="ERROR"`. Valid `document.json` outputs bypass data loss under HTTP failures.
+5. **Config & Compliance Pass**:
+   - `config.full.template.yml` covers absolute coverage definitions splitting commercial implementations (`TODO_FROM_SOURCESET`) and structural APIs.
 
 ## Commands & Key Outputs (Final Execution)
 
@@ -26,7 +30,7 @@ Successfully implemented and thoroughly tested Iteration 2 for the `legal_ingest
 ruff format . && ruff check .
 pytest -q
 ```
-*Result: Passed successfully (15 internal unit and mock tests).*
+*Result: Passed successfully (17 internal unit and mock tests + compliance tests).*
 
 2. **Ingest Verification Commands**
 ```bash
@@ -54,6 +58,8 @@ python -m legal_ingest ingest --config configs/config.sample.yml
 - **Current Run Directory**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/47e57c371a0341c6b719a3fb604676f9/`
 - **run_report.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/47e57c371a0341c6b719a3fb604676f9/run_report.json`
 - **logs.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/47e57c371a0341c6b719a3fb604676f9/logs.jsonl`
-- **SAOS pages.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/pages.jsonl`
-- **SAOS citations.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/citations.jsonl`
-- **SAOS document.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/document.json`
+- **SAOS OK pages.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/pages.jsonl`
+- **SAOS OK citations.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/citations.jsonl`
+- **SAOS OK document.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/document.json`
+- **ERROR document.json (Test Mock)**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/unknown:urlsha:73b4bf0ccfb2ec60/normalized/ERROR/document.json`
+- **Compliance Report**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter4_techspec_compliance.md`
