@@ -16,6 +16,7 @@ from .store.models import (
     DocumentSource,
     Document,
     ContentStats,
+    HttpMeta,
 )
 from .ids import generate_doc_uid, generate_source_hash, generate_source_id
 from .fetch import fetch_source
@@ -440,6 +441,30 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                     f.write(
                         err_doc_model.model_dump_json(by_alias=True, indent=2) + "\n"
                     )
+
+            err_doc_source = DocumentSource(
+                _id=f"{source.source_id}:{err_hash}",
+                doc_uid=doc_uid,
+                source_hash=err_hash,
+                source_id=source.source_id,
+                url=str(source.url),
+                final_url=str(source.url),
+                http=HttpMeta(status_code=500),
+                raw_object_path=f"docs/{doc_uid}/raw/{err_hash}/original.bin",
+                raw_mime="unknown",
+                license_tag=source.license_tag,
+            )
+
+            set_log_context(stage="save")
+            if not config.run.dry_run:
+                save_document_pipeline_results(
+                    config.mongo,
+                    err_doc_source,
+                    pages=[],
+                    nodes=[],
+                    citations=[],
+                    document=err_doc_model,
+                )
 
     # Finalize
     run_model.stats = stats

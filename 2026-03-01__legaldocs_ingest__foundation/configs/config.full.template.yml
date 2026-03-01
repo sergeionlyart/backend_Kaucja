@@ -86,7 +86,7 @@ sources:
 
   # ======== LEX/Legalis Commercial (HTML - Requires specific auth structure) ========
   - source_id: "pl_lex_kc_art_118"
-    url: "TODO_FROM_SOURCESET" # https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118
+    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118"
     fetch_strategy: "direct"
     doc_type_hint: "STATUTE"
     jurisdiction: "PL"

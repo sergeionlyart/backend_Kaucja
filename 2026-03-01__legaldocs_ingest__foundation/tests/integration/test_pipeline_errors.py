@@ -12,10 +12,13 @@ from legal_ingest.config import (
 from legal_ingest.pipeline import run_pipeline
 
 
+@patch("legal_ingest.pipeline.save_document_pipeline_results")
 @patch("legal_ingest.pipeline.save_run")
 @patch("legal_ingest.pipeline.fetch_source")
 @patch("legal_ingest.pipeline.uuid.uuid4")
-def test_pipeline_error_artifact(mock_uuid, mock_fetch, mock_save_run):
+def test_pipeline_error_artifact(
+    mock_uuid, mock_fetch, mock_save_run, mock_save_results
+):
     mock_uuid.return_value = MagicMock(hex="err_run_1")
 
     # Mocking fetch to raise an exception
@@ -23,7 +26,7 @@ def test_pipeline_error_artifact(mock_uuid, mock_fetch, mock_save_run):
 
     with TemporaryDirectory() as tmpdir:
         config = PipelineConfig(
-            run=RunConfig(artifact_dir=tmpdir, run_id="auto"),
+            run=RunConfig(artifact_dir=tmpdir, run_id="auto", dry_run=False),
             mongo=MongoConfig(uri="stub", db="stub"),
             parsers=ParsersConfig(),
             sources=[
@@ -67,3 +70,9 @@ def test_pipeline_error_artifact(mock_uuid, mock_fetch, mock_save_run):
         assert doc_data["current_source_hash"] == "ERROR"
         assert doc_data["content_stats"]["parse_method"] == "PDF_TEXT"
         assert doc_data["page_count"] == 0
+
+        # Verify DB save was called with the err_doc_model
+        assert mock_save_results.call_count == 1
+        call_kwargs = mock_save_results.call_args.kwargs
+        err_doc_saved = call_kwargs["document"]
+        assert err_doc_saved.access_status == "ERROR"

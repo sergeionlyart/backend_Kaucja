@@ -1,0 +1,42 @@
+run:
+  run_id: "run_iter41_evidence"
+  dry_run: false
+  artifact_dir: "artifacts"
+  http:
+    timeout_seconds: 5
+    retry_backoff_seconds: 1.0
+    max_retries: 1
+    user_agent: "legal-ingest/1.0"
+
+mongo:
+  uri: "mongodb://localhost:27017"
+  db: "legal_rag_iter41_test"
+
+ocr:
+  use_fallback: false
+  api_key_env: "MISTRAL_API_KEY"
+
+parsers:
+  pdf:
+    extract_images: false
+  html:
+    extract_links: true
+
+sources:
+  # Valid EUR-Lex document for an OK output
+  - source_id: "eu_eurlex_dir_1993_13_html"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:31993L0013"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "EU"
+    language: "en"
+    license_tag: "OFFICIAL"
+
+  # Missing domain to trigger an ERROR output
+  - source_id: "error_domain_mock"
+    url: "https://doesnotexist.invalid/nonexistent.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
