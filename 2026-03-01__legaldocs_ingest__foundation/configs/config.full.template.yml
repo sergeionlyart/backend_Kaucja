@@ -10,27 +10,125 @@ run:
 
 mongo:
   uri: "mongodb://localhost:27017"
-  db: "legal_rag_iter4_full"
+  db: "legal_rag_iter42_full"
 
 ocr:
-  use_fallback: true
+  enabled: true
   api_key_env: "MISTRAL_API_KEY"
-  mistral_model: "mistral-ocr-latest"
-  min_avg_chars_per_page: 50.0
-  max_empty_page_ratio: 0.3
-  alpha_ratio: 0.8
+  model: "mistral-ocr-2512"
   table_format: "markdown"
   include_image_base64: false
 
 parsers:
   pdf:
-    extract_images: false
+    min_avg_chars_per_page: 50
+    max_empty_page_ratio: 0.3
   html:
-    extract_links: true
+    min_heading_to_split: 2
+    max_tokens_per_virtual_page: 1200
 
 sources:
+  # ======== ISAP / Dziennik Ustaw (PDF) ========
+  - source_id: "pl_eli_du_2001_733"
+    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU20010710733/U/D20010733Lj.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      eli: "eli:DU/2001/733"
+
+  - source_id: "pl_isap_wdu19640160093"
+    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU19640160093/U/D19640093Lj.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      eli: "eli:DU/1964/93"
+
+  # ======== LEX/Legalis Commercial (HTML) ========
+  - source_id: "pl_lex_ochrona_praw_lokatorow"
+    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-o-zmianie-16880196"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "COMMERCIAL"
+
+  - source_id: "pl_lex_art_19a"
+    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-o-zmianie-16880196/art-19-a"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "COMMERCIAL"
+
+  - source_id: "pl_lex_kc_art_118"
+    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "COMMERCIAL"
+    external_ids:
+      article: "118"
+
+  # ======== SN Judgments (PDF/HTML) ========
+  - source_id: "pl_sn_III_CZP_58-02"
+    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia1/III%20CZP%2058-02.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      sn_sygnatura: "III CZP 58/02"
+
+  - source_id: "pl_sn_II_CSK_862-14"
+    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia3/II%20CSK%20862-14-1.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      sn_sygnatura: "II CSK 862/14"
+
+  - source_id: "pl_sn_I_CSK_292-12"
+    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia2/I%20CSK%20292-12-1.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      sn_sygnatura: "I CSK 292/12"
+
+  - source_id: "pl_sn_V_CSK_480-18_html"
+    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia3/V%20CSK%20480-18.doc" # Note mock URL format for parsing tests
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      sn_sygnatura: "V CSK 480/18"
+
+  - source_id: "pl_sn_I_CNP_31-13_html"
+    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia/I%20CNP%2031-13.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      sn_sygnatura: "I CNP 31/13"
+
   # ======== SAOS Judgments (API extraction) ========
-  - source_id: "pl_saos_api_set"
+  - source_id: "pl_saos_search_kaucja_mieszkaniowa"
     url: "https://www.saos.org.pl"
     fetch_strategy: "saos_search"
     doc_type_hint: "CASELAW"
@@ -38,8 +136,28 @@ sources:
     language: "pl"
     license_tag: "OFFICIAL"
     saos_search_params:
+      all: "kaucja mieszkaniowa"
       judgmentTypes: "POSTANOWIENIE,WYROK"
       # Date bounds could be specified here depending on target subset
+
+  - source_id: "pl_saos_171957"
+    url: "https://www.saos.org.pl/api/judgments/171957"
+    fetch_strategy: "saos_judgment"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
+    external_ids:
+      saos_id: "171957"
+
+  # ======== Common Courts ========
+  - source_id: "pl_courts_wloclawek_I_Ca_56_2018"
+    url: "https://orzeczenia.wloclawek.so.gov.pl/content/$N/155510000000503_I_Ca_000056_2018_Uz_2018-04-12_001"
+    fetch_strategy: "direct"
+    doc_type_hint: "CASELAW"
+    jurisdiction: "PL"
+    language: "pl"
+    license_tag: "OFFICIAL"
 
   # ======== EUR-Lex Documents (HTML/PDF) ========
   - source_id: "eu_eurlex_dir_1993_13"
@@ -52,45 +170,11 @@ sources:
     external_ids:
       celex: "31993L0013"
 
-  # ======== ISAP / Dziennik Ustaw (PDF) ========
-  - source_id: "pl_szkolnictwo_wyzsze_2018"
-    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU20180001668/U/D20181668Lj.pdf"
-    fetch_strategy: "direct"
-    doc_type_hint: "STATUTE"
-    jurisdiction: "PL"
-    language: "pl"
-    license_tag: "OFFICIAL"
-    external_ids:
-      eli: "eli:DU/2018/1668"
-
-  - source_id: "pl_kodeks_karny_1997"
-    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU19970880553/U/D19970553Lj.pdf"
-    fetch_strategy: "direct"
-    doc_type_hint: "STATUTE"
-    jurisdiction: "PL"
-    language: "pl"
-    license_tag: "OFFICIAL"
-    external_ids:
-      eli: "eli:DU/1997/553"
-
-  # ======== SN Judgments (PDF/HTML) ========
-  - source_id: "pl_sn_V_CSK_480-18_pdf"
-    url: "https://www.sn.pl/sites/orzecznictwo/Orzeczenia3/V%20CSK%20480-18.pdf"
+  # ======== UOKiK ========
+  - source_id: "pl_uokik_RKR_37_2013"
+    url: "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/0/138DEE12FE06FEE8C1257EBB0073DBC4/$file/Decyzja%20RKR-37-2013.pdf"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
     language: "pl"
     license_tag: "OFFICIAL"
-    external_ids:
-      sn_sygnatura: "V CSK 480/18"
-
-  # ======== LEX/Legalis Commercial (HTML - Requires specific auth structure) ========
-  - source_id: "pl_lex_kc_art_118"
-    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118"
-    fetch_strategy: "direct"
-    doc_type_hint: "STATUTE"
-    jurisdiction: "PL"
-    language: "pl"
-    license_tag: "COMMERCIAL"
-    external_ids:
-      article: "118"

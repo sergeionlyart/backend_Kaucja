@@ -13,14 +13,12 @@ mongo:
   db: "legal_rag_iter41_test"
 
 ocr:
-  use_fallback: false
+  enabled: false
   api_key_env: "MISTRAL_API_KEY"
 
 parsers:
-  pdf:
-    extract_images: false
-  html:
-    extract_links: true
+  pdf: {}
+  html: {}
 
 sources:
   # Valid EUR-Lex document for an OK output

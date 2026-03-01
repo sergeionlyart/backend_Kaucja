@@ -1,6 +1,6 @@
 import yaml
 from typing import Literal, Dict, Any, List, Optional
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import BaseModel, HttpUrl, Field, ConfigDict
 
 
 class HttpConfig(BaseModel):
@@ -8,6 +8,7 @@ class HttpConfig(BaseModel):
     timeout_seconds: int = 60
     max_retries: int = 4
     retry_backoff_seconds: float = 2.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class RunConfig(BaseModel):
@@ -16,29 +17,34 @@ class RunConfig(BaseModel):
     artifact_dir: str = "./artifacts"
     concurrency: int = 4
     http: HttpConfig = Field(default_factory=HttpConfig)
+    model_config = ConfigDict(extra="forbid")
 
 
 class MongoConfig(BaseModel):
     uri: str
     db: str
     write_concern: str = "majority"
+    model_config = ConfigDict(extra="forbid")
 
 
 class PdfParserConfig(BaseModel):
     engine: Literal["pymupdf"] = "pymupdf"
     min_avg_chars_per_page: int = 200
     max_empty_page_ratio: float = 0.30
+    model_config = ConfigDict(extra="forbid")
 
 
 class HtmlParserConfig(BaseModel):
     engine: Literal["bs4"] = "bs4"
     max_tokens_per_virtual_page: int = 1200
     min_heading_to_split: int = 2
+    model_config = ConfigDict(extra="forbid")
 
 
 class ParsersConfig(BaseModel):
     pdf: PdfParserConfig = Field(default_factory=PdfParserConfig)
     html: HtmlParserConfig = Field(default_factory=HtmlParserConfig)
+    model_config = ConfigDict(extra="forbid")
 
 
 class OcrConfig(BaseModel):
@@ -51,6 +57,7 @@ class OcrConfig(BaseModel):
     include_image_base64: bool = False
     extract_header: bool = False
     extract_footer: bool = False
+    model_config = ConfigDict(extra="forbid")
 
 
 class SourceConfig(BaseModel):
@@ -65,6 +72,7 @@ class SourceConfig(BaseModel):
     language: str
     external_ids: Optional[Dict[str, str]] = None
     license_tag: Literal["OFFICIAL", "COMMERCIAL", "UNKNOWN"] = "OFFICIAL"
+    model_config = ConfigDict(extra="forbid")
 
 
 class PipelineConfig(BaseModel):
@@ -73,6 +81,7 @@ class PipelineConfig(BaseModel):
     parsers: ParsersConfig
     ocr: OcrConfig = Field(default_factory=OcrConfig)
     sources: List[SourceConfig]
+    model_config = ConfigDict(extra="forbid")
 
 
 def load_config(path: str) -> PipelineConfig:

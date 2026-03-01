@@ -1,7 +1,7 @@
-# LegalDocs Ingest Pipeline: Iteration 2 Completion Report
+# LegalDocs Ingest Pipeline: Iteration 4.2 Completion Report
 
 ## Summary
-Successfully implemented and thoroughly tested Iteration 2 for the `legal_ingest` pipeline. The CLI correctly bridges Mistral OCR3 configurations measuring empty ratios, parses paginated SAOS JSON objects (now honoring wrapping envelopes), and extracts regulatory references into distinct, hash-verified Citations. Invariants regarding Tree node boundaries enforce pure sequential spans up to true `page_count`.
+Successfully implemented and thoroughly tested Iteration 4.2 for the `legal_ingest` pipeline. The CLI correctly bridges Mistral OCR3 configurations measuring empty ratios, parses paginated SAOS JSON objects (now honoring wrapping envelopes), and extracts regulatory references into distinct, hash-verified Citations. Additionally, Pydantic configuration schemas now rigorously enforce `extra="forbid"`, preventing typos and unsupported keys across the entire setup. Full TechSpec mapping defines 15 explicitly tracked legal sources.
 
 ## Git Info
 - **Branch**: `exp/legaldocs-ingest-iter1-foundation`
@@ -20,8 +20,8 @@ Successfully implemented and thoroughly tested Iteration 2 for the `legal_ingest
    - `test_tree.py` proves `page_count=0` yields `[0, 0)` perfectly preserving logic spans.
 4. **Pipeline Error Edge Cases (Iter 4)**:
    - Exception handling gracefully builds partial `Document` graphs mapping `access_status="ERROR"`. Valid `document.json` outputs bypass data loss under HTTP failures.
-5. **Config & Compliance Pass**:
-   - `config.full.template.yml` covers absolute coverage definitions splitting commercial implementations (`TODO_FROM_SOURCESET`) and structural APIs.
+5. **Config & Compliance Pass (Iter 4.2)**:
+   - `config.full.template.yml` covers 15 absolute TechSpec definitions. Pydantic models leverage `ConfigDict(extra="forbid")` explicitly denying undocumented schemas.
 
 ## Commands & Key Outputs (Final Execution)
 
