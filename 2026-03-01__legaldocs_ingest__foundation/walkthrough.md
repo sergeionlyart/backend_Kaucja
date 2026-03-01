@@ -1,7 +1,7 @@
-# LegalDocs Ingest Pipeline: Iteration 4.2 Completion Report
+# LegalDocs Ingest Pipeline: Iteration 4.3 Completion Report
 
 ## Summary
-Successfully implemented and thoroughly tested Iteration 4.2 for the `legal_ingest` pipeline. The CLI correctly bridges Mistral OCR3 configurations measuring empty ratios, parses paginated SAOS JSON objects (now honoring wrapping envelopes), and extracts regulatory references into distinct, hash-verified Citations. Additionally, Pydantic configuration schemas now rigorously enforce `extra="forbid"`, preventing typos and unsupported keys across the entire setup. Full TechSpec mapping defines 15 explicitly tracked legal sources.
+Successfully implemented and thoroughly tested Iteration 4.3 for the `legal_ingest` pipeline. The CLI correctly bridges Mistral OCR3 configurations measuring empty ratios, parses paginated SAOS JSON objects (now honoring wrapping envelopes), and extracts regulatory references into distinct, hash-verified Citations. Additionally, Pydantic configuration schemas now rigorously enforce `extra="forbid"`, preventing typos and unsupported keys across the entire setup. Full TechSpec mapping defines 15 explicitly tracked legal sources matching the specification 1:1 down to the URL strings.
 
 ## Git Info
 - **Branch**: `exp/legaldocs-ingest-iter1-foundation`
@@ -30,7 +30,7 @@ Successfully implemented and thoroughly tested Iteration 4.2 for the `legal_inge
 ruff format . && ruff check .
 pytest -q
 ```
-*Result: Passed successfully (17 internal unit and mock tests + compliance tests).*
+*Result: Passed successfully (19 internal unit and mock tests + compliance tests).*
 
 2. **Ingest Verification Commands**
 ```bash

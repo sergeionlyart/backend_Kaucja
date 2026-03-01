@@ -30,7 +30,7 @@ parsers:
 sources:
   # ======== ISAP / Dziennik Ustaw (PDF) ========
   - source_id: "pl_eli_du_2001_733"
-    url: "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU20010710733/U/D20010733Lj.pdf"
+    url: "https://eli.gov.pl/api/acts/DU/2001/733/text/O/D20010733.pdf"
     fetch_strategy: "direct"
     doc_type_hint: "STATUTE"
     jurisdiction: "PL"
@@ -51,7 +51,7 @@ sources:
 
   # ======== LEX/Legalis Commercial (HTML) ========
   - source_id: "pl_lex_ochrona_praw_lokatorow"
-    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-o-zmianie-16880196"
+    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658"
     fetch_strategy: "direct"
     doc_type_hint: "STATUTE"
     jurisdiction: "PL"
@@ -59,7 +59,7 @@ sources:
     license_tag: "COMMERCIAL"
 
   - source_id: "pl_lex_art_19a"
-    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-o-zmianie-16880196/art-19-a"
+    url: "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658/art-19-a"
     fetch_strategy: "direct"
     doc_type_hint: "STATUTE"
     jurisdiction: "PL"
@@ -78,7 +78,7 @@ sources:
 
   # ======== SN Judgments (PDF/HTML) ========
   - source_id: "pl_sn_III_CZP_58-02"
-    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia1/III%20CZP%2058-02.pdf"
+    url: "https://www.sn.pl/sites/orzecznictwo/Orzeczenia1/III%20CZP%2058-02.pdf"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -88,7 +88,7 @@ sources:
       sn_sygnatura: "III CZP 58/02"
 
   - source_id: "pl_sn_II_CSK_862-14"
-    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia3/II%20CSK%20862-14-1.pdf"
+    url: "https://www.sn.pl/sites/orzecznictwo/orzeczenia3/ii%20csk%20862-14-1.pdf"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -98,7 +98,7 @@ sources:
       sn_sygnatura: "II CSK 862/14"
 
   - source_id: "pl_sn_I_CSK_292-12"
-    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia2/I%20CSK%20292-12-1.pdf"
+    url: "https://www.sn.pl/sites/orzecznictwo/Orzeczenia2/I%20CSK%20292-12-1.pdf"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -108,7 +108,7 @@ sources:
       sn_sygnatura: "I CSK 292/12"
 
   - source_id: "pl_sn_V_CSK_480-18_html"
-    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia3/V%20CSK%20480-18.doc" # Note mock URL format for parsing tests
+    url: "https://www.sn.pl/sites/orzecznictwo/OrzeczeniaHTML/v%20csk%20480-18-1.docx.html"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -118,7 +118,7 @@ sources:
       sn_sygnatura: "V CSK 480/18"
 
   - source_id: "pl_sn_I_CNP_31-13_html"
-    url: "http://www.sn.pl/sites/orzecznictwo/Orzeczenia/I%20CNP%2031-13.pdf"
+    url: "https://www.sn.pl/sites/orzecznictwo/OrzeczeniaHTML/I%20CNP%2031-13.docx.html"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -129,7 +129,7 @@ sources:
 
   # ======== SAOS Judgments (API extraction) ========
   - source_id: "pl_saos_search_kaucja_mieszkaniowa"
-    url: "https://www.saos.org.pl"
+    url: "https://www.saos.org.pl/search?courtCriteria.courtType=COMMON&keywords=kaucja+mieszkaniowa"
     fetch_strategy: "saos_search"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -141,7 +141,7 @@ sources:
       # Date bounds could be specified here depending on target subset
 
   - source_id: "pl_saos_171957"
-    url: "https://www.saos.org.pl/api/judgments/171957"
+    url: "https://www.saos.org.pl/judgments/171957"
     fetch_strategy: "saos_judgment"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -152,7 +152,7 @@ sources:
 
   # ======== Common Courts ========
   - source_id: "pl_courts_wloclawek_I_Ca_56_2018"
-    url: "https://orzeczenia.wloclawek.so.gov.pl/content/$N/155510000000503_I_Ca_000056_2018_Uz_2018-04-12_001"
+    url: "https://orzeczenia.wloclawek.so.gov.pl/content/$N/151030000000503_I_Ca_000056_2018_Uz_2018-05-08_001"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"
@@ -161,7 +161,7 @@ sources:
 
   # ======== EUR-Lex Documents (HTML/PDF) ========
   - source_id: "eu_eurlex_dir_1993_13"
-    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:31993L0013"
+    url: "https://eur-lex.europa.eu/eli/dir/1993/13/oj/eng"
     fetch_strategy: "direct"
     doc_type_hint: "STATUTE"
     jurisdiction: "EU"
@@ -172,7 +172,7 @@ sources:
 
   # ======== UOKiK ========
   - source_id: "pl_uokik_RKR_37_2013"
-    url: "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/0/138DEE12FE06FEE8C1257EBB0073DBC4/$file/Decyzja%20RKR-37-2013.pdf"
+    url: "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "PL"

@@ -11,6 +11,7 @@ This document serves as the final proof of compliance for Iteration 4, mapping s
 | **SAOS Extraction & Search** | ✅ DONE | `pytest tests/unit/test_fetch_saos.py` | Missing IDs gracefully ignored during pagination. Data wrapper extracted efficiently. |
 | **PDF Parsing & OCR Fallbacks** | ✅ DONE | `pytest tests/unit/test_pdf.py` | OCR dynamically wires configuration attributes directly to Mistral payload definitions. |
 | **Configuration Templating** | ✅ DONE | `configs/config.full.template.yml` (`validate-config` green) | Template generated matching all mandated schemas. Total of 15 sources explicitly referenced (`pl_eli_du_2001_733`, `pl_isap_wdu19640160093`, `pl_lex_ochrona_praw_lokatorow`, `pl_lex_art_19a`, `pl_lex_kc_art_118`, `pl_sn_III_CZP_58-02`, `pl_sn_II_CSK_862-14`, `pl_sn_I_CSK_292-12`, `pl_sn_V_CSK_480-18_html`, `pl_sn_I_CNP_31-13_html`, `pl_saos_search_kaucja_mieszkaniowa`, `pl_saos_171957`, `pl_courts_wloclawek_I_Ca_56_2018`, `eu_eurlex_dir_1993_13`, `pl_uokik_RKR_37_2013`). |
+| **source_id -> URL parity with TechSpec** | ✅ PASS | `pytest tests/unit/test_full_config_techspec_mapping.py` | 15/15 target URLs verified automatically to adhere exactly to markdown documentation definition patterns without drift. |
 | **Telemetry & Observability** | ✅ DONE | `artifacts/runs/run_iter41_evidence/logs.jsonl` | Context propagation secured (`run_id`, `source_id`, `doc_uid`). Strict `stage` segregation avoids leaks. Extrapolated `duration_ms` appended directly to root. |
 
 ## Action Items needed from Owner
