@@ -87,5 +87,5 @@ The following items were expressly deferred:
 3. The `citations` metadata extraction matching models for document relationships.
 
 ## Git Info
-- **Commit Hash(es)**: (To be added once committed)
-- **PR Link**: (To be added once PR is open)
+- **Commit Hash(es)**: `550ad4917ebce11518c4e402908d3edc1560d6ea`
+- **PR Link**: [PR #3](https://github.com/sergeionlyart/backend_Kaucja/pull/3)
