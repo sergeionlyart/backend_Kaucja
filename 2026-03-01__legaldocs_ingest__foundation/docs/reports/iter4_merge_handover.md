@@ -13,9 +13,10 @@ Iteration 4.4 concludes the legal ingestion foundation work on the PR `#3` bridg
 - Full text deep parsing of external references remains outside this release cycle constraint outside the basic implementation around SAOS `referencedRegulations`.
 
 ## Release pointers
-- **PR #3 merged at (exp branch)**: `f7f052a`
-- **labs head commit**: `900ab28`
-- **Release tag**: `labs-legaldocs-ingest-iter4.4` (points to `labs` merge commit)
+- **merge commit**: `f7f052a`
+- **labs head at merge moment**: `900ab28`
+- **current labs head**: `3b23e51`
+- **tag `labs-legaldocs-ingest-iter4.4`** -> `f7f052a`
 
 ## Reproducing Validity
 Execute the following verification commands to reconstruct the passed statuses:
