@@ -1,0 +1,10 @@
+httpx
+pydantic
+pymongo
+pymupdf
+beautifulsoup4
+lxml
+pyyaml
+tenacity
+pytest
+ruff
