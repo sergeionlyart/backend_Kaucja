@@ -1,0 +1,56 @@
+{
+  "_id": "unknown:urlsha:4307a0f3b0cab777",
+  "doc_uid": "unknown:urlsha:4307a0f3b0cab777",
+  "doc_type": "STATUTE",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "unknown",
+  "title": "Dziennik Ustaw 2001 r. nr 71, poz. 733",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {},
+  "source_urls": [
+    "https://dziennikustaw.gov.pl/DU/2001/733"
+  ],
+  "license_tag": "COMMERCIAL",
+  "access_status": "RESTRICTED",
+  "current_source_hash": "46d1c6109d731fe0d46830f64dd62accd895d7f8d2b27ae61469beeff0978126",
+  "mime": "text/html",
+  "page_count": 3,
+  "content_stats": {
+    "total_chars": 266,
+    "total_tokens_est": 46,
+    "parse_method": "HTML",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 3,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Dziennik Ustaw 2001 r. nr 71, poz. 733",
+          "node_id": "hdg:dziennik_u",
+          "start_index": 1,
+          "end_index": 2,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Ustawa z dnia 21 czerwca 2001 r. o ochronie praw lokatorów, mieszkaniowym zasobie gminy iozmianie Ko",
+          "node_id": "hdg:ustawa_z_d",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-01T20:16:09.109867",
+  "updated_at": "2026-03-01T20:16:09.109869"
+}

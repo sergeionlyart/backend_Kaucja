@@ -4,4 +4,9 @@ artifacts/
 .ruff_cache/
 __pycache__/
 *.pyc
+
+# Local environments
+.env
+.env.*
+!.env.example
 .DS_Store

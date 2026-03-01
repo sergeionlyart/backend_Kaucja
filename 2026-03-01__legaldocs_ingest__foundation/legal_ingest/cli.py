@@ -1,5 +1,7 @@
 import argparse
 import sys
+import os
+from dotenv import load_dotenv
 from .config import load_config
 from pydantic import ValidationError
 from .pipeline import run_pipeline
@@ -8,6 +10,9 @@ from .store.mongo import ensure_indexes
 
 def main():
     parser = argparse.ArgumentParser(prog="legal_ingest")
+    parser.add_argument(
+        "--env-file", type=str, default=".env", help="Path to .env file"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # validate-config
@@ -29,8 +34,17 @@ def main():
 
     args = parser.parse_args()
 
+    if os.path.exists(args.env_file):
+        load_dotenv(dotenv_path=args.env_file)
+    else:
+        # Fallback to pure environment variables silently if explicitly named one isn't there
+        pass
+
     try:
         config = load_config(args.config)
+    except ValueError as e:
+        print(f"Environment configuration error:\n{e}", file=sys.stderr)
+        sys.exit(1)
     except ValidationError as e:
         print(f"Config validation error:\n{e}", file=sys.stderr)
         sys.exit(1)
