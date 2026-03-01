@@ -9,8 +9,13 @@ Iteration 4.4 concludes the legal ingestion foundation work on the PR `#3` bridg
 - Structural schema parity verifications preventing undocumented fields across all pipelines. 
 
 ## Known Limitations & Out parameters
-- Commercial `LEX` URLs (`pl_lex_*`) correctly match TechSpec mappings structurally, however any `fetch` processes against these references will inherently crash or return restrictive errors until a valid cookie injection or direct API handling engine is appended.
+- Commercial `LEX` URLs (`pl_lex_*`) correctly match TechSpec mappings structurally, however any `fetch` processes against these references returns RESTRICTED/ERROR without auth cookies until a valid cookie injection or direct API handling engine is appended.
 - Full text deep parsing of external references remains outside this release cycle constraint outside the basic implementation around SAOS `referencedRegulations`.
+
+## Release pointers
+- **PR #3 merged at (exp branch)**: `f7f052a`
+- **labs head commit**: `900ab28`
+- **Release tag**: `labs-legaldocs-ingest-iter4.4` (points to `labs` merge commit)
 
 ## Reproducing Validity
 Execute the following verification commands to reconstruct the passed statuses:
