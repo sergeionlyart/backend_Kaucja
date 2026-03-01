@@ -11,7 +11,8 @@ from ..ids import generate_page_id
 
 
 def parse_saos(raw_bytes: bytes, doc_uid: str, source_hash: str) -> list[Page]:
-    data = json.loads(raw_bytes.decode("utf-8"))
+    payload = json.loads(raw_bytes.decode("utf-8"))
+    data = payload.get("data", payload) if isinstance(payload, dict) else payload
 
     # Extract decision, summary, and textContent
     decision = data.get("decision") or ""
@@ -54,7 +55,8 @@ def parse_saos(raw_bytes: bytes, doc_uid: str, source_hash: str) -> list[Page]:
 def extract_saos_citations(
     raw_bytes: bytes, doc_uid: str, source_hash: str
 ) -> list[Citation]:
-    data = json.loads(raw_bytes.decode("utf-8"))
+    payload = json.loads(raw_bytes.decode("utf-8"))
+    data = payload.get("data", payload) if isinstance(payload, dict) else payload
     refs = data.get("referencedRegulations", [])
 
     citations = []

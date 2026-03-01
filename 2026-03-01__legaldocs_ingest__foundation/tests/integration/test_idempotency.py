@@ -108,7 +108,9 @@ def test_idempotent_upsert(mongo_cfg):
     # Third upsert: New source_hash simulating changed content
     ds2 = ds.model_copy(update={"id": "doc1|hash2", "source_hash": "hash2"})
     page2 = page.model_copy(update={"id": "doc1|hash2|p:0", "source_hash": "hash2"})
-    node2 = node.model_copy(update={"id": "doc1|hash2|node:root", "source_hash": "hash2"})
+    node2 = node.model_copy(
+        update={"id": "doc1|hash2|node:root", "source_hash": "hash2"}
+    )
     doc2 = doc.model_copy(update={"current_source_hash": "hash2"})
 
     save_document_pipeline_results(mongo_cfg, ds2, [page2], [node2], [], doc2)

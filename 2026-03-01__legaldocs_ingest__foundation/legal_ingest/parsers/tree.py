@@ -23,7 +23,7 @@ def build_tree_nodes(
         order_index=0,
         title="Root Document",
         start_index=0,
-        end_index=max(1, page_count),
+        end_index=page_count,
     )
     nodes.append(root_node)
 

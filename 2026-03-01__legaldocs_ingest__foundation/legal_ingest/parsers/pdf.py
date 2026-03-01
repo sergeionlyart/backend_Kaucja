@@ -107,7 +107,9 @@ def _run_mistral_ocr(
     }
     payload = {
         "model": ocr_config.model,
-        "document": {"type": "document_url", "document_url": url},
+        "document": {"type": "document_url", "documentUrl": url},
+        "table_format": "markdown",
+        "include_image_base64": False,
     }
     try:
         resp = httpx.post(
