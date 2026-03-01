@@ -282,28 +282,6 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
             stats.citations_written += len(citations)
             stats.nodes_written += len(nodes)
 
-            # Save normalized artifacts
-            if not config.run.dry_run:
-                doc_norm_dir = os.path.join(
-                    config.run.artifact_dir, "docs", doc_uid, "normalized", source_hash
-                )
-                os.makedirs(doc_norm_dir, exist_ok=True)
-                with open(
-                    os.path.join(doc_norm_dir, "pages.jsonl"), "w", encoding="utf-8"
-                ) as f:
-                    for p in pages:
-                        f.write(p.model_dump_json(by_alias=True) + "\n")
-                with open(
-                    os.path.join(doc_norm_dir, "nodes.jsonl"), "w", encoding="utf-8"
-                ) as f:
-                    for n in nodes:
-                        f.write(n.model_dump_json(by_alias=True) + "\n")
-                with open(
-                    os.path.join(doc_norm_dir, "citations.jsonl"), "w", encoding="utf-8"
-                ) as f:
-                    for c in citations:
-                        f.write(c.model_dump_json(by_alias=True) + "\n")
-
             # 5. Build Document root
             total_chars = sum(p.char_count for p in pages)
             total_tokens = sum(p.token_count_est for p in pages)
@@ -335,6 +313,32 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 ),
                 pageindex_tree=tree_nested,
             )
+
+            # Save normalized artifacts
+            if not config.run.dry_run:
+                doc_norm_dir = os.path.join(
+                    config.run.artifact_dir, "docs", doc_uid, "normalized", source_hash
+                )
+                os.makedirs(doc_norm_dir, exist_ok=True)
+                with open(
+                    os.path.join(doc_norm_dir, "pages.jsonl"), "w", encoding="utf-8"
+                ) as f:
+                    for p in pages:
+                        f.write(p.model_dump_json(by_alias=True) + "\n")
+                with open(
+                    os.path.join(doc_norm_dir, "nodes.jsonl"), "w", encoding="utf-8"
+                ) as f:
+                    for n in nodes:
+                        f.write(n.model_dump_json(by_alias=True) + "\n")
+                with open(
+                    os.path.join(doc_norm_dir, "citations.jsonl"), "w", encoding="utf-8"
+                ) as f:
+                    for c in citations:
+                        f.write(c.model_dump_json(by_alias=True) + "\n")
+                with open(
+                    os.path.join(doc_norm_dir, "document.json"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(doc_model.model_dump_json(by_alias=True, indent=2) + "\n")
 
             # Save to Mongo
             set_log_context(stage="save")
@@ -385,5 +389,5 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
         f.write(run_model.model_dump_json(by_alias=True, indent=2))
 
     logger.info(
-        "Pipeline run finished", extra={"stage": "finalize", "metrics": stats.dict()}
+        "Pipeline run finished", extra={"stage": "finalize", "metrics": stats.model_dump()}
     )

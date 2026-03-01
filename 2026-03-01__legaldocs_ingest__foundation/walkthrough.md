@@ -26,7 +26,7 @@ Successfully implemented and thoroughly tested Iteration 2 for the `legal_ingest
 ruff format . && ruff check .
 pytest -q
 ```
-*Result: Passed successfully (14 internal unit and mock tests).*
+*Result: Passed successfully (15 internal unit and mock tests).*
 
 2. **Ingest Verification Commands**
 ```bash
@@ -41,18 +41,19 @@ python -m legal_ingest ingest --config configs/config.sample.yml
 
 **SAOS Payload Citations Sample** (`pl_saos_171957`):
 ```jsonl
-{"_id": "saos_pl:171957|90a2aedca48a4cddcefbbeb671a5a92a54b38dcd37b02dbba697bf95f68a5c37|cit:7ee8669...", "doc_uid": "saos_pl:171957", "target": {"external_id": "DU/1964/296"}}
+{"_id": "saos_pl:171957|4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603|cit:7ee8669...", "doc_uid": "saos_pl:171957", "target": {"external_id": "DU/1964/296"}}
 ```
 
 **SAOS Pages Sample** (`pl_saos_171957`):
 ```jsonl
-{"_id": "saos_pl:171957|90a2aedca48a4cddcefbbeb671a5a92a54b38dcd37b02dbba697bf95f68a5c37|p:0", "text": "Postawienie zarzutu obrazy art. 233 § 1 k.p.c..."}
+{"_id": "saos_pl:171957|4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603|p:0", "text": "Postawienie zarzutu obrazy art. 233 § 1 k.p.c..."}
 ```
 
 ## Physical Paths
 - **Report Document**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/walkthrough.md`
-- **Current Run Directory**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/d4f39ce842c24d6989539f5c408cda9a/`
-- **run_report.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/d4f39ce842c24d6989539f5c408cda9a/run_report.json`
-- **logs.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/d4f39ce842c24d6989539f5c408cda9a/logs.jsonl`
+- **Current Run Directory**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/47e57c371a0341c6b719a3fb604676f9/`
+- **run_report.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/47e57c371a0341c6b719a3fb604676f9/run_report.json`
+- **logs.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/runs/47e57c371a0341c6b719a3fb604676f9/logs.jsonl`
 - **SAOS pages.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/pages.jsonl`
 - **SAOS citations.jsonl**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/citations.jsonl`
+- **SAOS document.json**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts/docs/saos_pl:171957/normalized/4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603/document.json`
