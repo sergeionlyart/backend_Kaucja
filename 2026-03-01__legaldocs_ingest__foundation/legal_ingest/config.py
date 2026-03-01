@@ -1,4 +1,6 @@
 import yaml
+import os
+import re
 from typing import Literal, Dict, Any, List, Optional
 from pydantic import BaseModel, HttpUrl, Field, ConfigDict
 
@@ -84,7 +86,23 @@ class PipelineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def expand_env_vars(content: str) -> str:
+    pattern = re.compile(r"\$\{([^}]+)\}")
+
+    def replacer(match):
+        var_name = match.group(1)
+        if var_name not in os.environ:
+            raise ValueError(
+                f"Environment variable '{var_name}' is required but not set."
+            )
+        return os.environ[var_name]
+
+    return pattern.sub(replacer, content)
+
+
 def load_config(path: str) -> PipelineConfig:
     with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+        raw_content = f.read()
+    expanded = expand_env_vars(raw_content)
+    data = yaml.safe_load(expanded)
     return PipelineConfig(**data)

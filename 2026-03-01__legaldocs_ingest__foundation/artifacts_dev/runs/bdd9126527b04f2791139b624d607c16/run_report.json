@@ -1,0 +1,18 @@
+{
+  "_id": "run:bdd9126527b04f2791139b624d607c16",
+  "run_id": "bdd9126527b04f2791139b624d607c16",
+  "started_at": "2026-03-01T20:16:08.541920",
+  "finished_at": "2026-03-01T20:16:10.661887",
+  "config_hash": "d189bbad8d5958448a69b854dda296a682832a2dfdae450a78394bd7eb3d658b",
+  "pipeline_version": "0.1.0",
+  "stats": {
+    "sources_total": 2,
+    "docs_ok": 1,
+    "docs_restricted": 1,
+    "docs_error": 0,
+    "pages_written": 8,
+    "nodes_written": 15,
+    "citations_written": 0
+  },
+  "errors": []
+}

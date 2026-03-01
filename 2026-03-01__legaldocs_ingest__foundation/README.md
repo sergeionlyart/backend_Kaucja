@@ -13,15 +13,20 @@ This is the foundation for the `legal_ingest` pipeline.
    ```bash
    docker compose up -d
    ```
-2. Create environment variables (Optional, for mistral OCR later):
+2. Create and populate the environment configuration (`.env`):
    ```bash
-   export MISTRAL_API_KEY="test"
+   cp .env.example .env
+   # Add your MISTRAL_API_KEY inside .env
    ```
-3. Initialize the database indexes:
+3. Execute the full pipeline orchestrator script:
    ```bash
-   python -m legal_ingest ensure-indexes --config configs/config.sample.yml
+   ./scripts/run_ingest.sh configs/config.runtime.yml
    ```
-4. Run sample ingest:
+   **Alternative (Dry-Run):**
    ```bash
-   python -m legal_ingest ingest --config configs/config.sample.yml
+   python -m legal_ingest.cli --env-file .env dry-run --config configs/config.runtime.yml --limit 2
    ```
+
+## Troubleshooting
+- **Missing Env Variable**: Pydantic validations will actively reject pipelines executing without mapped strings (e.g. `MONGO_URI` missing throws ValueError).
+- **RESTRICTED Output**: Commercial targets like `LEX` or `Inforlex` will yield error HTML payloads and flag as RESTRICTED safely until cookie injection authentication is built.

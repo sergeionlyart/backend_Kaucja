@@ -1,0 +1,130 @@
+{
+  "_id": "eurlex_eu:http://data.europa.eu/eli/dir/1993/13/oj",
+  "doc_uid": "eurlex_eu:http://data.europa.eu/eli/dir/1993/13/oj",
+  "doc_type": "EU_ACT",
+  "jurisdiction": "EU",
+  "language": "en",
+  "source_system": "eurlex_eu",
+  "title": "Directive - 93/13 - EN - Unfair Terms Directive - EUR-Lex",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {
+    "eli": "http://data.europa.eu/eli/dir/1993/13/oj"
+  },
+  "source_urls": [
+    "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:31993L0013"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "9e5ffbb187375465104ed6594ac5ace5cd89b10a658dd99b64d4d5fc317436d4",
+  "mime": "text/html",
+  "page_count": 5,
+  "content_stats": {
+    "total_chars": 23288,
+    "total_tokens_est": 3889,
+    "parse_method": "HTML",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 5,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Article 1",
+          "node_id": "art:1",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 2",
+          "node_id": "art:2",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 3",
+          "node_id": "art:3",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 4",
+          "node_id": "art:4",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 5",
+          "node_id": "art:5",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 6",
+          "node_id": "art:6",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 7",
+          "node_id": "art:7",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 8",
+          "node_id": "art:8",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 9",
+          "node_id": "art:9",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 10",
+          "node_id": "art:10",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Article 11",
+          "node_id": "art:11",
+          "start_index": 3,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-01T20:16:10.656415",
+  "updated_at": "2026-03-01T20:16:10.656416"
+}
