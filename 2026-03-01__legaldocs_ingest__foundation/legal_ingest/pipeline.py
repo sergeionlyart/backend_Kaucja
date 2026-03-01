@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import hashlib
+import re
 from datetime import datetime
 import traceback
 
@@ -47,17 +48,45 @@ def detect_mime(fetch_result, url: str) -> str:
     return "application/octet-stream"
 
 
-def extract_title(pages, doc_type: str) -> str:
-    if not pages:
-        return "Untitled Document"
-    first_text = pages[0].text
-    if doc_type in ["STATUTE", "EU_ACT", "CASELAW"]:
-        # Naive first line as title
-        for line in first_text.splitlines():
-            line = line.strip()
-            if line:
-                return line[:200]
-    return "Untitled Document"
+def extract_metadata(pages, mime: str, raw_bytes: bytes, doc_type: str):
+    title = "Untitled Document"
+    date_published = None
+    date_decision = None
+
+    if mime == "application/json":
+        try:
+            data = json.loads(raw_bytes)
+            case_number = data.get("courtCases", [{}])[0].get("caseNumber", "")
+            judgment_type = data.get("judgmentType", "WYROK")
+            court = data.get("courtType", "")
+            title = f"{judgment_type} {case_number} ({court})".strip()
+            date_decision = data.get("judgmentDate")
+        except Exception:
+            pass
+        return title, date_published, date_decision
+
+    if mime == "text/html":
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(raw_bytes, "html.parser")
+        title_tag = soup.title.string if soup.title else ""
+        h1_tag = soup.h1.string if soup.h1 else ""
+        title = h1_tag or title_tag or "Untitled HTML Document"
+        return title.strip(), date_published, date_decision
+
+    if mime == "application/pdf":
+        first_text = ""
+        for p in pages[:2]:
+            first_text += p.text + "\n"
+        match = re.search(
+            r"(Ustawa\s+z\s+dnia\s+[^\n]+|Kodeks\s+[^\n]+|WYROK\s+[^\n]+|UCHWA\u0141A\s+[^\n]+|POSTANOWIENIE\s+[^\n]+)",
+            first_text,
+            re.IGNORECASE,
+        )
+        if match:
+            title = match.group(1).strip()
+
+    return title.strip(), date_published, date_decision
 
 
 def run_pipeline(config: PipelineConfig, limit: int = None):
@@ -85,6 +114,32 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
     if not config.run.dry_run:
         save_run(config.mongo, run_model)
+
+    from .fetch import expand_saos_search
+
+    expanded_sources = []
+    for s in config.sources:
+        if s.fetch_strategy == "saos_search":
+            logger.info(
+                f"Expanding saos_search for {s.source_id}", extra={"stage": "init"}
+            )
+            try:
+                new_s = expand_saos_search(config.run.http, s)
+                expanded_sources.extend(new_s)
+                logger.info(
+                    f"saos_search yielded {len(new_s)} judgments",
+                    extra={"stage": "init"},
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to expand saos_search {s.source_id}: {e}",
+                    extra={"stage": "init"},
+                )
+        else:
+            expanded_sources.append(s)
+
+    config.sources = expanded_sources
+    stats.sources_total = len(expanded_sources)
 
     for i, source in enumerate(config.sources):
         if limit is not None and i >= limit:
@@ -171,13 +226,25 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
             if mime == "application/pdf":
                 pages = parse_pdf(
-                    fetch_result.raw_bytes, doc_uid, source_hash, config.parsers.pdf
+                    fetch_result.raw_bytes,
+                    doc_uid,
+                    source_hash,
+                    config.parsers.pdf,
+                    config.ocr,
+                    str(source.url),
                 )
             elif mime == "text/html":
                 pages = parse_html(
                     fetch_result.raw_bytes, doc_uid, source_hash, config.parsers.html
                 )
                 parse_method = "HTML"
+                total_chars = sum(len(p.text) for p in pages)
+                if total_chars < 500:
+                    access_status = "RESTRICTED"
+                    logger.warning(
+                        "Restricted content detected via low char count",
+                        extra={"stage": "parse"},
+                    )
             elif mime == "application/json" or source.fetch_strategy == "saos_judgment":
                 pages = parse_saos(fetch_result.raw_bytes, doc_uid, source_hash)
                 parse_method = "SAOS_JSON"
@@ -187,12 +254,25 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
 
             stats.pages_written += len(pages)
 
-            # 4. Extract Medata & Build Tree
+            # 4. Extract Metadata & Build Tree
             set_log_context(stage="normalize")
-            title = extract_title(pages, source.doc_type_hint)
+            title, date_published, date_decision = extract_metadata(
+                pages, mime, fetch_result.raw_bytes, source.doc_type_hint
+            )
             nodes, tree_nested = build_tree_nodes(
                 pages, source.doc_type_hint, doc_uid, source_hash
             )
+            citations = []
+
+            # Extract citations for SAOS
+            if mime == "application/json" or source.fetch_strategy == "saos_judgment":
+                from .parsers.saos import extract_saos_citations
+
+                citations = extract_saos_citations(
+                    fetch_result.raw_bytes, doc_uid, source_hash
+                )
+
+            stats.citations_written += len(citations)
             stats.nodes_written += len(nodes)
 
             # Save normalized artifacts
@@ -211,6 +291,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 ) as f:
                     for n in nodes:
                         f.write(n.model_dump_json(by_alias=True) + "\n")
+                with open(
+                    os.path.join(doc_norm_dir, "citations.jsonl"), "w", encoding="utf-8"
+                ) as f:
+                    for c in citations:
+                        f.write(c.model_dump_json(by_alias=True) + "\n")
 
             # 5. Build Document root
             total_chars = sum(p.char_count for p in pages)
@@ -226,8 +311,12 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 title=title,
                 external_ids=source.external_ids or {},
                 source_urls=[str(source.url)],
-                license_tag=source.license_tag,
+                license_tag="COMMERCIAL"
+                if access_status == "RESTRICTED"
+                else source.license_tag,
                 access_status=access_status,
+                date_published=date_published,
+                date_decision=date_decision,
                 current_source_hash=source_hash,
                 mime=mime,
                 page_count=len(pages),
@@ -248,7 +337,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                     doc_source,
                     pages,
                     nodes,
-                    citations=[],  # Empty for Iteration 1 MVP
+                    citations=citations,
                     document=doc_model,
                 )
 

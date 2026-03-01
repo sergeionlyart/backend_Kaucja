@@ -78,8 +78,55 @@ def fetch_source(http_cfg: HttpConfig, source: SourceConfig) -> FetchResult:
             elif source.fetch_strategy == "saos_judgment":
                 return fetch_saos_judgment(client, source)
             elif source.fetch_strategy == "saos_search":
-                raise NotImplementedError("SAOS search is delayed to Iteration 3.")
+                raise ValueError("saos_search should be expanded prior to fetch_source")
             else:
                 raise ValueError(f"Unknown fetch strategy: {source.fetch_strategy}")
 
     return _do_fetch()
+
+
+def expand_saos_search(
+    http_cfg: HttpConfig, source: SourceConfig
+) -> list[SourceConfig]:
+    base_url = "https://www.saos.org.pl/api/search/judgments"
+    params = dict(source.saos_search_params or {})
+    params.setdefault("pageSize", 100)
+    page_num = 0
+
+    seen_ids = set()
+    new_sources = []
+
+    with build_client(http_cfg) as client:
+        while True:
+            params["pageNumber"] = page_num
+            resp = client.get(base_url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+            items = data.get("items", [])
+            for item in items:
+                saos_id = str(item.get("id"))
+                if saos_id and saos_id not in seen_ids:
+                    seen_ids.add(saos_id)
+                    ext_ids = dict(source.external_ids or {})
+                    ext_ids["saos_id"] = saos_id
+
+                    ns = SourceConfig(
+                        source_id=f"{source.source_id}_{saos_id}",
+                        url="https://www.saos.org.pl",
+                        fetch_strategy="saos_judgment",
+                        doc_type_hint="CASELAW",
+                        jurisdiction=source.jurisdiction,
+                        language=source.language,
+                        external_ids=ext_ids,
+                        license_tag=source.license_tag,
+                    )
+                    new_sources.append(ns)
+
+            links = data.get("links", [])
+            has_next = any(link.get("rel") == "next" for link in links)
+            if not items or not has_next:
+                break
+            page_num += 1
+
+    return new_sources

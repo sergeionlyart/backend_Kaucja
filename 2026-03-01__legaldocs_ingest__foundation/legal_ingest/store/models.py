@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class Node(BaseModel):
@@ -18,8 +18,7 @@ class Node(BaseModel):
     anchors: Dict[str, str] = Field(default_factory=dict)
     ingested_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class PageExtractionQuality(BaseModel):
@@ -45,8 +44,7 @@ class Page(BaseModel):
     extraction: PageExtraction
     ingested_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ContentStats(BaseModel):
@@ -54,6 +52,32 @@ class ContentStats(BaseModel):
     total_tokens_est: int
     parse_method: Literal["PDF_TEXT", "OCR3", "HTML", "SAOS_JSON"]
     ocr_used: bool
+
+
+class CitationTarget(BaseModel):
+    jurisdiction: Optional[str] = None
+    external_id: Optional[str] = None
+    anchor: Optional[str] = None
+
+
+class CitationEvidence(BaseModel):
+    page_index: Optional[int] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+
+
+class Citation(BaseModel):
+    id: str = Field(alias="_id")
+    doc_uid: str
+    source_hash: str
+    from_node_id: str
+    raw_citation_text: str
+    target: Optional[CitationTarget] = None
+    confidence: Optional[float] = None
+    evidence: Optional[CitationEvidence] = None
+    ingested_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Document(BaseModel):
@@ -79,8 +103,7 @@ class Document(BaseModel):
     ingested_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class HttpMeta(BaseModel):
@@ -104,8 +127,7 @@ class DocumentSource(BaseModel):
     license_tag: str
     ingested_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class RunError(BaseModel):
@@ -135,5 +157,4 @@ class IngestRun(BaseModel):
     stats: RunStats = Field(default_factory=RunStats)
     errors: List[RunError] = Field(default_factory=list)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
