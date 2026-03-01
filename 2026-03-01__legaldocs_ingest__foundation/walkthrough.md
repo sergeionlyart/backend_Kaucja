@@ -26,7 +26,7 @@ Successfully implemented and thoroughly tested Iteration 2 for the `legal_ingest
 ruff format . && ruff check .
 pytest -q
 ```
-*Result: Passed successfully (12 internal unit and mock tests).*
+*Result: Passed successfully (14 internal unit and mock tests).*
 
 2. **Ingest Verification Commands**
 ```bash

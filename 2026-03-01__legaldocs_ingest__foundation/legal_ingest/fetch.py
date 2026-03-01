@@ -105,8 +105,11 @@ def expand_saos_search(
 
             items = data.get("items", [])
             for item in items:
-                saos_id = str(item.get("id"))
-                if saos_id and saos_id not in seen_ids:
+                raw_id = item.get("id")
+                if raw_id is None or raw_id == "":
+                    continue
+                saos_id = str(raw_id)
+                if saos_id not in seen_ids:
                     seen_ids.add(saos_id)
                     ext_ids = dict(source.external_ids or {})
                     ext_ids["saos_id"] = saos_id

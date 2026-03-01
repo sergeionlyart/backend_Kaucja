@@ -19,7 +19,13 @@ def test_expand_saos_search(mock_get):
     # Mock pagination: page 1 has items and a next link, page 2 has items and no next link
     mock_resp1 = MagicMock()
     mock_resp1.json.return_value = {
-        "items": [{"id": 123}, {"id": 456}],
+        "items": [
+            {"id": 123},
+            {"id": 456},
+            {"name": "missing_id"},
+            {"id": None},
+            {"id": ""},
+        ],
         "links": [{"rel": "next", "href": "..."}],
     }
 
