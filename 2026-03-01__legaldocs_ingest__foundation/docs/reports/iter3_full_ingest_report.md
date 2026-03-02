@@ -66,3 +66,29 @@ python -m legal_ingest.cli --env-file .env ingest --config configs/config.caslaw
 - **Source Status**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter3_source_status.json`
 - **Not Loaded**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter3_not_loaded.json`
 - **This Report**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter3_full_ingest_report.md`
+
+## Canonical run path
+
+The **only** source of truth for the ingest is the YAML config + CLI:
+
+```bash
+cd 2026-03-01__legaldocs_ingest__foundation
+source venv/bin/activate
+
+# 1. Validate config
+python -m legal_ingest.cli --env-file .env validate-config \
+  --config configs/config.caslaw_v22.full.yml
+
+# 2. Ensure MongoDB indexes
+python -m legal_ingest.cli --env-file .env ensure-indexes \
+  --config configs/config.caslaw_v22.full.yml
+
+# 3. Run ingest (dry_run=false)
+python -m legal_ingest.cli --env-file .env ingest \
+  --config configs/config.caslaw_v22.full.yml
+```
+
+> **Note**: `run_iter3.py` is a convenience wrapper that delegates to these
+> CLI commands. It does **not** contain any source definitions or business logic.
+> Do not treat it as the source of truth.
+
