@@ -1342,3 +1342,61 @@ def test_restore_history_run_bundle_shows_rollback_details(
     assert "manifest_verification=verified" in restore_details
     assert "rollback_attempted=True" in restore_details
     assert "rollback_succeeded=False" in restore_details
+
+
+def test_run_full_pipeline_ui_reports_configuration_error_for_invalid_model(
+    tmp_path: Path,
+) -> None:
+    file_one = tmp_path / "one.pdf"
+    file_one.write_bytes(b"one")
+
+    orchestrator = FakeOrchestrator()
+    (status, *rest) = run_full_pipeline_ui(
+        orchestrator=orchestrator,
+        prompt_name="kaucja_gap_analysis",
+        current_session_id="",
+        uploaded_files=[file_one],
+        provider="google",
+        model="gpt-5.1",
+        prompt_version="v001",
+        ocr_model="mistral-ocr-latest",
+        table_format="html",
+        include_image_base64=True,
+        openai_reasoning_effort="auto",
+        gemini_thinking_level="auto",
+        preflight_checker=lambda provider: None,
+    )
+
+    assert "Configuration error: Model 'gpt-5.1' is not supported by provider 'google'." in status
+
+
+def test_build_model_choices_returns_all_models_when_provider_is_none() -> None:
+    from app.ui.gradio_app import _build_model_choices
+    from app.config.settings import Settings
+
+    settings = Settings(
+        env="test",
+        openai_api_key="sk-test",
+        google_api_key="AIzaSyTest",
+        providers_config={
+            "llm_providers": {
+                "google": {"models": {"gemini-2.5-flash": {}}},
+                "openai": {"models": {"gpt-5.1": {}}},
+            }
+        },
+    )
+
+    choices = _build_model_choices(settings=settings, provider=None)
+    assert "gemini-2.5-flash" in choices
+    assert "gpt-5.1" in choices
+    assert len(choices) >= 2
+
+
+def test_on_provider_change_ui_selects_default_model_from_provider() -> None:
+    from app.ui.gradio_app import on_provider_change_ui
+
+    result = on_provider_change_ui("google")
+    assert "gemini-2.5-flash" in result["choices"]
+    assert "gemini-2.5-pro" in result["choices"]
+    assert result["value"] == "gemini-2.5-flash"
+

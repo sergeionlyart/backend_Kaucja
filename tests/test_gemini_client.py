@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 from app.llm_client.gemini_client import GeminiLLMClient
 
@@ -29,13 +30,23 @@ class FakeGenerateService:
 
 
 def test_gemini_payload_builder_enforces_json_schema_output() -> None:
-    payload = GeminiLLMClient.build_request_payload(
-        system_prompt="sys",
-        user_content="user",
-        json_schema={"type": "object"},
-        model="gemini-3.1-pro-preview",
-        params={"gemini_thinking_level": "auto"},
-    )
+    with patch("app.config.settings.get_settings") as mock_settings:
+        mock_settings.return_value.providers_config = {
+            "llm_providers": {
+                "google": {
+                    "models": {
+                        "gemini-3.1-pro-preview": {"supports_thinking": False}
+                    }
+                }
+            }
+        }
+        payload = GeminiLLMClient.build_request_payload(
+            system_prompt="sys",
+            user_content="user",
+            json_schema={"type": "object"},
+            model="gemini-3.1-pro-preview",
+            params={"gemini_thinking_level": "auto"},
+        )
 
     config = payload["config"]
     assert config["response_mime_type"] == "application/json"
@@ -44,15 +55,45 @@ def test_gemini_payload_builder_enforces_json_schema_output() -> None:
 
 
 def test_gemini_payload_builder_maps_thinking_level() -> None:
-    payload = GeminiLLMClient.build_request_payload(
-        system_prompt="sys",
-        user_content="user",
-        json_schema={"type": "object"},
-        model="gemini-3.1-pro-preview",
-        params={"gemini_thinking_level": "high"},
-    )
-
+    with patch("app.config.settings.get_settings") as mock_settings:
+        mock_settings.return_value.providers_config = {
+            "llm_providers": {
+                "google": {
+                    "models": {
+                        "gemini-2.0-flash-thinking": {"supports_thinking": True}
+                    }
+                }
+            }
+        }
+        payload = GeminiLLMClient.build_request_payload(
+            system_prompt="sys",
+            user_content="user",
+            json_schema={"type": "object"},
+            model="gemini-2.0-flash-thinking",
+            params={"gemini_thinking_level": "high"},
+        )
     assert payload["config"]["thinking_config"] == {"thinking_level": "high"}
+
+
+def test_gemini_payload_builder_omits_thinking_config_for_unsupported_models() -> None:
+    with patch("app.config.settings.get_settings") as mock_settings:
+        mock_settings.return_value.providers_config = {
+            "llm_providers": {
+                "google": {
+                    "models": {
+                        "gemini-2.5-flash": {"supports_thinking": False}
+                    }
+                }
+            }
+        }
+        payload = GeminiLLMClient.build_request_payload(
+            system_prompt="sys",
+            user_content="user",
+            json_schema={"type": "object"},
+            model="gemini-2.5-flash",
+            params={"gemini_thinking_level": "high"},
+        )
+    assert "thinking_config" not in payload["config"]
 
 
 def test_gemini_generate_json_normalizes_usage_and_cost() -> None:

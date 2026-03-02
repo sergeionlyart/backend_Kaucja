@@ -395,7 +395,7 @@ def _probe_gemini(settings: Settings) -> ProviderSmokeResult:
         model_name = _resolve_llm_model(
             settings=settings,
             provider_name=provider_name,
-            fallback_model="gemini-3.1-pro-preview",
+            fallback_model="gemini-2.5-flash",
         )
         client = GeminiLLMClient(
             api_key=settings.google_api_key,

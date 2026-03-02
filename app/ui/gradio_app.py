@@ -68,6 +68,17 @@ def run_full_pipeline(
             session_id=current_session_id.strip(),
         )
 
+    from app.config.settings import get_settings
+    settings_guard = get_settings()
+    llm_providers_guard = settings_guard.providers_config.get("llm_providers", {})
+    provider_config_guard = llm_providers_guard.get(provider, {})
+    valid_models_guard = provider_config_guard.get("models", {})
+    if model not in valid_models_guard:
+        return _empty_ui_payload(
+            status_message=f"Configuration error: Model '{model}' is not supported by provider '{provider}'.",
+            session_id=current_session_id.strip(),
+        )
+
     result = orchestrator.run_full_pipeline(
         input_files=paths,
         session_id=current_session_id.strip() or None,
@@ -730,6 +741,20 @@ def render_details_from_state(
     return render_checklist_details(parsed_json_state, selected_item_id)
 
 
+def on_provider_change_ui(selected_provider: str) -> Any:
+    from app.config.settings import get_settings
+    settings = get_settings()
+    choices = _build_model_choices(settings, selected_provider)
+    llm_providers = settings.providers_config.get("llm_providers", {})
+    provider_config = llm_providers.get(selected_provider, {})
+    default_model = str(provider_config.get("default_model", ""))
+    if default_model and default_model in choices:
+        selected_model = default_model
+    else:
+        selected_model = choices[0] if choices else ""
+    return gr.update(choices=choices, value=selected_model)
+
+
 def build_app(
     repo: StorageRepo | None = None,
     orchestrator: OCRPipelineOrchestrator | None = None,
@@ -791,19 +816,27 @@ def build_app(
 
     runtime_preflight = preflight_checker or _make_preflight_checker(settings)
     provider_choices = _build_provider_choices(settings)
-    model_choices = _build_model_choices(settings)
-    ocr_model_choices = _build_ocr_model_choices(settings)
 
     default_provider = (
         settings.default_provider
         if settings.default_provider in provider_choices
         else provider_choices[0]
     )
-    default_model = (
-        settings.default_model
-        if settings.default_model in model_choices
-        else model_choices[0]
-    )
+
+    model_choices = _build_model_choices(settings, provider=default_provider)
+    ocr_model_choices = _build_ocr_model_choices(settings)
+    
+    provider_config = settings.providers_config.get("llm_providers", {}).get(default_provider, {})
+    explicit_default = provider_config.get("default_model")
+    
+    if explicit_default and explicit_default in model_choices:
+        default_model = str(explicit_default)
+    else:
+        default_model = (
+            settings.default_model
+            if settings.default_model in model_choices
+            else model_choices[0]
+        )
     default_ocr_model = (
         settings.default_ocr_model
         if settings.default_ocr_model in ocr_model_choices
@@ -1026,7 +1059,7 @@ def build_app(
             )
             history_model = gr.Dropdown(
                 label="Filter: model",
-                choices=[""] + model_choices,
+                choices=[""] + _build_model_choices(settings, provider=None),
                 value="",
                 elem_id="history_model_filter",
             )
@@ -1313,6 +1346,13 @@ def build_app(
                 metrics_box,
                 parsed_json_state,
             ],
+        )
+
+        provider.change(
+            fn=on_provider_change_ui,
+            inputs=[provider],
+            outputs=[model],
+            api_name=False,
         )
 
         details_item_selector.change(
@@ -1933,12 +1973,16 @@ def _build_provider_choices(settings: Any) -> list[str]:
     return sorted(str(name) for name in llm_providers.keys())
 
 
-def _build_model_choices(settings: Any) -> list[str]:
+def _build_model_choices(settings: Any, provider: str | None = None) -> list[str]:
     llm_providers = settings.providers_config.get("llm_providers", {})
     models: list[str] = []
-    for provider_data in llm_providers.values():
-        model_map = provider_data.get("models", {})
+    if provider and provider in llm_providers:
+        model_map = llm_providers[provider].get("models", {})
         models.extend(str(model_name) for model_name in model_map.keys())
+    else:
+        for provider_data in llm_providers.values():
+            model_map = provider_data.get("models", {})
+            models.extend(str(model_name) for model_name in model_map.keys())
     return sorted(models)
 
 
