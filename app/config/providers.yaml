@@ -26,18 +26,18 @@ llm_providers:
   google:
     api_key_env: GOOGLE_API_KEY
     api_mode: google_genai
+    default_model: gemini-2.5-flash
     ui:
       thinking_level_values: [auto, low, medium, high]
     models:
-      gemini-3.1-pro-preview:
-        id: gemini-3.1-pro-preview
-        structured_output_json_schema: true
-      gemini-3.1-flash-preview:
-        id: gemini-3.1-flash-preview
-        structured_output_json_schema: true
       gemini-2.5-flash:
         id: gemini-2.5-flash
         structured_output_json_schema: true
+        supports_thinking: false
+      gemini-2.5-pro:
+        id: gemini-2.5-pro
+        structured_output_json_schema: true
+        supports_thinking: false
 
 ocr_providers:
   mistral:

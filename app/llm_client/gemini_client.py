@@ -96,7 +96,21 @@ class GeminiLLMClient:
         )
         mapped_level = _map_thinking_level(thinking_level)
         if mapped_level is not None:
-            config["thinking_config"] = {"thinking_level": mapped_level}
+            # Look up model capabilities unconditionally via configured providers
+            from app.config.settings import get_settings
+            settings = get_settings()
+            providers_config = settings.providers_config.get("llm_providers", {})
+            google_config = providers_config.get("google", {})
+            model_config = google_config.get("models", {}).get(model, {})
+            supports_thinking = model_config.get("supports_thinking", False)
+
+            if supports_thinking:
+                config["thinking_config"] = {"thinking_level": mapped_level}
+            else:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Model %s does not support thinking_config. Degrading thinking_level to auto.", model
+                )
 
         temperature = params.get("temperature")
         if temperature is not None:
