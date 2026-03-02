@@ -181,109 +181,121 @@ def fetch_source(http_cfg: HttpConfig, source: SourceConfig) -> FetchResult:
 def expand_saos_search(
     http_cfg: HttpConfig, source: SourceConfig
 ) -> list[SourceConfig]:
-    base_url = "https://www.saos.org.pl/api/search/judgments"
-    params = dict(source.saos_search_params or {})
-    params.setdefault("pageSize", 100)
-    page_num = 0
+    
+    @retry(
+        wait=wait_exponential(multiplier=http_cfg.retry_backoff_seconds),
+        stop=stop_after_attempt(http_cfg.max_retries),
+        retry=retry_if_exception_type(
+            (httpx.TimeoutException, httpx.NetworkError, httpx.HTTPStatusError)
+        ),
+        reraise=True,
+    )
+    def _do_expand():
+        base_url = "https://www.saos.org.pl/api/search/judgments"
+        params = dict(source.saos_search_params or {})
+        params.setdefault("pageSize", 100)
+        page_num = 0
 
-    seen_ids = set()
-    new_sources = []
+        seen_ids = set()
+        new_sources = []
 
-    with build_client(http_cfg) as client:
-        try:
-            while True:
-                params["pageNumber"] = page_num
-                resp = client.get(base_url, params=params)
-                resp.raise_for_status()
-                
-                if "application/json" not in resp.headers.get("content-type", "").lower():
-                    raise ValueError("SAOS search API returned non-JSON")
-                
-                data = resp.json()
-
-                items = data.get("items", [])
-                for item in items:
-                    raw_id = item.get("id")
-                    if raw_id is None or raw_id == "":
-                        continue
-                    saos_id = str(raw_id)
-                    if saos_id not in seen_ids:
-                        seen_ids.add(saos_id)
-                        ext_ids = dict(source.external_ids or {})
-                        ext_ids["saos_id"] = saos_id
-
-                        ns = SourceConfig(
-                            source_id=f"{source.source_id}_{saos_id}",
-                            url="https://www.saos.org.pl",
-                            fetch_strategy="saos_judgment",
-                            doc_type_hint="CASELAW",
-                            jurisdiction=source.jurisdiction,
-                            language=source.language,
-                            external_ids=ext_ids,
-                            license_tag=source.license_tag,
-                        )
-                        new_sources.append(ns)
-
-                links = data.get("links", [])
-                has_next = any(link.get("rel") == "next" for link in links)
-                if not items or not has_next:
-                    break
-                page_num += 1
-                
-        except Exception:
-            # Fallback to HTML search page crawling
-            from bs4 import BeautifulSoup
-            
-            # map API params to HTML params if needed (usually similar)
-            html_search_url = "https://www.saos.org.pl/search"
-            # HTML pagination uses 'page' (1-indexed usually, though saos handles ?page= param)
-            # Assuming params passed from source.saos_search_params work for HTML query as well
-            # e.g. {"courtCriteria.courtType": "COMMON", "keywords": "kaucja mieszkaniowa"}
-            
-            html_params = dict(source.saos_search_params or {})
-            
-            # Start from page=1 for HTML fallback
-            current_page = 1
-            while True:
-                html_params["page"] = current_page
-                resp_html = client.get(html_search_url, params=html_params)
-                resp_html.raise_for_status()
-                
-                soup = BeautifulSoup(resp_html.content, "html.parser")
-                judgments_found_on_page = False
-                
-                # Find all links to /judgments/{id}
-                for a_tag in soup.find_all("a", href=True):
-                    href = a_tag["href"]
-                    if href.startswith("/judgments/") or href.startswith("https://www.saos.org.pl/judgments/"):
-                        # extract ID
-                        match = re.search(r'/judgments/(\d+)', href)
-                        if match:
-                            judgments_found_on_page = True
-                            saos_id = match.group(1)
-                            if saos_id not in seen_ids:
-                                seen_ids.add(saos_id)
-                                ext_ids = dict(source.external_ids or {})
-                                ext_ids["saos_id"] = saos_id
-        
-                                ns = SourceConfig(
-                                    source_id=f"{source.source_id}_{saos_id}",
-                                    url="https://www.saos.org.pl",
-                                    fetch_strategy="saos_judgment",
-                                    doc_type_hint="CASELAW",
-                                    jurisdiction=source.jurisdiction,
-                                    language=source.language,
-                                    external_ids=ext_ids,
-                                    license_tag=source.license_tag,
-                                )
-                                new_sources.append(ns)
-                                
-                # Check pagination for 'Next' or just if we found items
-                # The UI usually has <a rel="next"> or similar depending on SAOS markup.
-                # A safe heuristic: if no judgments were found, we reached the end.
-                if not judgments_found_on_page:
-                    break
+        with build_client(http_cfg) as client:
+            try:
+                while True:
+                    params["pageNumber"] = page_num
+                    resp = client.get(base_url, params=params)
+                    resp.raise_for_status()
                     
-                current_page += 1
+                    if "application/json" not in resp.headers.get("content-type", "").lower():
+                        raise ValueError("SAOS search API returned non-JSON")
+                    
+                    data = resp.json()
 
-    return new_sources
+                    items = data.get("items", [])
+                    for item in items:
+                        raw_id = item.get("id")
+                        if raw_id is None or raw_id == "":
+                            continue
+                        saos_id = str(raw_id)
+                        if saos_id not in seen_ids:
+                            seen_ids.add(saos_id)
+                            ext_ids = dict(source.external_ids or {})
+                            ext_ids["saos_id"] = saos_id
+
+                            ns = SourceConfig(
+                                source_id=f"{source.source_id}_{saos_id}",
+                                url="https://www.saos.org.pl",
+                                fetch_strategy="saos_judgment",
+                                doc_type_hint="CASELAW",
+                                jurisdiction=source.jurisdiction,
+                                language=source.language,
+                                external_ids=ext_ids,
+                                license_tag=source.license_tag,
+                            )
+                            new_sources.append(ns)
+
+                    links = data.get("links", [])
+                    has_next = any(link.get("rel") == "next" for link in links)
+                    if not items or not has_next:
+                        break
+                    page_num += 1
+                    
+            except Exception:
+                # Fallback to HTML search page crawling
+                from bs4 import BeautifulSoup
+                
+                # map API params to HTML params if needed (usually similar)
+                html_search_url = "https://www.saos.org.pl/search"
+                # HTML pagination uses 'page' (1-indexed usually, though saos handles ?page= param)
+                # Assuming params passed from source.saos_search_params work for HTML query as well
+                # e.g. {"courtCriteria.courtType": "COMMON", "keywords": "kaucja mieszkaniowa"}
+                
+                html_params = dict(source.saos_search_params or {})
+                
+                # Start from page=1 for HTML fallback
+                current_page = 1
+                while True:
+                    html_params["page"] = current_page
+                    resp_html = client.get(html_search_url, params=html_params)
+                    resp_html.raise_for_status()
+                    
+                    soup = BeautifulSoup(resp_html.content, "html.parser")
+                    judgments_found_on_page = False
+                    
+                    # Find all links to /judgments/{id}
+                    for a_tag in soup.find_all("a", href=True):
+                        href = a_tag["href"]
+                        if href.startswith("/judgments/") or href.startswith("https://www.saos.org.pl/judgments/"):
+                            # extract ID
+                            match = re.search(r'/judgments/(\d+)', href)
+                            if match:
+                                judgments_found_on_page = True
+                                saos_id = match.group(1)
+                                if saos_id not in seen_ids:
+                                    seen_ids.add(saos_id)
+                                    ext_ids = dict(source.external_ids or {})
+                                    ext_ids["saos_id"] = saos_id
+            
+                                    ns = SourceConfig(
+                                        source_id=f"{source.source_id}_{saos_id}",
+                                        url="https://www.saos.org.pl",
+                                        fetch_strategy="saos_judgment",
+                                        doc_type_hint="CASELAW",
+                                        jurisdiction=source.jurisdiction,
+                                        language=source.language,
+                                        external_ids=ext_ids,
+                                        license_tag=source.license_tag,
+                                    )
+                                    new_sources.append(ns)
+                                    
+                    # Check pagination for 'Next' or just if we found items
+                    # The UI usually has <a rel="next"> or similar depending on SAOS markup.
+                    # A safe heuristic: if no judgments were found, we reached the end.
+                    if not judgments_found_on_page:
+                        break
+                        
+                    current_page += 1
+
+        return new_sources
+        
+    return _do_expand()
