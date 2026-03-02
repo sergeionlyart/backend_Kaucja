@@ -1,0 +1,352 @@
+[
+  {
+    "source_id": "lex_test_3",
+    "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "lex_test_4",
+    "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658/art-19-a",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "lex_test_5",
+    "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118",
+    "status": "RESTRICTED",
+    "reason": "Restricted content detected via heuristics (e.g. low char count / paywall)",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_judg_test_12",
+    "url": "https://www.saos.org.pl/judgments/171957",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_535713",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_521555",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_486542",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_480777",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_472811",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_472812",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_489466",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_438443",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_415222",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_308477",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_282779",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_262221",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_255492",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_255491",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_242360",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_231880",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_225643",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_219349",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_217769",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_210324",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_208241",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_194592",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_194591",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_299795",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_170755",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_175246",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_175247",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_159539",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_171957",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_298512",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_132635",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_67856",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_64613",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_56253",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_50801",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_172079",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_56254",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_134750",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_36564",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_226058",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_31928",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_35521",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_45409",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_16573",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_10138",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  },
+  {
+    "source_id": "saos_search_test_11_19765",
+    "url": "https://www.saos.org.pl/",
+    "status": "OK",
+    "reason": "Document completely fetched, parsed, and saved without errors.",
+    "run_id": "iter2_run_deterministic"
+  }
+]

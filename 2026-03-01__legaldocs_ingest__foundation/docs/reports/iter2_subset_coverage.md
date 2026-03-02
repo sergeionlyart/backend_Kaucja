@@ -21,3 +21,13 @@
 - **Logs**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts_iter2/runs/iter2_run_deterministic/logs.jsonl`
 - **Source Status Mapping JSON**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter2_source_status.json`
 - **Coverage Report Markdown**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter2_subset_coverage.md`
+
+## Git State
+- **Branch**: `exp/iter1-lex-saos-fixes`
+- **Commit**: `c3039b614a864321e8d655886551ca0b32b911c5`
+
+## Verification
+```
+docs/reports/iter2_source_status.json
+docs/reports/iter2_subset_coverage.md
+```
