@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from typing import Dict
 import re
 from urllib.parse import urlparse, quote
-import json
 
 
 class FetchResult(BaseModel):
@@ -142,7 +141,7 @@ def fetch_saos_judgment(client: httpx.Client, source: SourceConfig) -> FetchResu
             headers=dict(resp.headers),
             final_url=str(resp.url),
         )
-    except Exception as e:
+    except Exception:
         # Fallback to HTML
         html_url = f"https://www.saos.org.pl/judgments/{saos_id}"
         resp_html = client.get(html_url)
@@ -231,7 +230,7 @@ def expand_saos_search(
                     break
                 page_num += 1
                 
-        except Exception as e:
+        except Exception:
             # Fallback to HTML search page crawling
             from bs4 import BeautifulSoup
             

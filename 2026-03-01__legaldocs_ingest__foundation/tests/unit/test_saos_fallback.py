@@ -1,8 +1,7 @@
-import pytest
 from httpx import Response
 from unittest.mock import MagicMock
-from legal_ingest.config import SourceConfig, HttpConfig
-from legal_ingest.fetch import fetch_saos_judgment, expand_saos_search
+from legal_ingest.config import SourceConfig
+from legal_ingest.fetch import fetch_saos_judgment
 
 def test_fetch_saos_judgment_api_success():
     client = MagicMock()

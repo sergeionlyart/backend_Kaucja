@@ -11,3 +11,5 @@ __pycache__/
 .env.*
 !.env.example
 .DS_Store
+
+artifacts_iter1/
