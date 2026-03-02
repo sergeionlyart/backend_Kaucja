@@ -94,7 +94,7 @@ def extract_metadata(pages, mime: str, raw_bytes: bytes, doc_type: str):
     return title.strip(), date_published, date_decision
 
 
-def run_pipeline(config: PipelineConfig, limit: int = None):
+def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
     run_id = get_run_id(config.run.run_id)
     artifact_dir = os.path.join(config.run.artifact_dir, "runs", run_id)
     os.makedirs(artifact_dir, exist_ok=True)
@@ -234,7 +234,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                         "Restricted content detected via heuristics",
                         extra={"stage": "parse"},
                     )
-            if source.license_tag == "COMMERCIAL":
+
+            if (
+                source.license_tag == "COMMERCIAL"
+                and not config.run.http.lex_session_cookie
+            ):
                 access_status = "RESTRICTED"
 
             if mime == "application/pdf":
@@ -256,7 +260,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 )
                 parse_method = "HTML"
                 total_chars = sum(len(p.text) for p in pages)
-                if total_chars < 500:
+                if total_chars < 500 and access_status != "RESTRICTED":
                     access_status = "RESTRICTED"
                     logger.warning(
                         "Restricted content detected via low char count",
@@ -318,9 +322,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 title=title,
                 external_ids=source.external_ids or {},
                 source_urls=[str(source.url)],
-                license_tag="COMMERCIAL"
-                if access_status == "RESTRICTED"
-                else source.license_tag,
+                license_tag=source.license_tag,
                 access_status=access_status,
                 date_published=date_published,
                 date_decision=date_decision,
@@ -481,3 +483,4 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
         "Pipeline run finished",
         extra={"stage": "finalize", "metrics": stats.model_dump()},
     )
+    return stats.model_dump()

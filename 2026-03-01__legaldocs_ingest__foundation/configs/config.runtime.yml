@@ -1,0 +1,52 @@
+run:
+  run_id: "${INGEST_RUN_ID}"
+  artifact_dir: "${INGEST_ARTIFACT_DIR}"
+  concurrency: 4
+  http:
+    user_agent: "LegalRAG-Ingest/0.2"
+    timeout_seconds: 60
+    max_retries: 4
+    retry_backoff_seconds: 2.0
+
+mongo:
+  uri: "${MONGO_URI}"
+  db: "${MONGO_DB}"
+  write_concern: "majority"
+
+parsers:
+  pdf:
+    engine: "pymupdf"
+    min_avg_chars_per_page: 200
+    max_empty_page_ratio: 0.3
+  html:
+    engine: "bs4"
+    max_tokens_per_virtual_page: 800
+    min_heading_to_split: 2
+
+ocr:
+  enabled: true
+  provider: "mistral"
+  endpoint: "https://api.mistral.ai/v1/ocr"
+  api_key_env: "MISTRAL_API_KEY"
+  model: "mistral-ocr-2512"
+  table_format: "markdown"
+  include_image_base64: false
+  extract_header: false
+  extract_footer: false
+
+sources:
+  - source_id: "pl_eli_du_2001_733"
+    url: "https://dziennikustaw.gov.pl/DU/2001/733"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+
+  - source_id: "eu_eurlex_dir_1993_13"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:31993L0013"
+    fetch_strategy: "direct"
+    doc_type_hint: "EU_ACT"
+    jurisdiction: "EU"
+    language: "en"
+    external_ids:
+      eli: "http://data.europa.eu/eli/dir/1993/13/oj"

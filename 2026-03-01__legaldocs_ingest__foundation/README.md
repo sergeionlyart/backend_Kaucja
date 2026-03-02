@@ -13,15 +13,23 @@ This is the foundation for the `legal_ingest` pipeline.
    ```bash
    docker compose up -d
    ```
-2. Create environment variables (Optional, for mistral OCR later):
+2. Create and populate the environment configuration (`.env`):
    ```bash
-   export MISTRAL_API_KEY="test"
+   cp .env.example .env
+   # Add your MISTRAL_API_KEY and adjust MONGO_* values inside .env
    ```
-3. Initialize the database indexes:
+3. Execute the full pipeline orchestrator script:
    ```bash
-   python -m legal_ingest ensure-indexes --config configs/config.sample.yml
+   # Executes configs mapping automatically 
+   ./scripts/run_ingest.sh configs/config.runtime.yml
    ```
-4. Run sample ingest:
+   **Alternative (Production / Strict Mode):**
    ```bash
-   python -m legal_ingest ingest --config configs/config.sample.yml
+   python -m legal_ingest.cli --env-file .env ingest --config configs/config.full.runtime.yml --strict-ok
    ```
+   `--strict-ok` exits with code `1` if at least one document is `RESTRICTED` or `ERROR`.
+
+## Troubleshooting
+- **Missing Env Variable**: Pydantic validations will actively reject pipelines executing without mapped strings (e.g. `MONGO_URI` missing throws ValueError).
+- **RESTRICTED Output**: Pages with paywall markers/login prompts or low extracted content are marked as `RESTRICTED` (including commercial sources). If `--strict-ok` is enabled, the command will fail.
+- **Commercial Sources**: If LEX session cookie is unavailable/invalid, commercial pages may remain `RESTRICTED`. Configure `LEX_SESSION_ID` in `.env` only with a valid session.

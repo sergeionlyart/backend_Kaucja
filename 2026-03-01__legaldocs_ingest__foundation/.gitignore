@@ -1,7 +1,13 @@
 venv/
 artifacts/
+artifacts_dev/
 .pytest_cache/
 .ruff_cache/
 __pycache__/
 *.pyc
+
+# Local environments
+.env
+.env.*
+!.env.example
 .DS_Store

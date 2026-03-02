@@ -63,3 +63,32 @@ def test_load_config_extra_forbid(tmp_path):
         load_config(str(p))
 
     assert "Extra inputs are not permitted" in str(exc_info.value)
+
+
+def test_expand_env_vars_success(monkeypatch):
+    monkeypatch.setenv("TEST_MONGO_URI", "mongodb://localhost:27017")
+    monkeypatch.setenv("TEST_RUN_ID", "12345")
+
+    yaml_content = """run:
+  run_id: "${TEST_RUN_ID}"
+mongo:
+  uri: "${TEST_MONGO_URI}"
+"""
+    from legal_ingest.config import expand_env_vars
+
+    expanded = expand_env_vars(yaml_content)
+    assert 'run_id: "12345"' in expanded
+    assert 'uri: "mongodb://localhost:27017"' in expanded
+
+
+def test_expand_env_vars_missing_fails():
+    yaml_content = """run:
+  run_id: "${MISSING_ENV_VAR}"
+"""
+    from legal_ingest.config import expand_env_vars
+
+    with pytest.raises(
+        ValueError,
+        match="Environment variable 'MISSING_ENV_VAR' is required but not set.",
+    ):
+        expand_env_vars(yaml_content)
