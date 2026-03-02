@@ -24,7 +24,8 @@
 
 ## Git State
 - **Branch**: `exp/iter1-lex-saos-fixes`
-- **Commit**: `1524cb2edac0b9a2394aab586f39a37f265aa513`
+- **Evidence commit** (run_id `iter2_run_deterministic` generated on this commit): `1524cb2edac0b9a2394aab586f39a37f265aa513`
+- **Current branch HEAD** (at time of report update): `933fa3f54d12a3466bd24b02365cbb62050ac83b`
 
 ## Verification
 ```
@@ -35,19 +36,14 @@ docs/reports/iter2_subset_coverage.md
 
 ## Repro Commands
 ```bash
+# Verify branch and HEAD
 git rev-parse --abbrev-ref HEAD
-# exp/iter1-lex-saos-fixes
-
 git rev-parse HEAD
-# 1524cb2edac0b9a2394aab586f39a37f265aa513
 
+# Verify tracked artifacts
 git ls-files | rg 'iter2_source_status.json|iter2_subset_coverage.md'
-# docs/reports/iter2_source_status.json
-# docs/reports/iter2_subset_coverage.md
 
+# Quality gates
 ruff check .
-# All checks passed!
-
 pytest -q
-# 33 passed, 5 warnings in 0.69s
 ```
