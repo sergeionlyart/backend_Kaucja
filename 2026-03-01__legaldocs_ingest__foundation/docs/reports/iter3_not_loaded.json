@@ -8,20 +8,18 @@
     "reason": "Restricted content detected via low char count",
     "http_status": 200,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full"
+    "run_id": "iter3_caslaw_v22_full_fix1"
   },
   {
-    "index": 11,
-    "source_id": "s11_saos_search",
-    "url": "https://www.saos.org.pl/search?courtCriteria.courtType=COMMON&keywords=kaucja+mieszkaniowa",
-    "fetch_strategy": "saos_search",
-    "status": "MISSING",
-    "reason": "Source not processed by pipeline",
+    "index": 24,
+    "source_id": "s24_orzeczenia_katowice",
+    "url": "https://orzeczenia.katowice.sa.gov.pl/content/$N/151500000002503_V_ACa_000599_2014_Uz_2015-02-18_001",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: Server disconnected without sending a response.\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transpor",
     "http_status": null,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full",
-    "expanded_count": 0,
-    "expanded_judgment_ids": []
+    "run_id": "iter3_caslaw_v22_full_fix1"
   },
   {
     "index": 31,
@@ -32,7 +30,7 @@
     "reason": "Restricted content detected via low char count",
     "http_status": 200,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full"
+    "run_id": "iter3_caslaw_v22_full_fix1"
   },
   {
     "index": 32,
@@ -43,7 +41,7 @@
     "reason": "Restricted content detected via low char count",
     "http_status": 200,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full"
+    "run_id": "iter3_caslaw_v22_full_fix1"
   },
   {
     "index": 33,
@@ -54,7 +52,7 @@
     "reason": "Restricted content detected via low char count",
     "http_status": 200,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full"
+    "run_id": "iter3_caslaw_v22_full_fix1"
   },
   {
     "index": 34,
@@ -62,10 +60,10 @@
     "url": "https://curia.europa.eu/jcms/jcms/p1_4220451/en/",
     "fetch_strategy": "direct",
     "status": "ERROR",
-    "reason": "Error processing source: Client error '404 ' for url 'https://curia.europa.eu/jcms/jcms/p1_4220451/en/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404\nTraceba",
+    "reason": "Error processing source: Client error '404 ' for url 'https://curia.europa.eu/jcms/jcms/p1_4220451/en/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDo",
     "http_status": null,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full"
+    "run_id": "iter3_caslaw_v22_full_fix1"
   },
   {
     "index": 35,
@@ -73,9 +71,9 @@
     "url": "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf",
     "fetch_strategy": "direct",
     "status": "ERROR",
-    "reason": "Error processing source: _ssl.c:989: The handshake operation timed out\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kauc",
+    "reason": "Error processing source: timed out\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transports/default.py\", line 101, in map_httpc",
     "http_status": null,
     "final_url": null,
-    "run_id": "iter3_caslaw_v22_full"
+    "run_id": "iter3_caslaw_v22_full_fix1"
   }
 ]
