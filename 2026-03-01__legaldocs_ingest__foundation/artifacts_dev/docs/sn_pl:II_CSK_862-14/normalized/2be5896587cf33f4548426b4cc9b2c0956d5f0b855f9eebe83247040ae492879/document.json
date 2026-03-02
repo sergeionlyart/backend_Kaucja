@@ -1,0 +1,50 @@
+{
+  "_id": "sn_pl:II_CSK_862-14",
+  "doc_uid": "sn_pl:II_CSK_862-14",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "sn_pl",
+  "title": "WYROK \nW IMIENIU RZECZYPOSPOLITEJ POLSKIEJ",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {
+    "sn_signature": "II CSK 862/14"
+  },
+  "source_urls": [
+    "https://www.sn.pl/sites/orzecznictwo/orzeczenia3/ii%20csk%20862-14-1.pdf"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "2be5896587cf33f4548426b4cc9b2c0956d5f0b855f9eebe83247040ae492879",
+  "mime": "application/pdf",
+  "page_count": 7,
+  "content_stats": {
+    "total_chars": 12908,
+    "total_tokens_est": 1869,
+    "parse_method": "PDF_TEXT",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 7,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "WYROK",
+          "node_id": "sec:wyrok",
+          "start_index": 0,
+          "end_index": 7,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:29.369159",
+  "updated_at": "2026-03-02T05:40:29.369160"
+}

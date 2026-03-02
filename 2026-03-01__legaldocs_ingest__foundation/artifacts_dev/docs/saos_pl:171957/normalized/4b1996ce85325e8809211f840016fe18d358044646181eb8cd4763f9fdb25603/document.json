@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:171957",
+  "doc_uid": "saos_pl:171957",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "REASONS II Ca 886/14 (COMMON)",
+  "date_published": null,
+  "date_decision": "2015-05-13",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "171957"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/judgments/171957"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "4b1996ce85325e8809211f840016fe18d358044646181eb8cd4763f9fdb25603",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 28888,
+    "total_tokens_est": 3771,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:40.681563",
+  "updated_at": "2026-03-02T05:40:40.681565"
+}

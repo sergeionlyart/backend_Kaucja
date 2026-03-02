@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:282779",
+  "doc_uid": "saos_pl:282779",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "SENTENCE II Ca 682/16 (COMMON)",
+  "date_published": null,
+  "date_decision": "2017-01-26",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "282779"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "7cdcc8a473537873786a44fe6c86492f5bfc56075505ae68d8d60434abd6412a",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 43386,
+    "total_tokens_est": 5873,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:37.380569",
+  "updated_at": "2026-03-02T05:40:37.380571"
+}

@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:208241",
+  "doc_uid": "saos_pl:208241",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "SENTENCE III Ca 1583/15 (COMMON)",
+  "date_published": null,
+  "date_decision": "2016-01-07",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "208241"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "c8348e4f5ccbc2bd8726ca84ade7785e5d3c189a14ecffd400ef146843faf834",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 14827,
+    "total_tokens_est": 1912,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:34.965404",
+  "updated_at": "2026-03-02T05:40:34.965405"
+}

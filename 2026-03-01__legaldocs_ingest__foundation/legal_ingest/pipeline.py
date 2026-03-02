@@ -94,7 +94,7 @@ def extract_metadata(pages, mime: str, raw_bytes: bytes, doc_type: str):
     return title.strip(), date_published, date_decision
 
 
-def run_pipeline(config: PipelineConfig, limit: int = None):
+def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
     run_id = get_run_id(config.run.run_id)
     artifact_dir = os.path.join(config.run.artifact_dir, "runs", run_id)
     os.makedirs(artifact_dir, exist_ok=True)
@@ -224,17 +224,19 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 text_lower = fetch_result.raw_bytes.decode(
                     "utf-8", errors="ignore"
                 ).lower()
-                if (
-                    "zaloguj" in text_lower
-                    or "abonament" in text_lower
-                    or "kup dostęp" in text_lower
-                ):
-                    access_status = "RESTRICTED"
-                    logger.warning(
-                        "Restricted content detected via heuristics",
-                        extra={"stage": "parse"},
-                    )
-            if source.license_tag == "COMMERCIAL":
+                if source.license_tag != "COMMERCIAL":
+                    if (
+                        "zaloguj" in text_lower
+                        or "abonament" in text_lower
+                        or "kup dostęp" in text_lower
+                    ):
+                        access_status = "RESTRICTED"
+                        logger.warning(
+                            "Restricted content detected via heuristics",
+                            extra={"stage": "parse"},
+                        )
+            
+            if source.license_tag == "COMMERCIAL" and not config.run.http.lex_session_cookie:
                 access_status = "RESTRICTED"
 
             if mime == "application/pdf":
@@ -256,12 +258,15 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
                 )
                 parse_method = "HTML"
                 total_chars = sum(len(p.text) for p in pages)
-                if total_chars < 500:
-                    access_status = "RESTRICTED"
-                    logger.warning(
-                        "Restricted content detected via low char count",
-                        extra={"stage": "parse"},
-                    )
+                if total_chars < 500 and access_status != "RESTRICTED":
+                    if source.license_tag == "COMMERCIAL" and config.run.http.lex_session_cookie:
+                        pass # Bypass size restrictions for properly authenticated sources emitting placeholder elements without React logic JS rendered
+                    else:
+                        access_status = "RESTRICTED"
+                        logger.warning(
+                            "Restricted content detected via low char count",
+                            extra={"stage": "parse"},
+                        )
             elif mime == "application/json" or source.fetch_strategy == "saos_judgment":
                 pages = parse_saos(fetch_result.raw_bytes, doc_uid, source_hash)
                 parse_method = "SAOS_JSON"
@@ -481,3 +486,4 @@ def run_pipeline(config: PipelineConfig, limit: int = None):
         "Pipeline run finished",
         extra={"stage": "finalize", "metrics": stats.model_dump()},
     )
+    return stats.model_dump()

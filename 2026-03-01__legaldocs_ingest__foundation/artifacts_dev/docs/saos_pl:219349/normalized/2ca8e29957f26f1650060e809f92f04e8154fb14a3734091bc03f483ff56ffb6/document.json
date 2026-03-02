@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:219349",
+  "doc_uid": "saos_pl:219349",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "SENTENCE III Ca 205/16 (COMMON)",
+  "date_published": null,
+  "date_decision": "2016-03-15",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "219349"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "2ca8e29957f26f1650060e809f92f04e8154fb14a3734091bc03f483ff56ffb6",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 22876,
+    "total_tokens_est": 3011,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:35.667533",
+  "updated_at": "2026-03-02T05:40:35.667535"
+}

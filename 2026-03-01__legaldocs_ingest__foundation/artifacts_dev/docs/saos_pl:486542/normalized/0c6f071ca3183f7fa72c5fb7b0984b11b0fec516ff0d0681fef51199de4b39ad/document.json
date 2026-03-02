@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:486542",
+  "doc_uid": "saos_pl:486542",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "SENTENCE I C 733/21 (COMMON)",
+  "date_published": null,
+  "date_decision": "2023-03-07",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "486542"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "0c6f071ca3183f7fa72c5fb7b0984b11b0fec516ff0d0681fef51199de4b39ad",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 88247,
+    "total_tokens_est": 12123,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:39.681203",
+  "updated_at": "2026-03-02T05:40:39.681205"
+}

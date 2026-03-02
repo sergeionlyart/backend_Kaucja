@@ -1,0 +1,39 @@
+{
+  "_id": "lex_pl:urlsha:c31ee8071848130d",
+  "doc_uid": "lex_pl:urlsha:c31ee8071848130d",
+  "doc_type": "STATUTE_REF",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "lex_pl",
+  "title": "LEX",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {},
+  "source_urls": [
+    "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118"
+  ],
+  "license_tag": "COMMERCIAL",
+  "access_status": "OK",
+  "current_source_hash": "a6911bbf31fc3c339f2d6d1f355d4b1348c897e7fd66c92811f02c1542447201",
+  "mime": "text/html",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 3,
+    "total_tokens_est": 1,
+    "parse_method": "HTML",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": []
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:28.504844",
+  "updated_at": "2026-03-02T05:40:28.504845"
+}

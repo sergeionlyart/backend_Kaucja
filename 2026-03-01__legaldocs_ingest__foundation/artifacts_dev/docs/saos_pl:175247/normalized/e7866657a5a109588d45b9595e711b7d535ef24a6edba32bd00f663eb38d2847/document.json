@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:175247",
+  "doc_uid": "saos_pl:175247",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "REASONS II C 636/14 (COMMON)",
+  "date_published": null,
+  "date_decision": "2015-06-25",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "175247"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "e7866657a5a109588d45b9595e711b7d535ef24a6edba32bd00f663eb38d2847",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 85310,
+    "total_tokens_est": 11192,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:34.386700",
+  "updated_at": "2026-03-02T05:40:34.386701"
+}

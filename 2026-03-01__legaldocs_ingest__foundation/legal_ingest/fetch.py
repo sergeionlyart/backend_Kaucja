@@ -24,8 +24,14 @@ def _should_retry_error(exc: Exception) -> bool:
 
 
 def build_client(http_cfg: HttpConfig) -> httpx.Client:
+    cookies = {}
+    if http_cfg.lex_session_cookie:
+        # Standard approach for LEX systems
+        cookies["JSESSIONID"] = http_cfg.lex_session_cookie
+
     return httpx.Client(
         headers={"User-Agent": http_cfg.user_agent},
+        cookies=cookies,
         timeout=http_cfg.timeout_seconds,
         follow_redirects=True,
     )

@@ -1,0 +1,50 @@
+{
+  "_id": "sn_pl:III_CZP_58-02",
+  "doc_uid": "sn_pl:III_CZP_58-02",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "sn_pl",
+  "title": "Uchwała z dnia 26 września 2002 r., III CZP 58/02",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {
+    "sn_signature": "III CZP 58/02"
+  },
+  "source_urls": [
+    "https://www.sn.pl/sites/orzecznictwo/Orzeczenia1/III%20CZP%2058-02.pdf"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "d3709c570b1e67ad0a6e89074b1a977e8633737459eeaf77fcede775ffb01699",
+  "mime": "application/pdf",
+  "page_count": 7,
+  "content_stats": {
+    "total_chars": 16548,
+    "total_tokens_est": 2298,
+    "parse_method": "PDF_TEXT",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 7,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Uzasadnienie",
+          "node_id": "sec:uzasadnien",
+          "start_index": 0,
+          "end_index": 7,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:28.917376",
+  "updated_at": "2026-03-02T05:40:28.917376"
+}

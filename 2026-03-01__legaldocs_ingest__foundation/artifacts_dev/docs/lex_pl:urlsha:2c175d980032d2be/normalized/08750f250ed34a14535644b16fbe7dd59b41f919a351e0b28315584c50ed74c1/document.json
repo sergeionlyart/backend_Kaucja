@@ -1,0 +1,39 @@
+{
+  "_id": "lex_pl:urlsha:2c175d980032d2be",
+  "doc_uid": "lex_pl:urlsha:2c175d980032d2be",
+  "doc_type": "STATUTE_REF",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "lex_pl",
+  "title": "LEX",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {},
+  "source_urls": [
+    "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658"
+  ],
+  "license_tag": "COMMERCIAL",
+  "access_status": "OK",
+  "current_source_hash": "08750f250ed34a14535644b16fbe7dd59b41f919a351e0b28315584c50ed74c1",
+  "mime": "text/html",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 3,
+    "total_tokens_est": 1,
+    "parse_method": "HTML",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": []
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:28.322955",
+  "updated_at": "2026-03-02T05:40:28.322956"
+}

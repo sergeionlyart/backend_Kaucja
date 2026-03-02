@@ -10,6 +10,7 @@ class HttpConfig(BaseModel):
     timeout_seconds: int = 60
     max_retries: int = 4
     retry_backoff_seconds: float = 2.0
+    lex_session_cookie: Optional[str] = None
     model_config = ConfigDict(extra="forbid")
 
 

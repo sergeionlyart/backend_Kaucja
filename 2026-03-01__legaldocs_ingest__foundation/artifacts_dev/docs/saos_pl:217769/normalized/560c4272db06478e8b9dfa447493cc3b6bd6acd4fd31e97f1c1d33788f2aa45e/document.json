@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:217769",
+  "doc_uid": "saos_pl:217769",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "SENTENCE II Ca 2699/15 (COMMON)",
+  "date_published": null,
+  "date_decision": "2016-01-21",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "217769"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "560c4272db06478e8b9dfa447493cc3b6bd6acd4fd31e97f1c1d33788f2aa45e",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 28717,
+    "total_tokens_est": 3986,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:35.413128",
+  "updated_at": "2026-03-02T05:40:35.413130"
+}

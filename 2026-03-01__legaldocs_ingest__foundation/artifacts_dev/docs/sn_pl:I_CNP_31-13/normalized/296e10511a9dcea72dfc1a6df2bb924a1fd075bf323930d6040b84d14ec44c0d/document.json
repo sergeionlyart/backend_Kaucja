@@ -1,0 +1,50 @@
+{
+  "_id": "sn_pl:I_CNP_31-13",
+  "doc_uid": "sn_pl:I_CNP_31-13",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "sn_pl",
+  "title": "Untitled HTML Document",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {
+    "sn_signature": "I CNP 31/13"
+  },
+  "source_urls": [
+    "https://www.sn.pl/sites/orzecznictwo/OrzeczeniaHTML/I%20CNP%2031-13.docx.html"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "296e10511a9dcea72dfc1a6df2bb924a1fd075bf323930d6040b84d14ec44c0d",
+  "mime": "text/html",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 6673,
+    "total_tokens_est": 1022,
+    "parse_method": "HTML",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "POSTANOWIENIE",
+          "node_id": "sec:postanowie",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:30.234700",
+  "updated_at": "2026-03-02T05:40:30.234701"
+}

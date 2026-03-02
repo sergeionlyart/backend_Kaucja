@@ -1,0 +1,50 @@
+{
+  "_id": "saos_pl:50801",
+  "doc_uid": "saos_pl:50801",
+  "doc_type": "CASELAW",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "saos_pl",
+  "title": "SENTENCE I ACa 1513/13 (COMMON)",
+  "date_published": null,
+  "date_decision": "2014-05-22",
+  "version_label": null,
+  "external_ids": {
+    "saos_id": "50801"
+  },
+  "source_urls": [
+    "https://www.saos.org.pl/"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "845cec4ab57c6cfe85458f20dc8911c990366d36f0a5f1bce04d8b31d449f1a6",
+  "mime": "application/json",
+  "page_count": 1,
+  "content_stats": {
+    "total_chars": 50133,
+    "total_tokens_est": 6632,
+    "parse_method": "SAOS_JSON",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 1,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Text",
+          "node_id": "hdg:text",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:31.854175",
+  "updated_at": "2026-03-02T05:40:31.854176"
+}

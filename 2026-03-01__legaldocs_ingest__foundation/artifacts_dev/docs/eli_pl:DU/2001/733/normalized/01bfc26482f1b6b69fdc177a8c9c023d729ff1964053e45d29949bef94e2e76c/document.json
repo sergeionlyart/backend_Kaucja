@@ -1,0 +1,378 @@
+{
+  "_id": "eli_pl:DU/2001/733",
+  "doc_uid": "eli_pl:DU/2001/733",
+  "doc_type": "STATUTE",
+  "jurisdiction": "PL",
+  "language": "pl",
+  "source_system": "eli_pl",
+  "title": "USTAWA\nz dnia 21 czerwca 2001 r.",
+  "date_published": null,
+  "date_decision": null,
+  "version_label": null,
+  "external_ids": {
+    "eli": "DU/2001/733"
+  },
+  "source_urls": [
+    "https://eli.gov.pl/api/acts/DU/2001/733/text/O/D20010733.pdf"
+  ],
+  "license_tag": "OFFICIAL",
+  "access_status": "OK",
+  "current_source_hash": "01bfc26482f1b6b69fdc177a8c9c023d729ff1964053e45d29949bef94e2e76c",
+  "mime": "application/pdf",
+  "page_count": 9,
+  "content_stats": {
+    "total_chars": 43412,
+    "total_tokens_est": 6665,
+    "parse_method": "PDF_TEXT",
+    "ocr_used": false
+  },
+  "pageindex_tree": [
+    {
+      "title": "Root Document",
+      "node_id": "root",
+      "start_index": 0,
+      "end_index": 9,
+      "summary": null,
+      "nodes": [
+        {
+          "title": "Art. 1. Ustawa reguluje zasady i formy ochrony",
+          "node_id": "art:1",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 2. 1. Ilekroç w ustawie jest mowa o:",
+          "node_id": "art:2",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 3. Przepisy niniejszej ustawy nie naruszajà",
+          "node_id": "art:3",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 4. 1. Tworzenie warunków do zaspokajania po-",
+          "node_id": "art:4",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 5. 1. Umowa o odp∏atne u˝ywanie lokalu, z wy-",
+          "node_id": "art:5",
+          "start_index": 0,
+          "end_index": 1,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 6. 1. Zawarcie umowy najmu, z wy∏àczeniem",
+          "node_id": "art:6",
+          "start_index": 1,
+          "end_index": 2,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 7. W lokalach wchodzàcych w sk∏ad mieszka-",
+          "node_id": "art:7",
+          "start_index": 1,
+          "end_index": 2,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 8. Je˝eli w∏aÊcicielem jest jednostka samorzà",
+          "node_id": "art:8",
+          "start_index": 1,
+          "end_index": 2,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 9. 1. Podwy˝szanie czynszu lub innych op∏at z",
+          "node_id": "art:9",
+          "start_index": 1,
+          "end_index": 2,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 10. 1. W razie awarii wywo∏ujàcej szkod´ lub",
+          "node_id": "art:10",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 11. 1. Je˝eli lokator jest uprawniony do odp∏",
+          "node_id": "art:11",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "art. 21 ust. 4 i 5. Wypowiedzenie powinno byç pod ",
+          "node_id": "art:21",
+          "start_index": 2,
+          "end_index": 3,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 12. 1. Je˝eli wypowiedzenie stosunku prawne-",
+          "node_id": "art:12",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 13. 1. Je˝eli lokator wykracza w sposób ra˝àc",
+          "node_id": "art:13",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 14. 1. W wyroku nakazujàcym opró˝nienie lo-",
+          "node_id": "art:14",
+          "start_index": 3,
+          "end_index": 4,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 15. 1. Je˝eli w sprawie o opró˝nienie lokalu",
+          "node_id": "art:15",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "art. 339 § 2 Kodeksu post´powania cywilnego nie st",
+          "node_id": "art:339",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 16. Wyroków sàdowych nakazujàcych opró˝-",
+          "node_id": "art:16",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 17. Przepisów art. 14 i art. 16 nie stosuje s",
+          "node_id": "art:17",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 18. 1. Osoby zajmujàce lokal bez tytu∏u praw-",
+          "node_id": "art:18",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 19. Do ochrony praw lokatora do u˝ywania lo-",
+          "node_id": "art:19",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 20. 1. W celu realizacji zadaƒ, o których mow",
+          "node_id": "art:20",
+          "start_index": 4,
+          "end_index": 5,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 22. Z zasobu mieszkaniowego gmina wydziela",
+          "node_id": "art:22",
+          "start_index": 5,
+          "end_index": 6,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 23. 1. Umow´ najmu lokalu socjalnego zawie-",
+          "node_id": "art:23",
+          "start_index": 5,
+          "end_index": 6,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 24. Prawo do lokalu socjalnego nie przys∏ugu-",
+          "node_id": "art:24",
+          "start_index": 6,
+          "end_index": 7,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 25. Gmina mo˝e wypowiedzieç najem lokalu",
+          "node_id": "art:25",
+          "start_index": 6,
+          "end_index": 7,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 26. W Kodeksie cywilnym wprowadza si´ na-",
+          "node_id": "art:26",
+          "start_index": 6,
+          "end_index": 7,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 6882. Bez zgody wynajmujàcego najemca nie",
+          "node_id": "art:6882",
+          "start_index": 6,
+          "end_index": 7,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 27. 1. Ustawa niniejsza znajduje równie˝ zast",
+          "node_id": "art:27",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 28. 1. Do dnia 31 grudnia 2004 r. najemcy lok",
+          "node_id": "art:28",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 29. Czynsz najmu w zasobach towarzystwa bu-",
+          "node_id": "art:29",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 30. 1. Osoba zajmujàca lokal bez tytu∏u praw-",
+          "node_id": "art:30",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 31. Do osób, które do chwili Êmierci najemcy",
+          "node_id": "art:31",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 32. Do dnia 31 grudnia 2015 r. w razie wypo-",
+          "node_id": "art:32",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 33. 1. W razie ustania po dniu 12 listopada",
+          "node_id": "art:33",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 34. Wydane i niewykonane przed dniem wej-",
+          "node_id": "art:34",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 35. 1. Osobie, o której mowa w art. 14 ust. 4",
+          "node_id": "art:35",
+          "start_index": 7,
+          "end_index": 8,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 36. 1. Kaucja wp∏acona przez najemc´ przed",
+          "node_id": "art:36",
+          "start_index": 8,
+          "end_index": 9,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 37. 1. Je˝eli najemca przed dniem 12 listopad",
+          "node_id": "art:37",
+          "start_index": 8,
+          "end_index": 9,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 38. Ilekroç w innych ustawach jest mowa",
+          "node_id": "art:38",
+          "start_index": 8,
+          "end_index": 9,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 39. 1. Traci moc ustawa z dnia 2 lipca 1994 r",
+          "node_id": "art:39",
+          "start_index": 8,
+          "end_index": 9,
+          "summary": null,
+          "nodes": []
+        },
+        {
+          "title": "Art. 40. Ustawa wchodzi w ˝ycie z dniem og∏osze-",
+          "node_id": "art:40",
+          "start_index": 8,
+          "end_index": 9,
+          "summary": null,
+          "nodes": []
+        }
+      ]
+    }
+  ],
+  "ingested_at": "2026-03-02T05:40:27.054136",
+  "updated_at": "2026-03-02T05:40:27.054137"
+}

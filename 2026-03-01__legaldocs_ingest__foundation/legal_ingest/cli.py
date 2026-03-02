@@ -26,6 +26,7 @@ def main():
     # ingest
     p_ing = subparsers.add_parser("ingest")
     p_ing.add_argument("--config", required=True)
+    p_ing.add_argument("--strict-ok", action="store_true", help="Fail with non-zero exit if any document is RESTRICTED or ERROR")
 
     # dry-run
     p_dry = subparsers.add_parser("dry-run")
@@ -60,7 +61,11 @@ def main():
         ensure_indexes(config.mongo)
 
     elif args.command == "ingest":
-        run_pipeline(config, limit=None)
+        metrics = run_pipeline(config, limit=None)
+        if args.strict_ok:
+            if metrics.get("docs_restricted", 0) > 0 or metrics.get("docs_error", 0) > 0:
+                print("Strict mode failed: Pipeline yielded RESTRICTED or ERROR documents.", file=sys.stderr)
+                sys.exit(1)
 
     elif args.command == "dry-run":
         # dry-run modifies config to effectively dry_run and applies limit

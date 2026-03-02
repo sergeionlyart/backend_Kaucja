@@ -16,15 +16,16 @@ This is the foundation for the `legal_ingest` pipeline.
 2. Create and populate the environment configuration (`.env`):
    ```bash
    cp .env.example .env
-   # Add your MISTRAL_API_KEY inside .env
+   # Add your MISTRAL_API_KEY, MONGO_URI, and LEX_SESSION_ID inside .env
    ```
 3. Execute the full pipeline orchestrator script:
    ```bash
+   # Executes configs mapping automatically 
    ./scripts/run_ingest.sh configs/config.runtime.yml
    ```
-   **Alternative (Dry-Run):**
+   **Alternative (Production / Strict Mode):**
    ```bash
-   python -m legal_ingest.cli --env-file .env dry-run --config configs/config.runtime.yml --limit 2
+   python -m legal_ingest.cli --env-file .env ingest --config configs/config.full.runtime.yml --strict-ok
    ```
 
 ## Troubleshooting
