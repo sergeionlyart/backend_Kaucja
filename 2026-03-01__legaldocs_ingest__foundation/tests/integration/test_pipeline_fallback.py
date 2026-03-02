@@ -1,5 +1,5 @@
 import pytest
-from httpx import Response, TimeoutException
+from httpx import Response
 from unittest.mock import MagicMock, patch
 from legal_ingest.config import PipelineConfig, SourceConfig, HttpConfig, RunConfig
 
@@ -25,7 +25,7 @@ def test_pipeline_saos_fallback(mock_get, mock_pipeline_config):
     def side_effect(*args, **kwargs):
         url = args[0]
         if "api/judgments" in url:
-            raise TimeoutException("API Down")
+            return Response(200, content=b"<html>maintenance</html>", request=MagicMock(url=url), headers={"content-type": "text/html"})
         # HTML fallback
         long_text = "Good content " * 100 # > 1300 chars to avoid Restricted
         return Response(200, content=f"<html><body><h1>Test Judgment</h1><p>{long_text}</p></body></html>".encode("utf-8"), request=MagicMock(url=url), headers={"content-type": "text/html"})
