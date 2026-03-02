@@ -24,10 +24,30 @@
 
 ## Git State
 - **Branch**: `exp/iter1-lex-saos-fixes`
-- **Commit**: `c3039b614a864321e8d655886551ca0b32b911c5`
+- **Commit**: `1524cb2edac0b9a2394aab586f39a37f265aa513`
 
 ## Verification
 ```
+$ git ls-files | rg 'iter2_source_status.json|iter2_subset_coverage.md'
 docs/reports/iter2_source_status.json
 docs/reports/iter2_subset_coverage.md
+```
+
+## Repro Commands
+```bash
+git rev-parse --abbrev-ref HEAD
+# exp/iter1-lex-saos-fixes
+
+git rev-parse HEAD
+# 1524cb2edac0b9a2394aab586f39a37f265aa513
+
+git ls-files | rg 'iter2_source_status.json|iter2_subset_coverage.md'
+# docs/reports/iter2_source_status.json
+# docs/reports/iter2_subset_coverage.md
+
+ruff check .
+# All checks passed!
+
+pytest -q
+# 33 passed, 5 warnings in 0.69s
 ```
