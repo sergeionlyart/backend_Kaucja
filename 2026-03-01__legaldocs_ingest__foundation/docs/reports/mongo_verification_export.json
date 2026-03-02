@@ -1,448 +1,156 @@
 {
-  "latest_run_id": "9d73a090f8da4473b699f3bed91148c0",
+  "mongo_db": "legal_rag_runtime",
+  "run_id": "467ac9956f7b465288d4f0426ad23405",
+  "run_started_at": "2026-03-02 06:32:41.583000",
+  "run_finished_at": "2026-03-02 06:34:54.277000",
   "run_stats": {
-    "sources_total": 60,
-    "docs_ok": 60,
-    "docs_restricted": 0,
-    "docs_error": 0,
-    "pages_written": 368,
-    "nodes_written": 1441,
-    "citations_written": 191
+    "sources_total": 14,
+    "docs_ok": 9,
+    "docs_restricted": 3,
+    "docs_error": 2,
+    "pages_written": 309,
+    "nodes_written": 1337,
+    "citations_written": 0
   },
+  "base_sources": {
+    "expected_count": 15,
+    "seen_count": 14,
+    "missing_count": 1,
+    "seen": [
+      "eu_eurlex_dir_1993_13",
+      "pl_courts_wloclawek_I_Ca_56_2018",
+      "pl_eli_du_2001_733",
+      "pl_isap_wdu19640160093",
+      "pl_lex_art_19a",
+      "pl_lex_kc_art_118",
+      "pl_lex_ochrona_praw_lokatorow",
+      "pl_saos_171957",
+      "pl_sn_III_CZP_58-02",
+      "pl_sn_II_CSK_862-14",
+      "pl_sn_I_CNP_31-13_html",
+      "pl_sn_I_CSK_292-12",
+      "pl_sn_V_CSK_480-18_html",
+      "pl_uokik_RKR_37_2013"
+    ],
+    "missing": [
+      "pl_saos_search_kaucja_mieszkaniowa"
+    ]
+  },
+  "expanded_sources_count": 0,
+  "expanded_sources": [],
+  "documents_count": 14,
   "documents": [
     {
-      "source_id": "pl_eli_du_2001_733",
-      "doc_uid": "unknown:urlsha:4307a0f3b0cab777",
-      "access_status": "RESTRICTED",
-      "title": "Dziennik Ustaw 2001 r. nr 71, poz. 733",
-      "doc_type": "STATUTE"
-    },
-    {
-      "source_id": "eu_eurlex_dir_1993_13",
-      "doc_uid": "eurlex_eu:http://data.europa.eu/eli/dir/1993/13/oj",
+      "source_id": "pl_uokik_RKR_37_2013",
+      "doc_uid": "uokik_pl:urlsha:c506ff470f4740ad",
       "access_status": "OK",
-      "title": "Directive - 93/13 - EN - Unfair Terms Directive - EUR-Lex",
-      "doc_type": "EU_ACT"
-    },
-    {
-      "source_id": "eu_eurlex_dir_1993_13",
-      "doc_uid": "eurlex_eu:http://data.europa.eu/eli/dir/1993/13/oj",
-      "access_status": "OK",
-      "title": "Directive - 93/13 - EN - Unfair Terms Directive - EUR-Lex",
-      "doc_type": "EU_ACT"
-    },
-    {
-      "source_id": "pl_eli_du_2001_733",
-      "doc_uid": "eli_pl:DU/2001/733",
-      "access_status": "OK",
-      "title": "USTAWA\nz dnia 21 czerwca 2001 r.",
-      "doc_type": "STATUTE"
-    },
-    {
-      "source_id": "pl_isap_wdu19640160093",
-      "doc_uid": "isap_pl:WDU19640160093",
-      "access_status": "OK",
-      "title": "Kodeks cywilny1)",
-      "doc_type": "STATUTE"
-    },
-    {
-      "source_id": "pl_lex_ochrona_praw_lokatorow",
-      "doc_uid": "lex_pl:urlsha:2c175d980032d2be",
-      "access_status": "OK",
-      "title": "LEX",
-      "doc_type": "STATUTE_REF"
-    },
-    {
-      "source_id": "pl_lex_art_19a",
-      "doc_uid": "lex_pl:urlsha:4f0332a0f08cee51",
-      "access_status": "OK",
-      "title": "LEX",
-      "doc_type": "STATUTE_REF"
-    },
-    {
-      "source_id": "pl_lex_kc_art_118",
-      "doc_uid": "lex_pl:urlsha:c31ee8071848130d",
-      "access_status": "OK",
-      "title": "LEX",
-      "doc_type": "STATUTE_REF"
-    },
-    {
-      "source_id": "pl_sn_III_CZP_58-02",
-      "doc_uid": "sn_pl:III_CZP_58-02",
-      "access_status": "OK",
-      "title": "Uchwała z dnia 26 września 2002 r., III CZP 58/02",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_sn_II_CSK_862-14",
-      "doc_uid": "sn_pl:II_CSK_862-14",
-      "access_status": "OK",
-      "title": "WYROK \nW IMIENIU RZECZYPOSPOLITEJ POLSKIEJ",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_sn_I_CSK_292-12",
-      "doc_uid": "sn_pl:I_CSK_292-12",
-      "access_status": "OK",
-      "title": "WYROK \nW IMIENIU RZECZYPOSPOLITEJ POLSKIEJ",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_sn_V_CSK_480-18_html",
-      "doc_uid": "sn_pl:V_CSK_480-18",
-      "access_status": "OK",
-      "title": "SN",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_sn_I_CNP_31-13_html",
-      "doc_uid": "sn_pl:I_CNP_31-13",
-      "access_status": "OK",
-      "title": "Untitled HTML Document",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_10138",
-      "doc_uid": "saos_pl:10138",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 34/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_16573",
-      "doc_uid": "saos_pl:16573",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 357/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_19765",
-      "doc_uid": "saos_pl:19765",
-      "access_status": "OK",
-      "title": "SENTENCE V Ca 2856/12 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_31928",
-      "doc_uid": "saos_pl:31928",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 421/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_35521",
-      "doc_uid": "saos_pl:35521",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 562/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_36564",
-      "doc_uid": "saos_pl:36564",
-      "access_status": "OK",
-      "title": "SENTENCE IX Ca 719/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_45409",
-      "doc_uid": "saos_pl:45409",
-      "access_status": "OK",
-      "title": "REASONS II Ca 446/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_50801",
-      "doc_uid": "saos_pl:50801",
-      "access_status": "OK",
-      "title": "SENTENCE I ACa 1513/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_56253",
-      "doc_uid": "saos_pl:56253",
-      "access_status": "OK",
-      "title": "REASONS III Ca 1633/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_56254",
-      "doc_uid": "saos_pl:56254",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 1633/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_64613",
-      "doc_uid": "saos_pl:64613",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 454/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_67856",
-      "doc_uid": "saos_pl:67856",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 786/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_132635",
-      "doc_uid": "saos_pl:132635",
-      "access_status": "OK",
-      "title": "SENTENCE V ACa 599/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_134750",
-      "doc_uid": "saos_pl:134750",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 483/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_159539",
-      "doc_uid": "saos_pl:159539",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 393/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_170755",
-      "doc_uid": "saos_pl:170755",
-      "access_status": "OK",
-      "title": "SENTENCE I C 3381/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_171957",
-      "doc_uid": "saos_pl:171957",
-      "access_status": "OK",
-      "title": "REASONS II Ca 886/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_172079",
-      "doc_uid": "saos_pl:172079",
-      "access_status": "OK",
-      "title": "REASONS II Ca 805/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_175246",
-      "doc_uid": "saos_pl:175246",
-      "access_status": "OK",
-      "title": "SENTENCE II C 636/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_175247",
-      "doc_uid": "saos_pl:175247",
-      "access_status": "OK",
-      "title": "REASONS II C 636/14 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_194591",
-      "doc_uid": "saos_pl:194591",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 1364/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_194592",
-      "doc_uid": "saos_pl:194592",
-      "access_status": "OK",
-      "title": "REASONS III Ca 1364/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_208241",
-      "doc_uid": "saos_pl:208241",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 1583/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_210324",
-      "doc_uid": "saos_pl:210324",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 1606/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_217769",
-      "doc_uid": "saos_pl:217769",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 2699/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_219349",
-      "doc_uid": "saos_pl:219349",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 205/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_225643",
-      "doc_uid": "saos_pl:225643",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 352/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_226058",
-      "doc_uid": "saos_pl:226058",
-      "access_status": "OK",
-      "title": "SENTENCE V Ca 1770/13 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_231880",
-      "doc_uid": "saos_pl:231880",
-      "access_status": "OK",
-      "title": "SENTENCE I C 2471/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_242360",
-      "doc_uid": "saos_pl:242360",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 789/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_255491",
-      "doc_uid": "saos_pl:255491",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 916/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_255492",
-      "doc_uid": "saos_pl:255492",
-      "access_status": "OK",
-      "title": "REASONS III Ca 916/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_262221",
-      "doc_uid": "saos_pl:262221",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 1162/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_282779",
-      "doc_uid": "saos_pl:282779",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 682/16 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_298512",
-      "doc_uid": "saos_pl:298512",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 147/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_299795",
-      "doc_uid": "saos_pl:299795",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 816/15 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_308477",
-      "doc_uid": "saos_pl:308477",
-      "access_status": "OK",
-      "title": "SENTENCE XV Ca 337/17 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_415222",
-      "doc_uid": "saos_pl:415222",
-      "access_status": "OK",
-      "title": "SENTENCE III Ca 808/19 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_438443",
-      "doc_uid": "saos_pl:438443",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 941/20 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_472811",
-      "doc_uid": "saos_pl:472811",
-      "access_status": "OK",
-      "title": "SENTENCE VI C 837/21 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_472812",
-      "doc_uid": "saos_pl:472812",
-      "access_status": "OK",
-      "title": "REASONS VI C 837/21 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_480777",
-      "doc_uid": "saos_pl:480777",
-      "access_status": "OK",
-      "title": "SENTENCE V GC 238/22 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_486542",
-      "doc_uid": "saos_pl:486542",
-      "access_status": "OK",
-      "title": "SENTENCE I C 733/21 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_489466",
-      "doc_uid": "saos_pl:489466",
-      "access_status": "OK",
-      "title": "SENTENCE I C 113/21 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_521555",
-      "doc_uid": "saos_pl:521555",
-      "access_status": "OK",
-      "title": "SENTENCE V C 1874/22 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_saos_search_kaucja_mieszkaniowa_535713",
-      "doc_uid": "saos_pl:535713",
-      "access_status": "OK",
-      "title": "SENTENCE II Ca 1527/23 (COMMON)",
-      "doc_type": "CASELAW"
-    },
-    {
-      "source_id": "pl_courts_wloclawek_I_Ca_56_2018",
-      "doc_uid": "courts_pl:urlsha:20c9c82554a6e7f2",
-      "access_status": "OK",
-      "title": "Treść orzeczenia I Ca 56/18 - Portal Orzeczeń Sądu Okręgowego we Włocławku",
-      "doc_type": "CASELAW"
+      "title": "Untitled Document",
+      "doc_type": "GUIDANCE",
+      "license_tag": "OFFICIAL"
     },
     {
       "source_id": "eu_eurlex_dir_1993_13",
       "doc_uid": "eurlex_eu:dir/1993/13/oj/eng",
       "access_status": "OK",
       "title": "Directive - 93/13 - EN - Unfair Terms Directive - EUR-Lex",
-      "doc_type": "EU_ACT"
+      "doc_type": "EU_ACT",
+      "license_tag": "OFFICIAL"
     },
     {
-      "source_id": "pl_uokik_RKR_37_2013",
-      "doc_uid": "uokik_pl:urlsha:c506ff470f4740ad",
+      "source_id": "pl_courts_wloclawek_I_Ca_56_2018",
+      "doc_uid": "courts_pl:urlsha:20c9c82554a6e7f2",
+      "access_status": "ERROR",
+      "title": "ERROR",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_saos_171957",
+      "doc_uid": "saos_pl:171957",
+      "access_status": "ERROR",
+      "title": "ERROR",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_sn_I_CNP_31-13_html",
+      "doc_uid": "sn_pl:I_CNP_31-13",
       "access_status": "OK",
-      "title": "Untitled Document",
-      "doc_type": "GUIDANCE"
+      "title": "Untitled HTML Document",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_sn_V_CSK_480-18_html",
+      "doc_uid": "sn_pl:V_CSK_480-18",
+      "access_status": "OK",
+      "title": "SN",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_sn_I_CSK_292-12",
+      "doc_uid": "sn_pl:I_CSK_292-12",
+      "access_status": "OK",
+      "title": "WYROK \nW IMIENIU RZECZYPOSPOLITEJ POLSKIEJ",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_sn_II_CSK_862-14",
+      "doc_uid": "sn_pl:II_CSK_862-14",
+      "access_status": "OK",
+      "title": "WYROK \nW IMIENIU RZECZYPOSPOLITEJ POLSKIEJ",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_sn_III_CZP_58-02",
+      "doc_uid": "sn_pl:III_CZP_58-02",
+      "access_status": "OK",
+      "title": "Uchwała z dnia 26 września 2002 r., III CZP 58/02",
+      "doc_type": "CASELAW",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_lex_kc_art_118",
+      "doc_uid": "lex_pl:urlsha:c31ee8071848130d",
+      "access_status": "RESTRICTED",
+      "title": "LEX",
+      "doc_type": "STATUTE_REF",
+      "license_tag": "COMMERCIAL"
+    },
+    {
+      "source_id": "pl_lex_art_19a",
+      "doc_uid": "lex_pl:urlsha:4f0332a0f08cee51",
+      "access_status": "RESTRICTED",
+      "title": "LEX",
+      "doc_type": "STATUTE_REF",
+      "license_tag": "COMMERCIAL"
+    },
+    {
+      "source_id": "pl_lex_ochrona_praw_lokatorow",
+      "doc_uid": "lex_pl:urlsha:2c175d980032d2be",
+      "access_status": "RESTRICTED",
+      "title": "LEX",
+      "doc_type": "STATUTE_REF",
+      "license_tag": "COMMERCIAL"
+    },
+    {
+      "source_id": "pl_isap_wdu19640160093",
+      "doc_uid": "isap_pl:WDU19640160093",
+      "access_status": "OK",
+      "title": "Kodeks cywilny1)",
+      "doc_type": "STATUTE",
+      "license_tag": "OFFICIAL"
+    },
+    {
+      "source_id": "pl_eli_du_2001_733",
+      "doc_uid": "eli_pl:DU/2001/733",
+      "access_status": "OK",
+      "title": "USTAWA\nz dnia 21 czerwca 2001 r.",
+      "doc_type": "STATUTE",
+      "license_tag": "OFFICIAL"
     }
   ]
 }

@@ -16,7 +16,7 @@ This is the foundation for the `legal_ingest` pipeline.
 2. Create and populate the environment configuration (`.env`):
    ```bash
    cp .env.example .env
-   # Add your MISTRAL_API_KEY, MONGO_URI, and LEX_SESSION_ID inside .env
+   # Add your MISTRAL_API_KEY and adjust MONGO_* values inside .env
    ```
 3. Execute the full pipeline orchestrator script:
    ```bash
@@ -27,7 +27,9 @@ This is the foundation for the `legal_ingest` pipeline.
    ```bash
    python -m legal_ingest.cli --env-file .env ingest --config configs/config.full.runtime.yml --strict-ok
    ```
+   `--strict-ok` exits with code `1` if at least one document is `RESTRICTED` or `ERROR`.
 
 ## Troubleshooting
 - **Missing Env Variable**: Pydantic validations will actively reject pipelines executing without mapped strings (e.g. `MONGO_URI` missing throws ValueError).
-- **RESTRICTED Output**: Commercial targets like `LEX` or `Inforlex` will yield error HTML payloads and flag as RESTRICTED safely until cookie injection authentication is built.
+- **RESTRICTED Output**: Pages with paywall markers/login prompts or low extracted content are marked as `RESTRICTED` (including commercial sources). If `--strict-ok` is enabled, the command will fail.
+- **Commercial Sources**: If LEX session cookie is unavailable/invalid, commercial pages may remain `RESTRICTED`. Configure `LEX_SESSION_ID` in `.env` only with a valid session.
