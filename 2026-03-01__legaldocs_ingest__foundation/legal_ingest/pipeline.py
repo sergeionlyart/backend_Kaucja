@@ -266,7 +266,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                         "Restricted content detected via low char count",
                         extra={"stage": "parse"},
                     )
-            elif mime == "application/json" or source.fetch_strategy == "saos_judgment":
+            elif mime == "application/json" and source.fetch_strategy == "saos_judgment":
                 pages = parse_saos(fetch_result.raw_bytes, doc_uid, source_hash)
                 parse_method = "SAOS_JSON"
                 access_status = "OK"  # saos is ok
@@ -291,7 +291,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             citations = []
 
             # Extract citations for SAOS
-            if mime == "application/json" or source.fetch_strategy == "saos_judgment":
+            if mime == "application/json" and source.fetch_strategy == "saos_judgment":
                 from .parsers.saos import extract_saos_citations
 
                 citations = extract_saos_citations(

@@ -8,6 +8,9 @@ from tenacity import (
 from .config import SourceConfig, HttpConfig
 from pydantic import BaseModel
 from typing import Dict
+import re
+from urllib.parse import urlparse, quote
+import json
 
 
 class FetchResult(BaseModel):
@@ -37,14 +40,82 @@ def build_client(http_cfg: HttpConfig) -> httpx.Client:
     )
 
 
+def transform_lex_url(url: str) -> str:
+    # Match id from /dzu-dziennik-ustaw/...-{documentId}
+    # and optional unit id like /art-19-a
+    parsed = urlparse(url)
+    path = parsed.path.strip("/")
+    parts = path.split("/")
+    
+    doc_id = None
+    unit_id_raw = None
+    
+    for pt in parts:
+        if pt.startswith("art-"):
+            unit_id_raw = pt
+        elif "-" in pt and pt[-1].isdigit():
+            # Lex document URLs usually end with a long numeric ID like -16903658
+            # Path-123 should be ignored unless it maps generically
+            match = re.search(r'-(\d{7,10})$', pt)
+            if match:
+                doc_id = match.group(1)
+
+    if not doc_id:
+        return url
+        
+    base_endpoint = f"https://sip.lex.pl/apimobile/document/{doc_id}?documentConfigurationId=lawJournal"
+    
+    if unit_id_raw:
+        # art-19-a -> art(19(a))
+        # Remove 'art-' prefix
+        u_suffix = unit_id_raw[4:]
+        sub_parts = u_suffix.split("-")
+        
+        # Build nested parenthesis: 19, a -> 19(a)
+        if len(sub_parts) == 1:
+            unit_id = f"art({sub_parts[0]})"
+        else:
+            # Simple assumption for 2 parts like 19-a
+            unit_id = f"art({sub_parts[0]}({sub_parts[1]}))"
+        
+        base_endpoint += f"&unitId={quote(unit_id)}"
+        
+    return base_endpoint
+
+
 def fetch_direct(client: httpx.Client, url: str) -> FetchResult:
-    resp = client.get(url)
+    is_lex = "sip.lex.pl" in url
+    fetch_url = transform_lex_url(url) if is_lex else url
+    
+    resp = client.get(fetch_url)
     resp.raise_for_status()
+    
+    raw_bytes = resp.content
+    final_url = str(resp.url)
+    
+    if is_lex and resp.headers.get("content-type", "").startswith("application/json"):
+        try:
+            data = resp.json()
+            # Try to grab HTML content
+            if "content" in data:
+                raw_bytes = data["content"].encode("utf-8")
+                # Mutate headers so pipeline considers this HTML
+                new_headers = dict(resp.headers)
+                new_headers["content-type"] = "text/html; charset=utf-8"
+                return FetchResult(
+                    raw_bytes=raw_bytes,
+                    status_code=resp.status_code,
+                    headers=new_headers,
+                    final_url=final_url,
+                )
+        except Exception:
+            pass # fallback to original bytes if parsing fails
+            
     return FetchResult(
-        raw_bytes=resp.content,
+        raw_bytes=raw_bytes,
         status_code=resp.status_code,
         headers=dict(resp.headers),
-        final_url=str(resp.url),
+        final_url=final_url,
     )
 
 
@@ -57,14 +128,31 @@ def fetch_saos_judgment(client: httpx.Client, source: SourceConfig) -> FetchResu
         )
 
     api_url = f"https://www.saos.org.pl/api/judgments/{saos_id}"
-    resp = client.get(api_url)
-    resp.raise_for_status()
-    return FetchResult(
-        raw_bytes=resp.content,
-        status_code=resp.status_code,
-        headers=dict(resp.headers),
-        final_url=str(resp.url),
-    )
+    try:
+        resp = client.get(api_url)
+        resp.raise_for_status()
+        
+        # Verify it's actually JSON and not a maintenance HTML page
+        if "application/json" not in resp.headers.get("content-type", "").lower():
+            raise ValueError("SAOS API returned non-JSON response")
+            
+        return FetchResult(
+            raw_bytes=resp.content,
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
+            final_url=str(resp.url),
+        )
+    except Exception as e:
+        # Fallback to HTML
+        html_url = f"https://www.saos.org.pl/judgments/{saos_id}"
+        resp_html = client.get(html_url)
+        resp_html.raise_for_status()
+        return FetchResult(
+            raw_bytes=resp_html.content,
+            status_code=resp_html.status_code,
+            headers=dict(resp_html.headers),
+            final_url=str(resp_html.url),
+        )
 
 
 def fetch_source(http_cfg: HttpConfig, source: SourceConfig) -> FetchResult:
@@ -103,39 +191,100 @@ def expand_saos_search(
     new_sources = []
 
     with build_client(http_cfg) as client:
-        while True:
-            params["pageNumber"] = page_num
-            resp = client.get(base_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        try:
+            while True:
+                params["pageNumber"] = page_num
+                resp = client.get(base_url, params=params)
+                resp.raise_for_status()
+                
+                if "application/json" not in resp.headers.get("content-type", "").lower():
+                    raise ValueError("SAOS search API returned non-JSON")
+                
+                data = resp.json()
 
-            items = data.get("items", [])
-            for item in items:
-                raw_id = item.get("id")
-                if raw_id is None or raw_id == "":
-                    continue
-                saos_id = str(raw_id)
-                if saos_id not in seen_ids:
-                    seen_ids.add(saos_id)
-                    ext_ids = dict(source.external_ids or {})
-                    ext_ids["saos_id"] = saos_id
+                items = data.get("items", [])
+                for item in items:
+                    raw_id = item.get("id")
+                    if raw_id is None or raw_id == "":
+                        continue
+                    saos_id = str(raw_id)
+                    if saos_id not in seen_ids:
+                        seen_ids.add(saos_id)
+                        ext_ids = dict(source.external_ids or {})
+                        ext_ids["saos_id"] = saos_id
 
-                    ns = SourceConfig(
-                        source_id=f"{source.source_id}_{saos_id}",
-                        url="https://www.saos.org.pl",
-                        fetch_strategy="saos_judgment",
-                        doc_type_hint="CASELAW",
-                        jurisdiction=source.jurisdiction,
-                        language=source.language,
-                        external_ids=ext_ids,
-                        license_tag=source.license_tag,
-                    )
-                    new_sources.append(ns)
+                        ns = SourceConfig(
+                            source_id=f"{source.source_id}_{saos_id}",
+                            url="https://www.saos.org.pl",
+                            fetch_strategy="saos_judgment",
+                            doc_type_hint="CASELAW",
+                            jurisdiction=source.jurisdiction,
+                            language=source.language,
+                            external_ids=ext_ids,
+                            license_tag=source.license_tag,
+                        )
+                        new_sources.append(ns)
 
-            links = data.get("links", [])
-            has_next = any(link.get("rel") == "next" for link in links)
-            if not items or not has_next:
-                break
-            page_num += 1
+                links = data.get("links", [])
+                has_next = any(link.get("rel") == "next" for link in links)
+                if not items or not has_next:
+                    break
+                page_num += 1
+                
+        except Exception as e:
+            # Fallback to HTML search page crawling
+            from bs4 import BeautifulSoup
+            
+            # map API params to HTML params if needed (usually similar)
+            html_search_url = "https://www.saos.org.pl/search"
+            # HTML pagination uses 'page' (1-indexed usually, though saos handles ?page= param)
+            # Assuming params passed from source.saos_search_params work for HTML query as well
+            # e.g. {"courtCriteria.courtType": "COMMON", "keywords": "kaucja mieszkaniowa"}
+            
+            html_params = dict(source.saos_search_params or {})
+            
+            # Start from page=1 for HTML fallback
+            current_page = 1
+            while True:
+                html_params["page"] = current_page
+                resp_html = client.get(html_search_url, params=html_params)
+                resp_html.raise_for_status()
+                
+                soup = BeautifulSoup(resp_html.content, "html.parser")
+                judgments_found_on_page = False
+                
+                # Find all links to /judgments/{id}
+                for a_tag in soup.find_all("a", href=True):
+                    href = a_tag["href"]
+                    if href.startswith("/judgments/") or href.startswith("https://www.saos.org.pl/judgments/"):
+                        # extract ID
+                        match = re.search(r'/judgments/(\d+)', href)
+                        if match:
+                            judgments_found_on_page = True
+                            saos_id = match.group(1)
+                            if saos_id not in seen_ids:
+                                seen_ids.add(saos_id)
+                                ext_ids = dict(source.external_ids or {})
+                                ext_ids["saos_id"] = saos_id
+        
+                                ns = SourceConfig(
+                                    source_id=f"{source.source_id}_{saos_id}",
+                                    url="https://www.saos.org.pl",
+                                    fetch_strategy="saos_judgment",
+                                    doc_type_hint="CASELAW",
+                                    jurisdiction=source.jurisdiction,
+                                    language=source.language,
+                                    external_ids=ext_ids,
+                                    license_tag=source.license_tag,
+                                )
+                                new_sources.append(ns)
+                                
+                # Check pagination for 'Next' or just if we found items
+                # The UI usually has <a rel="next"> or similar depending on SAOS markup.
+                # A safe heuristic: if no judgments were found, we reached the end.
+                if not judgments_found_on_page:
+                    break
+                    
+                current_page += 1
 
     return new_sources

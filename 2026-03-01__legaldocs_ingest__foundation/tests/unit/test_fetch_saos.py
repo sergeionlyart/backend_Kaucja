@@ -18,6 +18,7 @@ def test_expand_saos_search(mock_get):
 
     # Mock pagination: page 1 has items and a next link, page 2 has items and no next link
     mock_resp1 = MagicMock()
+    mock_resp1.headers = {"content-type": "application/json"}
     mock_resp1.json.return_value = {
         "items": [
             {"id": 123},
@@ -30,6 +31,7 @@ def test_expand_saos_search(mock_get):
     }
 
     mock_resp2 = MagicMock()
+    mock_resp2.headers = {"content-type": "application/json"}
     mock_resp2.json.return_value = {
         "items": [{"id": 789}, {"id": 123}],  # 123 is a duplicate
         "links": [{"rel": "self", "href": "..."}],
