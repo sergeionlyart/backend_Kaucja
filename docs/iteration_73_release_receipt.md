@@ -32,11 +32,11 @@
 
 ### Backend main (latest)
 
-| Run ID | Conclusion | URL |
-|--------|-----------|-----|
-| 22641276862 | in_progress (PR #10 merge) | [run/22641276862](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22641276862) |
-| 22640853110 | ✅ success | [run/22640853110](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22640853110) |
-| 22638440864 | ✅ success | [run/22638440864](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22638440864) |
+| Run ID | Conclusion | Commit | URL |
+|--------|-----------|--------|-----|
+| 22641639754 | ✅ success | `562d7bb5` (PR #11) | [run/22641639754](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22641639754) |
+| 22641276862 | ✅ success | `50881564` (PR #10) | [run/22641276862](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22641276862) |
+| 22640853110 | ✅ success | `544fbe44` (PR #9) | [run/22640853110](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22640853110) |
 
 ### UI main
 
