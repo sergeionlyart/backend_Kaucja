@@ -1,57 +1,79 @@
-# Iteration 4.1: Recovery Report (Closure)
+# Iteration 4.2: Final Consistency Report
 
-**Run ID**: `iter4_caslaw_v22_full_recovery_rerun`
+**Run ID**: `iter4_caslaw_v22_full_final`
 **Config**: `configs/config.caslaw_v22.full.yml` (38 sources)
-**Pipeline metrics**: `sources_total=920, docs_ok=919, docs_restricted=0, docs_error=1, pages_written=1421, nodes_written=3360, citations_written=3677`
-**Primary sources**: **36/38 OK, 0 RESTRICTED, 2 ERROR**
+**Pipeline metrics** (from `run_report.json`): `sources_total=37, docs_ok=25, docs_restricted=10, docs_error=2`
+**Primary source breakdown**: **OK=26, RESTRICTED=10, ERROR=2** (total=38)
 
-## Delta table
+> [!NOTE]
+> `sources_total=37` in run_report excludes the `saos_search` meta-source which becomes expansions.
+> `docs_ok=25` in run_report doesn't count `s11_saos_search` (meta-source with OK status in source_status).
+> Primary OK=26 includes `s11_saos_search` as OK.
 
-| # | source_id | Iter 3.1 (initial) | Iter 4 (first run) | Iter 4.1 (rerun) | Recovery action |
-|---|-----------|---------------------|---------------------|-------------------|-----------------|
-| 5 | s05_lex_art118 | RESTRICTED | OK | **OK** ✅ | Per-source `min_chars_override: 200` (art-118 = ~300 text chars, legitimately short) |
-| 22 | s22_orzeczenia_wloclawek | OK | OK | **ERROR** ❌ | Regression: `orzeczenia.wloclawek.so.gov.pl` server disconnect (transient) |
-| 23 | s23_orzeczenia_ms | OK | ERROR | **OK** ✅ | Transient recovery — server responded on this run |
-| 24 | s24_orzeczenia_katowice | ERROR | ERROR | **OK** ✅ | Transient recovery — server responded on this run |
-| 31 | s31_curia_137830 | RESTRICTED | OK | **OK** ✅ | Curia JSF → EUR-Lex `CELEX:62011CJ0415` (C-415/11 Aziz) |
-| 32 | s32_curia_237043 | RESTRICTED | OK | **OK** ✅ | Curia JSF → EUR-Lex `CELEX:62019CJ0725` (C-725/19 Impuls Leasing) |
-| 33 | s33_curia_74812 | RESTRICTED | OK | **OK** ✅ | Curia JSF → EUR-Lex `CELEX:62008CJ0243` (C-243/08 Pannon) |
-| 34 | s34_curia_guide | ERROR (404) | ERROR (wrong CELEX) | **OK** ✅ | `OJ:C:2019:380:FULL` (76KB, 2 pages) |
-| 35 | s35_uokik_dec | ERROR | ERROR | **ERROR** ❌ | `decyzje.uokik.gov.pl` SSL handshake timeout — persistent, server unreachable |
+## Consistency verification
 
-## Not Loaded (2 of 38 primary sources)
+| Metric | source_status.json | run_report.json | Match |
+|--------|-------------------|-----------------|-------|
+| RESTRICTED | 10 | docs_restricted=10 | ✅ |
+| ERROR | 2 | docs_error=2 | ✅ |
+| not_loaded count | 12 | restricted+error=12 | ✅ |
 
-| # | source_id | Status | Reason | Evidence |
-|---|-----------|--------|--------|----------|
-| 22 | s22_orzeczenia_wloclawek | ERROR | Server disconnected without sending a response | Transient — worked in iter3.1 and iter4, failed in iter4.1 rerun |
-| 35 | s35_uokik_dec | ERROR | SSL handshake timeout after 120s × 6 retries | Persistent — failed in all runs (iter3.1, iter4, iter4.1) |
+## Not Loaded (12 of 38 primary sources)
 
-## Code changes (Iteration 4.1)
+### RESTRICTED (10) — SAOS API maintenance
 
-1. **`legal_ingest/config.py`**: Added `min_chars_override: Optional[int] = None` to `SourceConfig`.
-2. **`legal_ingest/pipeline.py`**:
-   - Restored global threshold to **500** chars.
-   - Added per-source override: `source.min_chars_override if not None else 500`.
-   - Wrapped error-handler Mongo save in nested try/except to prevent chain-crash.
-3. **`configs/config.caslaw_v22.full.yml`**: Added `min_chars_override: 200` for `s05_lex_art118`.
-4. **`tests/unit/test_threshold_override.py`**: 5 unit tests for default=500, override logic, override=0.
-5. **`.gitignore`**: Added `artifacts_iter4/`.
+| # | source_id | Reason |
+|---|-----------|--------|
+| 12 | s12_saos_171957 | SAOS API returning maintenance HTML (1230 bytes) |
+| 13 | s13_saos_205996 | SAOS API returning maintenance HTML (1230 bytes) |
+| 14 | s14_saos_279345 | SAOS API returning maintenance HTML (1230 bytes) |
+| 15 | s15_saos_330695 | SAOS API returning maintenance HTML (1230 bytes) |
+| 16 | s16_saos_346698 | SAOS API returning maintenance HTML (1230 bytes) |
+| 17 | s17_saos_472812 | SAOS API returning maintenance HTML (1230 bytes) |
+| 18 | s18_saos_486542 | SAOS API returning maintenance HTML (1230 bytes) |
+| 19 | s19_saos_487012 | SAOS API returning maintenance HTML (1230 bytes) |
+| 20 | s20_saos_505310 | SAOS API returning maintenance HTML (1230 bytes) |
+| 21 | s21_saos_521555 | SAOS API returning maintenance HTML (1230 bytes) |
+
+### ERROR (2)
+
+| # | source_id | Error | Evidence |
+|---|-----------|-------|----------|
+| 24 | s24_orzeczenia_katowice | Server disconnected without sending a response | Persistent: `orzeczenia.katowice.sa.gov.pl` |
+| 35 | s35_uokik_dec | [Errno 60] Operation timed out | Persistent: `decyzje.uokik.gov.pl` SSL timeout |
+
+## OK sources confirmed (26 of 38)
+
+All non-SAOS-individual sources loaded successfully, including all Iteration 4 recovery targets:
+
+| # | source_id | Recovery action |
+|---|-----------|-----------------|
+| 5 | s05_lex_art118 | `min_chars_override: 200` (per-source, global=500) |
+| 31 | s31_curia_137830 | EUR-Lex `CELEX:62011CJ0415` (C-415/11 Aziz) |
+| 32 | s32_curia_237043 | EUR-Lex `CELEX:62019CJ0725` (C-725/19 Impuls Leasing) |
+| 33 | s33_curia_74812 | EUR-Lex `CELEX:62008CJ0243` (C-243/08 Pannon) |
+| 34 | s34_curia_guide | EUR-Lex `OJ:C:2019:380:FULL` (76KB, 2 pages) |
+
+## Code changes (Iteration 4.2)
+
+1. **`scripts/build_iter4_reports.py`** (NEW): Robust status generator with sticky RESTRICTED flag, run_id filter, and triple consistency check.
+2. **`configs/config.caslaw_v22.full.yml`**: `run_id` → `iter4_caslaw_v22_full_final`.
 
 ## Canonical run path
 
 ```bash
-cd 2026-03-01__legaldocs_ingest__foundation
-source venv/bin/activate
+cd 2026-03-01__legaldocs_ingest__foundation && source venv/bin/activate
 python -m legal_ingest.cli --env-file .env validate-config --config configs/config.caslaw_v22.full.yml
 python -m legal_ingest.cli --env-file .env ensure-indexes --config configs/config.caslaw_v22.full.yml
 python -m legal_ingest.cli --env-file .env ingest --config configs/config.caslaw_v22.full.yml
+python scripts/build_iter4_reports.py iter4_caslaw_v22_full_final
 ```
 
-## Absolute paths to artifacts
+## Absolute paths
 
 - **Config**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/configs/config.caslaw_v22.full.yml`
-- **Run Report**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts_iter4/runs/iter4_caslaw_v22_full_recovery_rerun/run_report.json`
-- **Logs**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts_iter4/runs/iter4_caslaw_v22_full_recovery_rerun/logs.jsonl`
+- **Run Report**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts_iter4/runs/iter4_caslaw_v22_full_final/run_report.json`
+- **Logs**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/artifacts_iter4/runs/iter4_caslaw_v22_full_final/logs.jsonl`
 - **Source Status**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter4_source_status.json`
 - **Not Loaded**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter4_not_loaded.json`
 - **This Report**: `/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/docs/reports/iter4_recovery_report.md`

@@ -5,9 +5,9 @@
     "url": "https://eli.gov.pl/api/acts/DU/2001/733/text/O/D20010733.pdf",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 2,
@@ -15,9 +15,9 @@
     "url": "https://isap.sejm.gov.pl/isap.nsf/download.xsp/WDU19640160093/U/D19640093Lj.pdf",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 3,
@@ -25,9 +25,9 @@
     "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 4,
@@ -35,9 +35,9 @@
     "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/ochrona-praw-lokatorow-mieszkaniowy-zasob-gminy-i-zmiana-kodeksu-16903658/art-19-a",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 5,
@@ -45,9 +45,9 @@
     "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 6,
@@ -55,9 +55,9 @@
     "url": "https://www.sn.pl/sites/orzecznictwo/Orzeczenia1/III%20CZP%2058-02.pdf",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 7,
@@ -65,9 +65,9 @@
     "url": "https://www.sn.pl/sites/orzecznictwo/orzeczenia3/ii%20csk%20862-14-1.pdf",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 8,
@@ -75,9 +75,9 @@
     "url": "https://www.sn.pl/sites/orzecznictwo/Orzeczenia2/I%20CSK%20292-12-1.pdf",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 9,
@@ -85,9 +85,9 @@
     "url": "https://www.sn.pl/sites/orzecznictwo/OrzeczeniaHTML/v%20csk%20480-18-1.docx.html",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 10,
@@ -95,9 +95,9 @@
     "url": "https://www.sn.pl/sites/orzecznictwo/OrzeczeniaHTML/I%20CNP%2031-13.docx.html",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 11,
@@ -105,120 +105,120 @@
     "url": "https://www.saos.org.pl/search?courtCriteria.courtType=COMMON&keywords=kaucja+mieszkaniowa",
     "fetch_strategy": "saos_search",
     "status": "OK",
-    "reason": "SAOS search expanded into 883 judgments via API.",
+    "reason": "SAOS search expanded into 0 judgments.",
     "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun",
-    "expanded_count": 883
+    "run_id": "iter4_caslaw_v22_full_final",
+    "expanded_count": 0
   },
   {
     "index": 12,
     "source_id": "s12_saos_171957",
     "url": "https://www.saos.org.pl/judgments/171957",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 13,
     "source_id": "s13_saos_205996",
     "url": "https://www.saos.org.pl/judgments/205996",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 14,
     "source_id": "s14_saos_279345",
     "url": "https://www.saos.org.pl/judgments/279345",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 15,
     "source_id": "s15_saos_330695",
     "url": "https://www.saos.org.pl/judgments/330695",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 16,
     "source_id": "s16_saos_346698",
     "url": "https://www.saos.org.pl/judgments/346698",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 17,
     "source_id": "s17_saos_472812",
     "url": "https://www.saos.org.pl/judgments/472812",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 18,
     "source_id": "s18_saos_486542",
     "url": "https://www.saos.org.pl/judgments/486542",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 19,
     "source_id": "s19_saos_487012",
     "url": "https://www.saos.org.pl/judgments/487012",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 20,
     "source_id": "s20_saos_505310",
     "url": "https://www.saos.org.pl/judgments/505310",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 21,
     "source_id": "s21_saos_521555",
     "url": "https://www.saos.org.pl/judgments/521555",
     "fetch_strategy": "saos_judgment",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 22,
     "source_id": "s22_orzeczenia_wloclawek",
     "url": "https://orzeczenia.wloclawek.so.gov.pl/content/$N/151030000000503_I_Ca_000056_2018_Uz_2018-05-08_001",
     "fetch_strategy": "direct",
-    "status": "ERROR",
-    "reason": "Error processing source: Server disconnected without sending a response.\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transpor",
+    "status": "OK",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 23,
@@ -226,19 +226,19 @@
     "url": "https://orzeczenia.ms.gov.pl/content/$N/152510000001503_III_Ca_001707_2018_Uz_2019-02-28_001",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 24,
     "source_id": "s24_orzeczenia_katowice",
     "url": "https://orzeczenia.katowice.sa.gov.pl/content/$N/151500000002503_V_ACa_000599_2014_Uz_2015-02-18_001",
     "fetch_strategy": "direct",
-    "status": "OK",
-    "reason": "Processed",
-    "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "status": "ERROR",
+    "reason": "Error processing source: Server disconnected without sending a response.",
+    "http_status": null,
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 25,
@@ -246,9 +246,9 @@
     "url": "https://eur-lex.europa.eu/eli/dir/1993/13/oj/eng",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 26,
@@ -256,9 +256,9 @@
     "url": "https://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=CELEX:31993L0013:en:HTML",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 27,
@@ -266,9 +266,9 @@
     "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?from=FR&uri=CELEX:52019XC0927(01)",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 28,
@@ -276,9 +276,9 @@
     "url": "https://eur-lex.europa.eu/eli/reg/2007/861/oj/eng",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 29,
@@ -286,9 +286,9 @@
     "url": "https://eur-lex.europa.eu/eli/reg/2006/1896/oj/eng",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 30,
@@ -296,9 +296,9 @@
     "url": "https://eur-lex.europa.eu/eli/reg/2004/805/oj/eng",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 31,
@@ -306,9 +306,9 @@
     "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62011CJ0415",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 32,
@@ -316,9 +316,9 @@
     "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62019CJ0725",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 33,
@@ -326,9 +326,9 @@
     "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62008CJ0243",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 34,
@@ -336,9 +336,9 @@
     "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ:C:2019:380:FULL",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 35,
@@ -346,9 +346,9 @@
     "url": "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf",
     "fetch_strategy": "direct",
     "status": "ERROR",
-    "reason": "Error processing source: _ssl.c:989: The handshake operation timed out\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transports",
+    "reason": "Error processing source: [Errno 60] Operation timed out",
     "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 36,
@@ -356,9 +356,9 @@
     "url": "https://uokik.gov.pl/niedozwolone-klauzule",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 37,
@@ -366,9 +366,9 @@
     "url": "https://rejestr.uokik.gov.pl/uzasadnienia/891/AmC%20_86_2003.pdf",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   },
   {
     "index": 38,
@@ -376,8 +376,8 @@
     "url": "https://www.prawo.pl/student/niedozwolone-klauzule-w-umowach-najmu-skutki-ochrona-lokatora%2C510151.html",
     "fetch_strategy": "direct",
     "status": "OK",
-    "reason": "Processed",
+    "reason": "Saved",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
+    "run_id": "iter4_caslaw_v22_full_final"
   }
 ]
