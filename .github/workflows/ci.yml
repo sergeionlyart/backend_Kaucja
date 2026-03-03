@@ -25,6 +25,19 @@ jobs:
       - name: Pytest
         run: pytest -q
 
+      - name: E2E chain no-skip guard
+        run: |
+          result=$(pytest tests/test_e2e_chain.py -v --tb=short 2>&1)
+          echo "$result"
+          if echo "$result" | grep -q "skipped"; then
+            echo "::error::E2E chain tests must not be skipped"
+            exit 1
+          fi
+          if ! echo "$result" | grep -q "passed"; then
+            echo "::error::E2E chain tests must have at least 1 passed"
+            exit 1
+          fi
+
       - name: Gradio smoke
         run: python -c "from app.ui.gradio_app import build_app; build_app(); print('gradio_app_started')"
 
