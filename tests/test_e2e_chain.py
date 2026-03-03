@@ -11,11 +11,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-# Guard: app.api may not be tracked in git on all branches.
-# Skip tests gracefully if app.api is not available.
-api_main = pytest.importorskip("app.api.main", reason="app.api not available (not committed)")
-api_service = pytest.importorskip("app.api.service", reason="app.api not available (not committed)")
-create_app = api_main.create_app
+from app.api.main import create_app
+from app.api import service
 
 
 
@@ -29,7 +26,7 @@ def client() -> TestClient:
 
 @pytest.fixture()
 def _clean_case(tmp_path, monkeypatch):
-    monkeypatch.setattr(api_service, "_CASES_DIR", tmp_path)
+    monkeypatch.setattr(service, "_CASES_DIR", tmp_path)
     yield tmp_path
 
 
@@ -117,7 +114,7 @@ class TestE2EChain:
         assert doc_id_lease in reanalyzed_ids
 
         # ── Step 3: Dedup consistency after reanalyze ───────────────
-        catalog = api_service._load_documents_catalog(CASE_ID)
+        catalog = service._load_documents_catalog(CASE_ID)
         assert len(catalog) >= 2
         for entry in catalog:
             assert entry.get("sha256"), f"Empty sha256: {entry}"
