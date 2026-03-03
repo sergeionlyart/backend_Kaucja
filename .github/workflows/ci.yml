@@ -4,10 +4,9 @@ on:
   pull_request:
     paths:
       - '2026-03-01__legaldocs_ingest__foundation/**'
+      - '.github/workflows/**'
   push:
     branches: [exp/iter1-lex-saos-fixes]
-    paths:
-      - '2026-03-01__legaldocs_ingest__foundation/**'
   workflow_dispatch:
 
 defaults:
