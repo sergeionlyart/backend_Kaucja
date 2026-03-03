@@ -13,18 +13,13 @@ from legal_ingest.store.models import (
     ContentStats,
 )
 
-_SKIP_IN_CI = bool(os.environ.get("CI")) and not os.environ.get("MONGO_URI")
-
 
 @pytest.fixture
 def mongo_cfg():
-    return MongoConfig(uri="mongodb://localhost:27017", db="test_legal_rag_idempotency")
+    uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+    return MongoConfig(uri=uri, db="test_legal_rag_idempotency")
 
 
-@pytest.mark.skipif(
-    _SKIP_IN_CI,
-    reason="MongoDB not available in CI (set MONGO_URI to enable)",
-)
 def test_idempotent_upsert(mongo_cfg):
     client = pymongo.MongoClient(mongo_cfg.uri)
     db = client[mongo_cfg.db]
