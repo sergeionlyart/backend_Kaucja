@@ -1,10 +1,14 @@
 name: Legal Ingest CI
+
 on:
   pull_request:
     paths:
       - '2026-03-01__legaldocs_ingest__foundation/**'
   push:
     branches: [exp/iter1-lex-saos-fixes]
+    paths:
+      - '2026-03-01__legaldocs_ingest__foundation/**'
+  workflow_dispatch:
 
 defaults:
   run:
@@ -35,6 +39,7 @@ jobs:
   smoke-mode-a:
     runs-on: ubuntu-latest
     needs: lint-test
+    if: ${{ secrets.MONGO_URI != '' }}
     env:
       MONGO_URI: ${{ secrets.MONGO_URI }}
       MONGO_DB: ${{ secrets.MONGO_DB }}
@@ -57,7 +62,7 @@ jobs:
       - name: Doctor preflight
         run: python -m legal_ingest.cli doctor --config configs/config.caslaw_v22.full.yml
 
-      - name: Smoke ingest (Mode A, limit 5)
+      - name: Smoke ingest (Mode A)
         run: |
           python -m legal_ingest.cli ingest \
             --config configs/config.caslaw_v22.full.yml \
@@ -81,6 +86,7 @@ jobs:
   smoke-mode-b:
     runs-on: ubuntu-latest
     needs: lint-test
+    if: ${{ secrets.MONGO_URI != '' }}
     env:
       MONGO_URI: ${{ secrets.MONGO_URI }}
       MONGO_DB: ${{ secrets.MONGO_DB }}
