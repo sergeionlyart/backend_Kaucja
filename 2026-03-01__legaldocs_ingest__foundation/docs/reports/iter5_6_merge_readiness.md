@@ -2,6 +2,7 @@
 
 **Branch**: `exp/iter1-lex-saos-fixes`
 **PR**: [#6](https://github.com/sergeionlyart/backend_Kaucja/pull/6)
+**Base**: `labs` (per branch policy: `exp/*` → `labs`)
 **Date**: 2026-03-03
 
 ## Summary
@@ -58,24 +59,24 @@ Legal document ingestion pipeline — production-ready with 38/38 primary source
 | Court server outages | Retry + browser fallback; transient errors don't block pipeline |
 | DB schema changes | None — pipeline uses upsert only |
 
-**Rollback**: Revert merge commit. No DB schema changes, no external state mutations.
+**Rollback**: Revert merge commit on `labs`. No DB schema changes, no external state mutations.
 
 ## Merge Command Sequence
 
 ```bash
-# 1. Verify release gate
+# 1. Verify release gate (strict base policy)
 cd 2026-03-01__legaldocs_ingest__foundation
-python scripts/verify_release_gate.py
+python scripts/verify_release_gate.py --pr 6
 
-# 2. Merge (squash recommended for clean history)
+# 2. Merge into labs (squash for clean history)
 gh pr merge 6 --squash --subject "feat: Legal docs ingest pipeline — 38/38 production-ready"
 
-# 3. Tag release
-git fetch origin main
-git checkout main
-git pull
-git tag -a v0.5.0 -m "Legal ingest pipeline: 38/38 sources, browser fallback, CI"
-git push origin v0.5.0
+# 3. Tag release on labs
+git fetch origin labs
+git checkout labs
+git pull origin labs
+git tag -a labs-legaldocs-ingest-iter5.7 -m "Legal ingest pipeline: 38/38 sources, browser fallback, CI, telemetry"
+git push origin labs-legaldocs-ingest-iter5.7
 
 # 4. Post-merge verification
 ruff check .
