@@ -21,6 +21,8 @@ SAOS_MAINTENANCE_SIGNATURES = [
     b"maintenance",
 ]
 
+EURLEX_DOMAINS = ("eur-lex.europa.eu",)
+
 
 class SaosMaintenanceError(Exception):
     """Raised when SAOS returns a maintenance/technical-break page."""
@@ -33,11 +35,36 @@ class SaosMaintenanceError(Exception):
         )
 
 
+class EurlexWafChallengeError(Exception):
+    """Raised when EUR-Lex returns an AWS WAF challenge (0 bytes, HTTP 200)."""
+    def __init__(self, url: str, status_code: int, content_len: int):
+        self.url = url
+        self.status_code = status_code
+        self.content_len = content_len
+        super().__init__(
+            f"EURLEX_WAF_CHALLENGE: EUR-Lex returned HTTP {status_code} with "
+            f"{content_len} bytes (AWS WAF challenge page). URL: {url}"
+        )
+
+
 def is_saos_maintenance(content: bytes) -> bool:
     """Check if content is a SAOS maintenance/technical-break page."""
     if len(content) > 5000:
-        return False  # real judgments are much larger than the 1230-byte stub
+        return False
     return any(sig in content for sig in SAOS_MAINTENANCE_SIGNATURES)
+
+
+def is_eurlex_waf_challenge(url: str, status_code: int, content: bytes) -> bool:
+    """Detect EUR-Lex AWS WAF challenge: HTTP 200/202/403 with 0 bytes."""
+    if not any(d in url for d in EURLEX_DOMAINS):
+        return False
+    if len(content) == 0 and status_code in (200, 202, 403):
+        return True
+    # Also detect very small WAF challenge HTML pages
+    if len(content) < 500 and status_code in (200, 202, 403):
+        if b"awswaf" in content.lower() or b"captcha" in content.lower():
+            return True
+    return False
 
 
 class FetchResult(BaseModel):
@@ -113,13 +140,21 @@ def transform_lex_url(url: str) -> str:
 def fetch_direct(client: httpx.Client, url: str) -> FetchResult:
     is_lex = "sip.lex.pl" in url
     fetch_url = transform_lex_url(url) if is_lex else url
-    
+
     resp = client.get(fetch_url)
     resp.raise_for_status()
-    
+
     raw_bytes = resp.content
     final_url = str(resp.url)
-    
+
+    # EUR-Lex WAF challenge detection
+    if is_eurlex_waf_challenge(final_url, resp.status_code, raw_bytes):
+        raise EurlexWafChallengeError(
+            url=final_url,
+            status_code=resp.status_code,
+            content_len=len(raw_bytes),
+        )
+
     if is_lex and resp.headers.get("content-type", "").startswith("application/json"):
         try:
             data = resp.json()
@@ -136,8 +171,8 @@ def fetch_direct(client: httpx.Client, url: str) -> FetchResult:
                     final_url=final_url,
                 )
         except Exception:
-            pass # fallback to original bytes if parsing fails
-            
+            pass  # fallback to original bytes if parsing fails
+
     return FetchResult(
         raw_bytes=raw_bytes,
         status_code=resp.status_code,

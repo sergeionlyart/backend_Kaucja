@@ -15,8 +15,8 @@ import sys
 import yaml
 
 FDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RUN_ID = sys.argv[1] if len(sys.argv) > 1 else "iter4_3_caslaw_v22_full"
-REPORT_PREFIX = sys.argv[2] if len(sys.argv) > 2 else "iter4_3"
+RUN_ID = sys.argv[1] if len(sys.argv) > 1 else "iter4_4_caslaw_v22_full"
+REPORT_PREFIX = sys.argv[2] if len(sys.argv) > 2 else "iter4_4"
 LOGS_PATH = os.path.join(FDIR, f"artifacts_iter4/runs/{RUN_ID}/logs.jsonl")
 RUN_REPORT_PATH = os.path.join(FDIR, f"artifacts_iter4/runs/{RUN_ID}/run_report.json")
 CONFIG_PATH = os.path.join(FDIR, "configs/config.caslaw_v22.full.yml")
@@ -60,7 +60,9 @@ def parse_logs(logs_path, run_id):
                 statuses[sid]["_restricted_reason"] = "low char count"
             if "SAOS maintenance page detected" in msg:
                 statuses[sid]["_was_restricted"] = True
-                statuses[sid]["_restricted_reason"] = "SAOS maintenance (Przerwa techniczna)"
+                statuses[sid]["_restricted_reason"] = "SAOS_MAINTENANCE"
+            if "EURLEX_WAF_CHALLENGE" in msg:
+                statuses[sid]["_restricted_reason"] = "EURLEX_WAF_CHALLENGE"
 
             # Terminal events — last one wins, but restricted flag is sticky
             if stage == "save" and "Document saved successfully" in msg:
@@ -73,7 +75,18 @@ def parse_logs(logs_path, run_id):
                     statuses[sid]["reason"] = "Saved"
             elif "Error processing source" in msg:
                 statuses[sid]["status"] = "ERROR"
-                statuses[sid]["reason"] = msg.split("\n")[0].strip()[:300]
+                err_msg = msg.split("\n")[0].strip()[:300]
+                # Classify error reason
+                if "EURLEX_WAF_CHALLENGE" in err_msg:
+                    statuses[sid]["reason"] = "EURLEX_WAF_CHALLENGE: " + err_msg
+                elif "illegal header" in err_msg.lower() or "malformed" in err_msg.lower():
+                    statuses[sid]["reason"] = "EXTERNAL_MALFORMED_HEADERS: " + err_msg
+                elif "timed out" in err_msg.lower() or "timeout" in err_msg.lower():
+                    statuses[sid]["reason"] = "EXTERNAL_TIMEOUT: " + err_msg
+                elif "disconnected" in err_msg.lower():
+                    statuses[sid]["reason"] = "EXTERNAL_DISCONNECT: " + err_msg
+                else:
+                    statuses[sid]["reason"] = err_msg
 
             if stage == "fetch" and "Fetched source" in msg:
                 statuses[sid]["http_status"] = 200

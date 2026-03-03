@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Targeted recovery for problematic sources (s12-s21, s24, s35).
+"""Targeted recovery probe for problematic sources.
 
 Runs 3 rounds with exponential backoff. For each source:
-- SAOS judgments (#12-21): tries API→HTML fallback with maintenance detection.
-- Orzeczenia (#24): direct fetch with extended timeout.
+- SAOS judgments (#12-21): tries API→HTML with maintenance detection.
+- EUR-Lex (#25-34): direct fetch with WAF challenge detection.
+- Katowice (#24): direct fetch with extended timeout.
 - UOKiK (#35): direct fetch with extended timeout.
 
-Writes per-source results to docs/reports/iter4_3_recovery_probes.json.
+Writes per-source results to docs/reports/iter4_4_recovery_probes.json.
 
 Usage:
     cd 2026-03-01__legaldocs_ingest__foundation
@@ -24,6 +25,7 @@ sys.path.insert(0, FDIR)
 
 from legal_ingest.fetch import (  # noqa: E402
     is_saos_maintenance,
+    is_eurlex_waf_challenge,
 )
 
 RECOVERY_TARGETS = [
@@ -43,6 +45,16 @@ RECOVERY_TARGETS = [
         "type": "direct",
     },
     {
+        "source_id": "s25_eurlex_dir13",
+        "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32011L0083",
+        "type": "eurlex",
+    },
+    {
+        "source_id": "s31_curia_137830",
+        "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62011CJ0415",
+        "type": "eurlex",
+    },
+    {
         "source_id": "s35_uokik_dec",
         "url": "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf",
         "type": "direct",
@@ -50,15 +62,14 @@ RECOVERY_TARGETS = [
 ]
 
 MAX_ROUNDS = 3
-BACKOFF_SECONDS = [10, 30, 60]  # between rounds
-TIMEOUT = 30  # per-request timeout
+BACKOFF_SECONDS = [10, 30, 60]
+TIMEOUT = 30
 
 
 def probe_saos(saos_id: str, timeout: int = TIMEOUT) -> dict:
-    """Probe SAOS API + HTML for a judgment. Returns probe result dict."""
+    """Probe SAOS API + HTML for a judgment."""
     result = {"api_status": None, "html_status": None, "maintenance": None, "bytes": None, "error": None}
     with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-        # Try API
         try:
             api_url = f"https://www.saos.org.pl/api/judgments/{saos_id}"
             resp = client.get(api_url)
@@ -67,21 +78,17 @@ def probe_saos(saos_id: str, timeout: int = TIMEOUT) -> dict:
             if "application/json" in ct and not is_saos_maintenance(resp.content):
                 result["maintenance"] = False
                 result["bytes"] = len(resp.content)
-                return result  # API returned real JSON
+                return result
             result["maintenance"] = is_saos_maintenance(resp.content)
         except Exception as e:
             result["api_status"] = f"ERR: {type(e).__name__}"
 
-        # Try HTML fallback
         try:
             html_url = f"https://www.saos.org.pl/judgments/{saos_id}"
             resp_html = client.get(html_url)
             result["html_status"] = resp_html.status_code
             result["bytes"] = len(resp_html.content)
-            if is_saos_maintenance(resp_html.content):
-                result["maintenance"] = True
-            else:
-                result["maintenance"] = False
+            result["maintenance"] = is_saos_maintenance(resp_html.content)
         except Exception as e:
             result["html_status"] = f"ERR: {type(e).__name__}"
             result["error"] = str(e)[:200]
@@ -89,8 +96,25 @@ def probe_saos(saos_id: str, timeout: int = TIMEOUT) -> dict:
     return result
 
 
+def probe_eurlex(url: str, timeout: int = TIMEOUT) -> dict:
+    """Probe EUR-Lex with WAF challenge detection."""
+    result = {"http_status": None, "bytes": None, "waf_challenge": None, "error": None}
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            resp = client.get(url)
+            result["http_status"] = resp.status_code
+            result["bytes"] = len(resp.content)
+            result["waf_challenge"] = is_eurlex_waf_challenge(
+                str(resp.url), resp.status_code, resp.content
+            )
+    except Exception as e:
+        result["http_status"] = f"ERR: {type(e).__name__}"
+        result["error"] = str(e)[:200]
+    return result
+
+
 def probe_direct(url: str, timeout: int = TIMEOUT) -> dict:
-    """Probe a direct URL. Returns probe result dict."""
+    """Probe a direct URL."""
     result = {"http_status": None, "bytes": None, "error": None}
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
@@ -112,15 +136,33 @@ def main():
         for target in RECOVERY_TARGETS:
             sid = target["source_id"]
             if sid in all_results and all_results[sid].get("final_status") == "OK":
-                continue  # already recovered
+                continue
 
             if target["type"] == "saos":
                 probe = probe_saos(target["saos_id"])
                 status = "OK" if probe.get("maintenance") is False and probe.get("bytes", 0) > 1500 else "SAOS_MAINTENANCE"
                 probe["probe_type"] = "saos"
+            elif target["type"] == "eurlex":
+                probe = probe_eurlex(target["url"])
+                if probe.get("waf_challenge"):
+                    status = "EURLEX_WAF_CHALLENGE"
+                elif isinstance(probe.get("http_status"), int) and probe["http_status"] == 200 and probe.get("bytes", 0) > 500:
+                    status = "OK"
+                elif probe.get("error"):
+                    status = "ERROR"
+                else:
+                    status = "EURLEX_WAF_CHALLENGE"
+                probe["probe_type"] = "eurlex"
             else:
                 probe = probe_direct(target["url"])
-                status = "OK" if isinstance(probe.get("http_status"), int) and probe["http_status"] == 200 else "ERROR"
+                if isinstance(probe.get("http_status"), int) and probe["http_status"] == 200:
+                    status = "OK"
+                elif probe.get("error") and "timed out" in probe["error"].lower():
+                    status = "EXTERNAL_TIMEOUT"
+                elif probe.get("error") and "illegal header" in probe["error"].lower():
+                    status = "EXTERNAL_MALFORMED_HEADERS"
+                else:
+                    status = "ERROR"
                 probe["probe_type"] = "direct"
 
             probe["round"] = round_num
@@ -130,7 +172,7 @@ def main():
                 all_results[sid] = probe
 
             err_str = (probe.get("error") or "-")[:60]
-            print(f"  {sid}: {status} (bytes={probe.get('bytes')}, maint={probe.get('maintenance')}, err={err_str})")
+            print(f"  {sid}: {status} (bytes={probe.get('bytes')}, err={err_str})")
 
         if round_num < MAX_ROUNDS:
             wait = BACKOFF_SECONDS[round_num - 1]
@@ -141,8 +183,7 @@ def main():
             print(f"\nWaiting {wait}s before next round...")
             time.sleep(wait)
 
-    # Write results
-    out_path = os.path.join(FDIR, "docs/reports/iter4_3_recovery_probes.json")
+    out_path = os.path.join(FDIR, "docs/reports/iter4_4_recovery_probes.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(all_results, f, indent=2, ensure_ascii=False, default=str)
@@ -154,7 +195,7 @@ def main():
     print(f"Still failing: {not_ok}/{len(all_results)}")
     for sid, r in all_results.items():
         if r.get("final_status") != "OK":
-            print(f"  {sid}: {r.get('final_status')} — {r.get('error', 'maintenance' if r.get('maintenance') else 'unknown')[:80]}")
+            print(f"  {sid}: {r.get('final_status')} — {(r.get('error') or 'see details')[:80]}")
 
     print(f"\nResults written to: {out_path}")
 
