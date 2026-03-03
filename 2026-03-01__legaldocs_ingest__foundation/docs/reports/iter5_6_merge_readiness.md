@@ -28,6 +28,7 @@ Legal document ingestion pipeline — production-ready with 38/38 primary source
 
 | Commit | Push Run | PR Run | Timestamp |
 |--------|----------|--------|-----------|
+| `2af60e1` | [#22624985107](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22624985107) ✅ | [#22624986643](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22624986643) ✅ | 2026-03-03T13:32Z |
 | `ffddeca` | [#22624358324](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22624358324) ✅ | [#22624360206](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22624360206) ✅ | 2026-03-03T13:12Z |
 
 > [!NOTE]
