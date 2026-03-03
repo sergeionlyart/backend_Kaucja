@@ -270,13 +270,27 @@ except ImportError:
 
 
 def fetch_source(
-    http_cfg: HttpConfig, source: SourceConfig
+    http_cfg: HttpConfig,
+    source: SourceConfig,
+    browser_fallback_config=None,
+    browser_fallback_counter: list | None = None,
 ) -> tuple[FetchResult, list[dict]]:
     """Fetch a source using transport ladder: direct_httpx -> browser_playwright.
 
+    Browser fallback is policy-driven:
+    - Only triggers on BROWSER_FALLBACK_ERRORS
+    - Only for domains in browser_fallback_config.allowed_domains
+    - Respects circuit breaker (max_browser_fallbacks_per_run)
+    - Graceful BROWSER_RUNTIME_MISSING if Playwright not installed
+
+    Args:
+        http_cfg: HTTP configuration.
+        source: Source to fetch.
+        browser_fallback_config: Browser fallback policy configuration.
+        browser_fallback_counter: Mutable list used as counter [current_count].
+
     Returns:
-        Tuple of (FetchResult, attempt_log) where attempt_log is a list of
-        attempt dicts for fetch_attempts.jsonl.
+        Tuple of (FetchResult, attempt_log).
     """
     import time as _time
     from .reason_codes import ReasonCode
@@ -321,6 +335,33 @@ def fetch_source(
     except BROWSER_FALLBACK_ERRORS as e:
         dur = int((_time.time() - t0) * 1000)
         reason = ReasonCode.classify_error(str(e))
+        fallback_outcome = "FALLBACK_TO_BROWSER"
+
+        # --- Policy check: should we attempt browser fallback? ---
+        skip_browser = False
+        skip_reason = ""
+
+        if browser_fallback_config is None or not browser_fallback_config.enabled:
+            skip_browser = True
+            skip_reason = "browser_fallback disabled in config"
+            fallback_outcome = "ERROR"
+
+        if not skip_browser:
+            url_str = str(source.url)
+            domain_allowed = any(
+                d in url_str for d in browser_fallback_config.allowed_domains
+            )
+            if not domain_allowed:
+                skip_browser = True
+                skip_reason = f"domain not in allowed_domains: {browser_fallback_config.allowed_domains}"
+                fallback_outcome = "ERROR"
+
+        if not skip_browser and browser_fallback_counter is not None:
+            if browser_fallback_counter[0] >= browser_fallback_config.max_browser_fallbacks_per_run:
+                skip_browser = True
+                skip_reason = f"circuit breaker: max_browser_fallbacks ({browser_fallback_config.max_browser_fallbacks_per_run}) reached"
+                fallback_outcome = "ERROR"
+
         attempt_log.append(_make_attempt(
             source_id=source.source_id,
             attempt_no=1,
@@ -329,8 +370,16 @@ def fetch_source(
             nbytes=getattr(e, "content_len", 0),
             reason_code=reason,
             duration_ms=dur,
-            final_outcome="FALLBACK_TO_BROWSER",
+            final_outcome=fallback_outcome,
         ))
+
+        if skip_browser:
+            logger.warning(
+                "Direct fetch failed (%s), browser fallback skipped: %s for %s",
+                reason, skip_reason, source.source_id,
+            )
+            raise
+
         logger.warning(
             "Direct fetch failed (%s), falling back to browser for %s",
             reason, source.source_id,
@@ -348,14 +397,20 @@ def fetch_source(
             duration_ms=dur,
             final_outcome="ERROR",
         ))
-        # Non-fallback error — re-raise
         raise
 
     # --- Attempt 2: browser (Playwright) ---
+    if browser_fallback_counter is not None:
+        browser_fallback_counter[0] += 1
+
+    timeout_ms = 30_000
+    if browser_fallback_config:
+        timeout_ms = browser_fallback_config.browser_timeout_ms
+
     t1 = _time.time()
     try:
         from .fetch_browser import fetch_with_browser
-        result = fetch_with_browser(str(source.url), timeout_ms=30_000)
+        result = fetch_with_browser(str(source.url), timeout_ms=timeout_ms)
         dur2 = int((_time.time() - t1) * 1000)
         attempt_log.append(_make_attempt(
             source_id=source.source_id,
@@ -368,6 +423,25 @@ def fetch_source(
             final_outcome="OK",
         ))
         return result, attempt_log
+    except ImportError:
+        dur2 = int((_time.time() - t1) * 1000)
+        attempt_log.append(_make_attempt(
+            source_id=source.source_id,
+            attempt_no=2,
+            method="browser_playwright",
+            status_code=None,
+            nbytes=None,
+            reason_code="BROWSER_RUNTIME_MISSING",
+            duration_ms=dur2,
+            final_outcome="ERROR",
+        ))
+        logger.error(
+            "Browser runtime not available (playwright not installed) for %s",
+            source.source_id,
+        )
+        raise EurlexWafChallengeError(
+            url=str(source.url), status_code=0, content_len=0,
+        )
     except Exception as e2:
         dur2 = int((_time.time() - t1) * 1000)
         reason2 = ReasonCode.classify_error(str(e2))
@@ -381,11 +455,8 @@ def fetch_source(
             duration_ms=dur2,
             final_outcome="ERROR",
         ))
-        # Re-raise the original WAF error with enriched message
         raise EurlexWafChallengeError(
-            url=str(source.url),
-            status_code=0,
-            content_len=0,
+            url=str(source.url), status_code=0, content_len=0,
         ) from e2
 
 

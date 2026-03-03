@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
+# Canonical ingest run script.
+# Usage: bash scripts/run_ingest.sh [run_id] [artifact_dir] [config]
+#
+# Examples:
+#   bash scripts/run_ingest.sh                    # defaults
+#   bash scripts/run_ingest.sh my_run_001         # custom run_id
+#   bash scripts/run_ingest.sh my_run ./artifacts_custom configs/config.caslaw_v22.full.yml
+set -euo pipefail
 
-set -e
+RUN_ID="${1:-}"
+ARTIFACT_DIR="${2:-}"
+CONFIG="${3:-configs/config.caslaw_v22.full.yml}"
 
-CONFIG_TARGET=${1:-"configs/config.runtime.yml"}
-ENV_TARGET=${2:-".env"}
-
-echo "--- LegalDocs Ingest Pipeline ---"
-echo "Target Config: $CONFIG_TARGET"
-echo "Target ENV: $ENV_TARGET"
-
-# Step 1: Install runtime requirements locally if script runs 
-# Or verify environments
-if [ ! -f "$ENV_TARGET" ]; then
-    echo "ERROR: Environment file $ENV_TARGET missing. Aborting."
-    exit 1
+OVERRIDE_ARGS=""
+if [ -n "$RUN_ID" ]; then
+    OVERRIDE_ARGS="$OVERRIDE_ARGS --run-id $RUN_ID"
+fi
+if [ -n "$ARTIFACT_DIR" ]; then
+    OVERRIDE_ARGS="$OVERRIDE_ARGS --artifact-dir $ARTIFACT_DIR"
 fi
 
-echo "[1/4] Validating Configuration Map..."
-python -m legal_ingest.cli --env-file "$ENV_TARGET" validate-config --config "$CONFIG_TARGET"
+echo "=== Legal Ingest: Canonical Run ==="
+echo "Config: $CONFIG"
+echo "Run ID: ${RUN_ID:-<from config>}"
+echo "Artifact dir: ${ARTIFACT_DIR:-<from config>}"
+echo ""
 
-echo "[2/4] Ensuring MongoDB Target Indexes..."
-python -m legal_ingest.cli --env-file "$ENV_TARGET" ensure-indexes --config "$CONFIG_TARGET"
-
-echo "[3/4] Running Main Ingestion Sequence..."
-python -m legal_ingest.cli --env-file "$ENV_TARGET" ingest --config "$CONFIG_TARGET"
-
-echo "[4/4] Complete."
-echo "Execution artifacts and logs created locally referencing Config directives."
+python -m legal_ingest.cli --env-file .env validate-config --config "$CONFIG"
+python -m legal_ingest.cli --env-file .env ensure-indexes --config "$CONFIG"
+python -m legal_ingest.cli --env-file .env ingest --config "$CONFIG" $OVERRIDE_ARGS

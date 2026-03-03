@@ -117,6 +117,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
 
     stats = RunStats(sources_total=len(config.sources))
     all_fetch_attempts: list[dict] = []  # collect for fetch_attempts.jsonl
+    browser_fallback_counter = [0]  # mutable counter for circuit breaker
 
     if not config.run.dry_run:
         save_run(config.mongo, run_model)
@@ -163,7 +164,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             # 1. Fetch
             set_log_context(stage="fetch")
             t0 = time.time()
-            fetch_result, attempt_log = fetch_source(config.run.http, source)
+            fetch_result, attempt_log = fetch_source(
+                config.run.http, source,
+                browser_fallback_config=config.run.browser_fallback,
+                browser_fallback_counter=browser_fallback_counter,
+            )
             all_fetch_attempts.extend(attempt_log)
 
             source_hash = generate_source_hash(fetch_result.raw_bytes)
@@ -486,6 +491,23 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                     )
 
     # Finalize
+    # Compute transport_metrics from fetch attempts
+    from .store.models import TransportMetrics
+    tm = TransportMetrics()
+    for a in all_fetch_attempts:
+        if a.get("method") == "direct_httpx":
+            tm.direct_attempts += 1
+        elif a.get("method") == "browser_playwright":
+            tm.browser_attempts += 1
+            if a.get("final_outcome") == "OK":
+                tm.browser_success += 1
+            else:
+                tm.browser_fail += 1
+        if a.get("final_outcome") == "FALLBACK_TO_BROWSER":
+            rc = a.get("reason_code", "UNKNOWN")
+            tm.fallback_trigger_counts[rc] = tm.fallback_trigger_counts.get(rc, 0) + 1
+    stats.transport_metrics = tm
+
     run_model.stats = stats
     run_model.finished_at = datetime.utcnow()
 

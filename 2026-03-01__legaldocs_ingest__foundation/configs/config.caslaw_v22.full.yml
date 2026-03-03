@@ -1,13 +1,20 @@
 run:
-  run_id: "iter5_caslaw_v22_full_browser"
+  run_id: "auto"
   dry_run: false
-  artifact_dir: "./artifacts_iter5"
+  artifact_dir: "./artifacts"
   concurrency: 4
   http:
     user_agent: "LegalRAG-Ingest/0.1"
     timeout_seconds: 120
     max_retries: 6
     retry_backoff_seconds: 2.0
+  browser_fallback:
+    enabled: true
+    allowed_domains:
+      - "eur-lex.europa.eu"
+    browser_timeout_ms: 30000
+    browser_retries: 1
+    max_browser_fallbacks_per_run: 20
 
 mongo:
   uri: "${MONGO_URI}"

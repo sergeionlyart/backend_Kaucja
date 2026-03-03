@@ -14,12 +14,27 @@ class HttpConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class BrowserFallbackConfig(BaseModel):
+    """Policy-driven browser fallback configuration."""
+    enabled: bool = True
+    allowed_domains: List[str] = Field(
+        default_factory=lambda: ["eur-lex.europa.eu"]
+    )
+    browser_timeout_ms: int = 30000
+    browser_retries: int = 1
+    max_browser_fallbacks_per_run: int = 20
+    model_config = ConfigDict(extra="forbid")
+
+
 class RunConfig(BaseModel):
     run_id: str = "auto"
     dry_run: bool = False
     artifact_dir: str = "./artifacts"
     concurrency: int = 4
     http: HttpConfig = Field(default_factory=HttpConfig)
+    browser_fallback: BrowserFallbackConfig = Field(
+        default_factory=BrowserFallbackConfig
+    )
     model_config = ConfigDict(extra="forbid")
 
 

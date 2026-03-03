@@ -1,0 +1,16 @@
+[
+  {
+    "index": 23,
+    "source_id": "s23_orzeczenia_ms",
+    "status": "ERROR",
+    "reason_code": "EXTERNAL_DISCONNECT",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 24,
+    "source_id": "s24_orzeczenia_katowice",
+    "status": "ERROR",
+    "reason_code": "EXTERNAL_DISCONNECT",
+    "transport_method": "direct_httpx"
+  }
+]
