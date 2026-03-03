@@ -1,7 +1,7 @@
 run:
-  run_id: "iter4_4_caslaw_v22_full"
+  run_id: "iter5_caslaw_v22_full_browser"
   dry_run: false
-  artifact_dir: "./artifacts_iter4"
+  artifact_dir: "./artifacts_iter5"
   concurrency: 4
   http:
     user_agent: "LegalRAG-Ingest/0.1"

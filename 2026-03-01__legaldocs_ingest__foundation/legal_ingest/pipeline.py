@@ -116,6 +116,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
     )
 
     stats = RunStats(sources_total=len(config.sources))
+    all_fetch_attempts: list[dict] = []  # collect for fetch_attempts.jsonl
 
     if not config.run.dry_run:
         save_run(config.mongo, run_model)
@@ -162,7 +163,8 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             # 1. Fetch
             set_log_context(stage="fetch")
             t0 = time.time()
-            fetch_result = fetch_source(config.run.http, source)
+            fetch_result, attempt_log = fetch_source(config.run.http, source)
+            all_fetch_attempts.extend(attempt_log)
 
             source_hash = generate_source_hash(fetch_result.raw_bytes)
             mime = detect_mime(fetch_result, str(source.url))
@@ -493,6 +495,19 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
     report_path = os.path.join(artifact_dir, "run_report.json")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(run_model.model_dump_json(by_alias=True, indent=2))
+
+    # Write fetch_attempts.jsonl
+    attempts_path = os.path.join(artifact_dir, "fetch_attempts.jsonl")
+    with open(attempts_path, "w", encoding="utf-8") as f:
+        for attempt in all_fetch_attempts:
+            f.write(json.dumps(attempt, ensure_ascii=False) + "\n")
+
+    # Cleanup browser if it was used
+    try:
+        from .fetch_browser import close_browser
+        close_browser()
+    except Exception:
+        pass
 
     logger.info(
         "Pipeline run finished",

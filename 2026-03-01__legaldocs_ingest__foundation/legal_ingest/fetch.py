@@ -233,8 +233,57 @@ def fetch_saos_judgment(client: httpx.Client, source: SourceConfig) -> FetchResu
         )
 
 
-def fetch_source(http_cfg: HttpConfig, source: SourceConfig) -> FetchResult:
-    # Wrap in tenacity programmatically so we can use config-based retries
+# --- Transport ladder types ---
+
+def _make_attempt(
+    source_id: str,
+    attempt_no: int,
+    method: str,
+    status_code: int | None,
+    nbytes: int | None,
+    reason_code: str,
+    duration_ms: int,
+    final_outcome: str,
+) -> dict:
+    """Build a fetch attempt record for fetch_attempts.jsonl."""
+    return {
+        "source_id": source_id,
+        "attempt_no": attempt_no,
+        "method": method,
+        "status_code": status_code,
+        "bytes": nbytes,
+        "reason_code": reason_code,
+        "duration_ms": duration_ms,
+        "final_outcome": final_outcome,
+    }
+
+
+# Errors that trigger browser fallback
+BROWSER_FALLBACK_ERRORS = (EurlexWafChallengeError,)
+
+# Check at runtime if httpcore is available for RemoteProtocolError
+try:
+    import httpcore
+    BROWSER_FALLBACK_ERRORS = (EurlexWafChallengeError, httpcore.RemoteProtocolError)
+except ImportError:
+    pass
+
+
+def fetch_source(
+    http_cfg: HttpConfig, source: SourceConfig
+) -> tuple[FetchResult, list[dict]]:
+    """Fetch a source using transport ladder: direct_httpx -> browser_playwright.
+
+    Returns:
+        Tuple of (FetchResult, attempt_log) where attempt_log is a list of
+        attempt dicts for fetch_attempts.jsonl.
+    """
+    import time as _time
+    from .reason_codes import ReasonCode
+
+    attempt_log: list[dict] = []
+
+    # --- Attempt 1: direct httpx with tenacity retries ---
     @retry(
         wait=wait_exponential(multiplier=http_cfg.retry_backoff_seconds),
         stop=stop_after_attempt(http_cfg.max_retries),
@@ -254,7 +303,90 @@ def fetch_source(http_cfg: HttpConfig, source: SourceConfig) -> FetchResult:
             else:
                 raise ValueError(f"Unknown fetch strategy: {source.fetch_strategy}")
 
-    return _do_fetch()
+    t0 = _time.time()
+    try:
+        result = _do_fetch()
+        dur = int((_time.time() - t0) * 1000)
+        attempt_log.append(_make_attempt(
+            source_id=source.source_id,
+            attempt_no=1,
+            method="direct_httpx",
+            status_code=result.status_code,
+            nbytes=len(result.raw_bytes),
+            reason_code=ReasonCode.OK,
+            duration_ms=dur,
+            final_outcome="OK",
+        ))
+        return result, attempt_log
+    except BROWSER_FALLBACK_ERRORS as e:
+        dur = int((_time.time() - t0) * 1000)
+        reason = ReasonCode.classify_error(str(e))
+        attempt_log.append(_make_attempt(
+            source_id=source.source_id,
+            attempt_no=1,
+            method="direct_httpx",
+            status_code=getattr(e, "status_code", None),
+            nbytes=getattr(e, "content_len", 0),
+            reason_code=reason,
+            duration_ms=dur,
+            final_outcome="FALLBACK_TO_BROWSER",
+        ))
+        logger.warning(
+            "Direct fetch failed (%s), falling back to browser for %s",
+            reason, source.source_id,
+        )
+    except Exception as e:
+        dur = int((_time.time() - t0) * 1000)
+        reason = ReasonCode.classify_error(str(e))
+        attempt_log.append(_make_attempt(
+            source_id=source.source_id,
+            attempt_no=1,
+            method="direct_httpx",
+            status_code=None,
+            nbytes=None,
+            reason_code=reason,
+            duration_ms=dur,
+            final_outcome="ERROR",
+        ))
+        # Non-fallback error — re-raise
+        raise
+
+    # --- Attempt 2: browser (Playwright) ---
+    t1 = _time.time()
+    try:
+        from .fetch_browser import fetch_with_browser
+        result = fetch_with_browser(str(source.url), timeout_ms=30_000)
+        dur2 = int((_time.time() - t1) * 1000)
+        attempt_log.append(_make_attempt(
+            source_id=source.source_id,
+            attempt_no=2,
+            method="browser_playwright",
+            status_code=result.status_code,
+            nbytes=len(result.raw_bytes),
+            reason_code=ReasonCode.OK,
+            duration_ms=dur2,
+            final_outcome="OK",
+        ))
+        return result, attempt_log
+    except Exception as e2:
+        dur2 = int((_time.time() - t1) * 1000)
+        reason2 = ReasonCode.classify_error(str(e2))
+        attempt_log.append(_make_attempt(
+            source_id=source.source_id,
+            attempt_no=2,
+            method="browser_playwright",
+            status_code=None,
+            nbytes=None,
+            reason_code=reason2,
+            duration_ms=dur2,
+            final_outcome="ERROR",
+        ))
+        # Re-raise the original WAF error with enriched message
+        raise EurlexWafChallengeError(
+            url=str(source.url),
+            status_code=0,
+            content_len=0,
+        ) from e2
 
 
 def expand_saos_search(
