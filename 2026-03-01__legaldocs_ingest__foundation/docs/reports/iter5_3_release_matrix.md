@@ -80,3 +80,16 @@ Workflow: `.github/workflows/ci.yml`
 2. **Playwright CI**: Requires `python -m playwright install chromium` in CI setup step. ~150MB download.
 3. **SAOS expansion**: `s11_saos_search` expands to ~883 sub-judgments. Synthetic telemetry record covers the meta-source.
 4. **Court disconnects**: `orzeczenia.ms.gov.pl` / `orzeczenia.katowice.sa.gov.pl` now in `allowed_domains` with `RemoteProtocolError` browser fallback. Stable across 3+ consecutive runs.
+
+## CI Evidence
+
+**Workflow run (PR-triggered):** [#22623787520](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22623787520)
+
+| Job | Status | Duration | Details |
+|-----|--------|----------|---------|
+| `lint-test` | ✅ SUCCESS | 55s | ruff clean, pytest 67 passed / 1 skipped (MongoDB test) |
+| `smoke-mode-a` | ✅ SUCCESS | 5s | Correctly skipped (MONGO_URI secret absent) |
+| `smoke-mode-b` | ✅ SUCCESS | 5s | Correctly skipped (MONGO_URI secret absent) |
+
+**PR statusCheckRollup**: 6 check runs, all `conclusion: SUCCESS`.
+**Push run:** [#22623785961](https://github.com/sergeionlyart/backend_Kaucja/actions/runs/22623785961) — same results.
