@@ -19,7 +19,7 @@ from .store.models import (
     HttpMeta,
 )
 from .ids import generate_doc_uid, generate_source_hash, generate_source_id
-from .fetch import fetch_source
+from .fetch import fetch_source, is_saos_maintenance
 from .store.mongo import save_run, save_document_pipeline_results
 
 from .parsers.pdf import parse_pdf
@@ -260,13 +260,21 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                 )
                 parse_method = "HTML"
                 total_chars = sum(len(p.text) for p in pages)
-                min_chars = source.min_chars_override if source.min_chars_override is not None else 500
-                if total_chars < min_chars and access_status != "RESTRICTED":
+                # Explicit SAOS maintenance check (before generic threshold)
+                if is_saos_maintenance(fetch_result.raw_bytes):
                     access_status = "RESTRICTED"
                     logger.warning(
-                        "Restricted content detected via low char count",
+                        "SAOS maintenance page detected (Przerwa techniczna)",
                         extra={"stage": "parse"},
                     )
+                else:
+                    min_chars = source.min_chars_override if source.min_chars_override is not None else 500
+                    if total_chars < min_chars and access_status != "RESTRICTED":
+                        access_status = "RESTRICTED"
+                        logger.warning(
+                            "Restricted content detected via low char count",
+                            extra={"stage": "parse"},
+                        )
             elif mime == "application/json" and source.fetch_strategy == "saos_judgment":
                 pages = parse_saos(fetch_result.raw_bytes, doc_uid, source_hash)
                 parse_method = "SAOS_JSON"

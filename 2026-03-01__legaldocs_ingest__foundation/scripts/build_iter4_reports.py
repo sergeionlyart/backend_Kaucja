@@ -15,7 +15,8 @@ import sys
 import yaml
 
 FDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RUN_ID = sys.argv[1] if len(sys.argv) > 1 else "iter4_caslaw_v22_full_final"
+RUN_ID = sys.argv[1] if len(sys.argv) > 1 else "iter4_3_caslaw_v22_full"
+REPORT_PREFIX = sys.argv[2] if len(sys.argv) > 2 else "iter4_3"
 LOGS_PATH = os.path.join(FDIR, f"artifacts_iter4/runs/{RUN_ID}/logs.jsonl")
 RUN_REPORT_PATH = os.path.join(FDIR, f"artifacts_iter4/runs/{RUN_ID}/run_report.json")
 CONFIG_PATH = os.path.join(FDIR, "configs/config.caslaw_v22.full.yml")
@@ -56,12 +57,17 @@ def parse_logs(logs_path, run_id):
             # Track restricted flag (set once, never cleared by save)
             if "Restricted content detected" in msg:
                 statuses[sid]["_was_restricted"] = True
+                statuses[sid]["_restricted_reason"] = "low char count"
+            if "SAOS maintenance page detected" in msg:
+                statuses[sid]["_was_restricted"] = True
+                statuses[sid]["_restricted_reason"] = "SAOS maintenance (Przerwa techniczna)"
 
             # Terminal events — last one wins, but restricted flag is sticky
             if stage == "save" and "Document saved successfully" in msg:
                 if statuses[sid]["_was_restricted"]:
                     statuses[sid]["status"] = "RESTRICTED"
-                    statuses[sid]["reason"] = "Saved with restricted content (low char count)"
+                    reason = statuses[sid].get("_restricted_reason", "low char count")
+                    statuses[sid]["reason"] = f"Saved with restricted content ({reason})"
                 else:
                     statuses[sid]["status"] = "OK"
                     statuses[sid]["reason"] = "Saved"
@@ -118,9 +124,9 @@ def main():
 
     # Write JSON reports
     os.makedirs(os.path.join(FDIR, "docs/reports"), exist_ok=True)
-    with open(os.path.join(FDIR, "docs/reports/iter4_source_status.json"), "w") as f:
+    with open(os.path.join(FDIR, f"docs/reports/{REPORT_PREFIX}_source_status.json"), "w") as f:
         json.dump(entries, f, indent=2, ensure_ascii=False)
-    with open(os.path.join(FDIR, "docs/reports/iter4_not_loaded.json"), "w") as f:
+    with open(os.path.join(FDIR, f"docs/reports/{REPORT_PREFIX}_not_loaded.json"), "w") as f:
         json.dump(not_loaded, f, indent=2, ensure_ascii=False)
 
     # Load run_report for cross-check

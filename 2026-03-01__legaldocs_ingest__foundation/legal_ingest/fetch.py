@@ -9,7 +9,35 @@ from .config import SourceConfig, HttpConfig
 from pydantic import BaseModel
 from typing import Dict
 import re
+import logging
 from urllib.parse import urlparse, quote
+
+logger = logging.getLogger(__name__)
+
+
+SAOS_MAINTENANCE_SIGNATURES = [
+    b"Przerwa techniczna",
+    b"przerwa techniczna",
+    b"maintenance",
+]
+
+
+class SaosMaintenanceError(Exception):
+    """Raised when SAOS returns a maintenance/technical-break page."""
+    def __init__(self, source_id: str, bytes_len: int):
+        self.source_id = source_id
+        self.bytes_len = bytes_len
+        super().__init__(
+            f"SAOS maintenance page detected for {source_id} ({bytes_len} bytes). "
+            "Both API and HTML endpoints return 'Przerwa techniczna' page."
+        )
+
+
+def is_saos_maintenance(content: bytes) -> bool:
+    """Check if content is a SAOS maintenance/technical-break page."""
+    if len(content) > 5000:
+        return False  # real judgments are much larger than the 1230-byte stub
+    return any(sig in content for sig in SAOS_MAINTENANCE_SIGNATURES)
 
 
 class FetchResult(BaseModel):
@@ -130,22 +158,38 @@ def fetch_saos_judgment(client: httpx.Client, source: SourceConfig) -> FetchResu
     try:
         resp = client.get(api_url)
         resp.raise_for_status()
-        
+
         # Verify it's actually JSON and not a maintenance HTML page
         if "application/json" not in resp.headers.get("content-type", "").lower():
             raise ValueError("SAOS API returned non-JSON response")
-            
+
+        # Check JSON response isn't empty/maintenance
+        if is_saos_maintenance(resp.content):
+            raise ValueError("SAOS API returned maintenance page in JSON wrapper")
+
         return FetchResult(
             raw_bytes=resp.content,
             status_code=resp.status_code,
             headers=dict(resp.headers),
             final_url=str(resp.url),
         )
-    except ValueError:
+    except (ValueError, httpx.HTTPStatusError):
         # Fallback to HTML
         html_url = f"https://www.saos.org.pl/judgments/{saos_id}"
         resp_html = client.get(html_url)
         resp_html.raise_for_status()
+
+        # Check if HTML fallback is also a maintenance page
+        if is_saos_maintenance(resp_html.content):
+            logger.warning(
+                "SAOS maintenance detected on both API and HTML for %s",
+                source.source_id,
+            )
+            raise SaosMaintenanceError(
+                source_id=source.source_id,
+                bytes_len=len(resp_html.content),
+            )
+
         return FetchResult(
             raw_bytes=resp_html.content,
             status_code=resp_html.status_code,

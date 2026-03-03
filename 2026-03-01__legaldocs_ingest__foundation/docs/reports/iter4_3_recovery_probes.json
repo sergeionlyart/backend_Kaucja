@@ -1,0 +1,118 @@
+{
+  "s12_saos_171957": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 33776,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s13_saos_205996": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 46355,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s14_saos_279345": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 53580,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s15_saos_330695": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 25879,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s16_saos_346698": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 40914,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s17_saos_472812": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 79943,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s18_saos_486542": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 95334,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s19_saos_487012": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 18423,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s20_saos_505310": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 43885,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s21_saos_521555": {
+    "api_status": 200,
+    "html_status": null,
+    "maintenance": false,
+    "bytes": 54867,
+    "error": null,
+    "probe_type": "saos",
+    "round": 1,
+    "final_status": "OK"
+  },
+  "s24_orzeczenia_katowice": {
+    "http_status": "ERR: RemoteProtocolError",
+    "bytes": null,
+    "error": "illegal header line: bytearray(b'Connection: close\\x00')",
+    "probe_type": "direct",
+    "round": 1,
+    "final_status": "ERROR"
+  },
+  "s35_uokik_dec": {
+    "http_status": "ERR: ConnectTimeout",
+    "bytes": null,
+    "error": "timed out",
+    "probe_type": "direct",
+    "round": 1,
+    "final_status": "ERROR"
+  }
+}
