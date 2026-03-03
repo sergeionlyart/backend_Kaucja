@@ -1,5 +1,5 @@
 run:
-  run_id: "iter4_caslaw_v22_full_recovery"
+  run_id: "iter4_caslaw_v22_full_recovery_rerun"
   dry_run: false
   artifact_dir: "./artifacts_iter4"
   concurrency: 4
@@ -68,6 +68,7 @@ sources:
     doc_type_hint: "STATUTE_REF"
     jurisdiction: "PL"
     language: "pl"
+    min_chars_override: 200
 
   # --- 6. Польша — SN CZP 58 ---
   - source_id: "s06_sn_czp58"

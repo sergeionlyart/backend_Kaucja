@@ -260,7 +260,8 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                 )
                 parse_method = "HTML"
                 total_chars = sum(len(p.text) for p in pages)
-                if total_chars < 200 and access_status != "RESTRICTED":
+                min_chars = source.min_chars_override if source.min_chars_override is not None else 500
+                if total_chars < min_chars and access_status != "RESTRICTED":
                     access_status = "RESTRICTED"
                     logger.warning(
                         "Restricted content detected via low char count",
@@ -459,14 +460,20 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
 
             set_log_context(stage="save")
             if not config.run.dry_run:
-                save_document_pipeline_results(
-                    config.mongo,
-                    err_doc_source,
-                    pages=[],
-                    nodes=[],
-                    citations=[],
-                    document=err_doc_model,
-                )
+                try:
+                    save_document_pipeline_results(
+                        config.mongo,
+                        err_doc_source,
+                        pages=[],
+                        nodes=[],
+                        citations=[],
+                        document=err_doc_model,
+                    )
+                except Exception as save_err:
+                    logger.error(
+                        f"Failed to save ERROR document: {save_err}",
+                        extra={"stage": "save"},
+                    )
 
     # Finalize
     run_model.stats = stats

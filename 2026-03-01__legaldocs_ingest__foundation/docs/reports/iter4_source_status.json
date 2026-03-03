@@ -7,7 +7,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 2,
@@ -17,7 +17,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 3,
@@ -27,7 +27,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 4,
@@ -37,7 +37,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 5,
@@ -47,7 +47,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 6,
@@ -57,7 +57,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 7,
@@ -67,7 +67,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 8,
@@ -77,7 +77,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 9,
@@ -87,7 +87,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 10,
@@ -97,7 +97,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 11,
@@ -107,7 +107,7 @@
     "status": "OK",
     "reason": "SAOS search expanded into 883 judgments via API.",
     "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery",
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun",
     "expanded_count": 883
   },
   {
@@ -118,7 +118,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 13,
@@ -128,7 +128,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 14,
@@ -138,7 +138,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 15,
@@ -148,7 +148,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 16,
@@ -158,7 +158,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 17,
@@ -168,7 +168,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 18,
@@ -178,7 +178,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 19,
@@ -188,7 +188,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 20,
@@ -198,7 +198,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 21,
@@ -208,37 +208,37 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 22,
     "source_id": "s22_orzeczenia_wloclawek",
     "url": "https://orzeczenia.wloclawek.so.gov.pl/content/$N/151030000000503_I_Ca_000056_2018_Uz_2018-05-08_001",
     "fetch_strategy": "direct",
-    "status": "OK",
-    "reason": "Processed",
+    "status": "ERROR",
+    "reason": "Error processing source: Server disconnected without sending a response.\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transpor",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 23,
     "source_id": "s23_orzeczenia_ms",
     "url": "https://orzeczenia.ms.gov.pl/content/$N/152510000001503_III_Ca_001707_2018_Uz_2019-02-28_001",
     "fetch_strategy": "direct",
-    "status": "ERROR",
-    "reason": "Error processing source: Server disconnected without sending a response.\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transpor",
-    "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "status": "OK",
+    "reason": "Processed",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 24,
     "source_id": "s24_orzeczenia_katowice",
     "url": "https://orzeczenia.katowice.sa.gov.pl/content/$N/151500000002503_V_ACa_000599_2014_Uz_2015-02-18_001",
     "fetch_strategy": "direct",
-    "status": "ERROR",
-    "reason": "Error processing source: Server disconnected without sending a response.\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transpor",
-    "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "status": "OK",
+    "reason": "Processed",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 25,
@@ -248,7 +248,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 26,
@@ -258,7 +258,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 27,
@@ -268,7 +268,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 28,
@@ -278,7 +278,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 29,
@@ -288,7 +288,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 30,
@@ -298,7 +298,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 31,
@@ -308,7 +308,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 32,
@@ -318,7 +318,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 33,
@@ -328,17 +328,17 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 34,
     "source_id": "s34_curia_guide",
-    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32019H1128(01)",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ:C:2019:380:FULL",
     "fetch_strategy": "direct",
-    "status": "ERROR",
-    "reason": "Error processing source: Client error '404 Not Found' for url 'https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32019H1128(01)'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Libr",
-    "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "status": "OK",
+    "reason": "Processed",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 35,
@@ -348,7 +348,7 @@
     "status": "ERROR",
     "reason": "Error processing source: _ssl.c:989: The handshake operation timed out\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transports",
     "http_status": null,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 36,
@@ -358,7 +358,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 37,
@@ -368,7 +368,7 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   },
   {
     "index": 38,
@@ -378,6 +378,6 @@
     "status": "OK",
     "reason": "Processed",
     "http_status": 200,
-    "run_id": "iter4_caslaw_v22_full_recovery"
+    "run_id": "iter4_caslaw_v22_full_recovery_rerun"
   }
 ]

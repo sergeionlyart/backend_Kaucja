@@ -75,6 +75,7 @@ class SourceConfig(BaseModel):
     language: str
     external_ids: Optional[Dict[str, str]] = None
     license_tag: Literal["OFFICIAL", "COMMERCIAL", "UNKNOWN"] = "OFFICIAL"
+    min_chars_override: Optional[int] = None
     model_config = ConfigDict(extra="forbid")
 
 
