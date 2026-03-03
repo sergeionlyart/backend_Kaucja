@@ -408,6 +408,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             )
 
         except Exception as e:
+            # Recover attempt_log from exception (attached by fetch_source)
+            exc_attempts = getattr(e, "attempt_log", None)
+            if exc_attempts:
+                all_fetch_attempts.extend(exc_attempts)
+
             logger.error(
                 f"Error processing source: {e}\n{traceback.format_exc()}",
                 extra={"stage": "pipeline"},

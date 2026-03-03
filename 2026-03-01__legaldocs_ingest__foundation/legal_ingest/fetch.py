@@ -264,9 +264,17 @@ BROWSER_FALLBACK_ERRORS = (EurlexWafChallengeError,)
 # Check at runtime if httpcore is available for RemoteProtocolError
 try:
     import httpcore
-    BROWSER_FALLBACK_ERRORS = (EurlexWafChallengeError, httpcore.RemoteProtocolError)
+    BROWSER_FALLBACK_ERRORS = (
+        EurlexWafChallengeError,
+        httpcore.RemoteProtocolError,
+        httpx.RemoteProtocolError,
+    )
 except ImportError:
-    pass
+    # Fallback: at least include httpx-level errors
+    BROWSER_FALLBACK_ERRORS = (
+        EurlexWafChallengeError,
+        httpx.RemoteProtocolError,
+    )
 
 
 def fetch_source(
@@ -378,6 +386,7 @@ def fetch_source(
                 "Direct fetch failed (%s), browser fallback skipped: %s for %s",
                 reason, skip_reason, source.source_id,
             )
+            e.attempt_log = attempt_log  # type: ignore[attr-defined]
             raise
 
         logger.warning(
@@ -397,6 +406,8 @@ def fetch_source(
             duration_ms=dur,
             final_outcome="ERROR",
         ))
+        # Attach attempt_log to exception so pipeline can always capture telemetry
+        e.attempt_log = attempt_log  # type: ignore[attr-defined]
         raise
 
     # --- Attempt 2: browser (Playwright) ---
@@ -439,9 +450,11 @@ def fetch_source(
             "Browser runtime not available (playwright not installed) for %s",
             source.source_id,
         )
-        raise EurlexWafChallengeError(
+        err = EurlexWafChallengeError(
             url=str(source.url), status_code=0, content_len=0,
         )
+        err.attempt_log = attempt_log  # type: ignore[attr-defined]
+        raise err
     except Exception as e2:
         dur2 = int((_time.time() - t1) * 1000)
         reason2 = ReasonCode.classify_error(str(e2))
@@ -455,9 +468,11 @@ def fetch_source(
             duration_ms=dur2,
             final_outcome="ERROR",
         ))
-        raise EurlexWafChallengeError(
+        err2 = EurlexWafChallengeError(
             url=str(source.url), status_code=0, content_len=0,
-        ) from e2
+        )
+        err2.attempt_log = attempt_log  # type: ignore[attr-defined]
+        raise err2 from e2
 
 
 def expand_saos_search(

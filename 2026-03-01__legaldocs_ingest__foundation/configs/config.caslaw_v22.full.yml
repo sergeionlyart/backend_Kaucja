@@ -12,9 +12,11 @@ run:
     enabled: true
     allowed_domains:
       - "eur-lex.europa.eu"
+      - "orzeczenia.ms.gov.pl"
+      - "orzeczenia.katowice.sa.gov.pl"
     browser_timeout_ms: 30000
     browser_retries: 1
-    max_browser_fallbacks_per_run: 20
+    max_browser_fallbacks_per_run: 25
 
 mongo:
   uri: "${MONGO_URI}"

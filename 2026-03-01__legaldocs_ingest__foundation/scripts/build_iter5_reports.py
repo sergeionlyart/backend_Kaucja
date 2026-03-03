@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Build iter5 reports from pipeline logs and fetch_attempts.jsonl.
 
-Status resolution uses canonical reason codes from fetch_attempts.jsonl
-when available, falling back to log heuristics.
+Invariant checks:
+- All 38 primary source_ids must have attempt records
+- No reason=null in not_loaded
+- source_status derivation must match run_report
 
-Usage: python scripts/build_iter5_reports.py [run_id] [prefix]
+Usage: python scripts/build_iter5_reports.py <run_id> <prefix> [artifact_base_dir]
 """
 import json
 import os
@@ -14,10 +16,26 @@ import yaml
 FDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_ID = sys.argv[1] if len(sys.argv) > 1 else "iter5_caslaw_v22_full_browser"
 REPORT_PREFIX = sys.argv[2] if len(sys.argv) > 2 else "iter5"
-LOGS_PATH = os.path.join(FDIR, f"artifacts_iter5/runs/{RUN_ID}/logs.jsonl")
-RUN_REPORT_PATH = os.path.join(FDIR, f"artifacts_iter5/runs/{RUN_ID}/run_report.json")
-ATTEMPTS_PATH = os.path.join(FDIR, f"artifacts_iter5/runs/{RUN_ID}/fetch_attempts.jsonl")
+ARTIFACT_BASE = sys.argv[3] if len(sys.argv) > 3 else None
 CONFIG_PATH = os.path.join(FDIR, "configs/config.caslaw_v22.full.yml")
+
+# Auto-detect artifact dir
+if ARTIFACT_BASE:
+    ARTIFACT_DIR = os.path.join(FDIR, ARTIFACT_BASE, "runs", RUN_ID)
+else:
+    # Try common locations
+    for d in ["artifacts", "artifacts_iter5", "artifacts_iter5_1", "artifacts_iter5_2"]:
+        candidate = os.path.join(FDIR, d, "runs", RUN_ID)
+        if os.path.exists(candidate):
+            ARTIFACT_DIR = candidate
+            break
+    else:
+        print(f"ERROR: Cannot find artifact dir for run_id={RUN_ID}", file=sys.stderr)
+        sys.exit(1)
+
+LOGS_PATH = os.path.join(ARTIFACT_DIR, "logs.jsonl")
+RUN_REPORT_PATH = os.path.join(ARTIFACT_DIR, "run_report.json")
+ATTEMPTS_PATH = os.path.join(ARTIFACT_DIR, "fetch_attempts.jsonl")
 
 
 def load_config_sources():
@@ -28,11 +46,14 @@ def load_config_sources():
 
 def load_attempts(path):
     """Load fetch_attempts.jsonl into a dict keyed by source_id."""
-    attempts = {}  # source_id -> list of attempt dicts
+    attempts = {}
     if not os.path.exists(path):
         return attempts
     with open(path, "r") as f:
         for line in f:
+            line = line.strip()
+            if not line:
+                continue
             d = json.loads(line)
             sid = d.get("source_id", "")
             if sid not in attempts:
@@ -48,6 +69,9 @@ def parse_logs(logs_path, run_id, attempts_by_source):
 
     with open(logs_path, "r", encoding="utf-8") as f:
         for line in f:
+            line = line.strip()
+            if not line:
+                continue
             d = json.loads(line)
             if d.get("run_id") != run_id:
                 continue
@@ -61,68 +85,60 @@ def parse_logs(logs_path, run_id, attempts_by_source):
             if sid not in statuses:
                 statuses[sid] = {
                     "status": "UNKNOWN",
-                    "reason": "",
+                    "reason_text": "",
                     "reason_code": "",
-                    "http_status": None,
-                    "transport_method": "direct_httpx",
-                    "_was_restricted": False,
+                    "last_transport_method": "direct_httpx",
+                    "last_exception_class": None,
                 }
 
-            if "Restricted content detected" in msg:
-                statuses[sid]["_was_restricted"] = True
-                statuses[sid]["reason_code"] = "RESTRICTED_LOW_CHARS"
-            if "SAOS maintenance page detected" in msg:
-                statuses[sid]["_was_restricted"] = True
-                statuses[sid]["reason_code"] = "SAOS_MAINTENANCE"
-
             if stage == "save" and "Document saved successfully" in msg:
-                if statuses[sid]["_was_restricted"]:
-                    statuses[sid]["status"] = "RESTRICTED"
-                    statuses[sid]["reason"] = f"Saved with restricted content ({statuses[sid]['reason_code']})"
-                else:
-                    statuses[sid]["status"] = "OK"
-                    statuses[sid]["reason"] = "Saved"
-                    statuses[sid]["reason_code"] = "OK"
+                statuses[sid]["status"] = "OK"
+                statuses[sid]["reason_code"] = "OK"
+                statuses[sid]["reason_text"] = "Document saved successfully"
             elif "Error processing source" in msg:
                 statuses[sid]["status"] = "ERROR"
-                err_msg = msg.split("\n")[0].strip()[:300]
-                # Use reason_code from attempts if available
+                err_line = msg.split("\n")[0].strip()[:300]
+
+                # Extract exception class from traceback
+                exc_class = None
+                for tb_line in msg.split("\n"):
+                    if tb_line.strip() and not tb_line.startswith(" ") and "Error" in tb_line:
+                        exc_class = tb_line.strip().split(":")[0]
+
                 att_list = attempts_by_source.get(sid, [])
                 if att_list:
                     last_att = att_list[-1]
                     statuses[sid]["reason_code"] = last_att.get("reason_code", "UNKNOWN_ERROR")
-                    statuses[sid]["transport_method"] = last_att.get("method", "unknown")
-                    statuses[sid]["reason"] = f"{last_att.get('reason_code', '')}: {err_msg}"
+                    statuses[sid]["last_transport_method"] = last_att.get("method", "unknown")
+                    statuses[sid]["reason_text"] = f"{last_att.get('reason_code', '')}: {err_line}"
                 else:
-                    # Fallback classification
+                    sys.path.insert(0, FDIR)
                     from legal_ingest.reason_codes import ReasonCode
-                    statuses[sid]["reason_code"] = ReasonCode.classify_error(err_msg)
-                    statuses[sid]["reason"] = f"{statuses[sid]['reason_code']}: {err_msg}"
+                    statuses[sid]["reason_code"] = ReasonCode.classify_error(err_line)
+                    statuses[sid]["reason_text"] = f"{statuses[sid]['reason_code']}: {err_line}"
 
-            if stage == "fetch" and "Fetched source" in msg:
-                statuses[sid]["http_status"] = 200
+                statuses[sid]["last_exception_class"] = exc_class
 
             if sid.startswith("s11_saos_search_"):
                 n = sid.replace("s11_saos_search_", "")
                 if n not in expanded_ids:
                     expanded_ids.append(n)
 
-    # Enrich with transport method from attempts
+    # Enrich transport method from successful attempts
     for sid, att_list in attempts_by_source.items():
         if sid in statuses:
-            # Use the last successful attempt's method
             for att in reversed(att_list):
                 if att.get("final_outcome") == "OK":
-                    statuses[sid]["transport_method"] = att.get("method", "unknown")
+                    statuses[sid]["last_transport_method"] = att.get("method", "unknown")
                     break
 
     if "s11_saos_search" not in statuses:
         statuses["s11_saos_search"] = {
             "status": "OK",
-            "reason": f"SAOS search expanded into {len(expanded_ids)} judgments.",
+            "reason_text": f"SAOS search expanded into {len(expanded_ids)} judgments.",
             "reason_code": "OK",
-            "http_status": None,
-            "transport_method": "direct_httpx",
+            "last_transport_method": "direct_httpx",
+            "last_exception_class": None,
         }
 
     return statuses, expanded_ids
@@ -138,8 +154,14 @@ def main():
     for i, src in enumerate(sources_cfg, 1):
         sid = src["source_id"]
         info = statuses.get(
-            sid, {"status": "ERROR", "reason": "Not processed", "reason_code": "NOT_PROCESSED",
-                  "http_status": None, "transport_method": "none"}
+            sid,
+            {
+                "status": "ERROR",
+                "reason_text": "Not processed by pipeline",
+                "reason_code": "NOT_PROCESSED",
+                "last_transport_method": "none",
+                "last_exception_class": None,
+            },
         )
         e = {
             "index": i,
@@ -147,10 +169,10 @@ def main():
             "url": src["url"],
             "fetch_strategy": src["fetch_strategy"],
             "status": info["status"],
-            "reason": info["reason"],
-            "reason_code": info.get("reason_code", ""),
-            "transport_method": info.get("transport_method", "unknown"),
-            "http_status": info.get("http_status"),
+            "reason_code": info.get("reason_code", "UNKNOWN_ERROR"),
+            "reason_text": info.get("reason_text", "No details available"),
+            "last_transport_method": info.get("last_transport_method", "unknown"),
+            "last_exception_class": info.get("last_exception_class"),
             "run_id": RUN_ID,
         }
         if sid == "s11_saos_search":
@@ -180,49 +202,65 @@ def main():
     print(f"Primary: OK={ok_count}  RESTRICTED={restricted_count}  ERROR={error_count}  total={total_primary}")
     print(f"SAOS expanded: {len(expanded_ids)}")
     print(f"run_report: docs_ok={rr_stats.get('docs_ok')}  docs_restricted={rr_stats.get('docs_restricted')}  docs_error={rr_stats.get('docs_error')}  sources_total={rr_stats.get('sources_total')}")
+    tm = rr_stats.get("transport_metrics", {})
+    print(f"transport_metrics: direct={tm.get('direct_attempts',0)}  browser={tm.get('browser_attempts',0)}  browser_ok={tm.get('browser_success',0)}  browser_fail={tm.get('browser_fail',0)}")
     print(f"Not loaded ({len(not_loaded)}):")
     for nl in not_loaded:
-        rc = nl.get("reason_code", "")
-        tm = nl.get("transport_method", "")
-        print(f"  #{nl['index']} {nl['source_id']}: {nl['status']} [{rc}] via {tm}")
+        print(f"  #{nl['index']} {nl['source_id']}: {nl['status']} [{nl['reason_code']}] via {nl['last_transport_method']} exc={nl.get('last_exception_class','')}")
 
-    # Fetch attempts summary
-    if attempts_by_source:
-        browser_attempts = sum(
-            1 for sid_atts in attempts_by_source.values()
-            for a in sid_atts if a.get("method") == "browser_playwright"
-        )
-        browser_ok = sum(
-            1 for sid_atts in attempts_by_source.values()
-            for a in sid_atts
-            if a.get("method") == "browser_playwright" and a.get("final_outcome") == "OK"
-        )
-        print(f"\nFetch attempts: browser_attempts={browser_attempts}, browser_ok={browser_ok}")
+    # === INVARIANT CHECKS ===
+    print("\n=== Invariant checks ===")
+    checks = []
+    fail = False
 
-    # Consistency check
-    print("\n=== Consistency check ===")
+    # 1. Consistency: restricted/error match run_report
     rr_restricted = rr_stats.get("docs_restricted", 0)
     rr_error = rr_stats.get("docs_error", 0)
-
-    checks = []
     if restricted_count == rr_restricted:
         checks.append(f"  PASS: restricted({restricted_count}) == docs_restricted({rr_restricted})")
     else:
         checks.append(f"  FAIL: restricted({restricted_count}) != docs_restricted({rr_restricted})")
+        fail = True
     if error_count == rr_error:
         checks.append(f"  PASS: error({error_count}) == docs_error({rr_error})")
     else:
         checks.append(f"  FAIL: error({error_count}) != docs_error({rr_error})")
+        fail = True
     if len(not_loaded) == restricted_count + error_count:
         checks.append(f"  PASS: not_loaded({len(not_loaded)}) == restricted+error({restricted_count + error_count})")
     else:
         checks.append(f"  FAIL: not_loaded({len(not_loaded)}) != restricted+error({restricted_count + error_count})")
+        fail = True
+
+    # 2. Telemetry coverage: all 38 primary source_ids in fetch_attempts
+    primary_sids = {src["source_id"] for src in sources_cfg}
+    # SAOS search expands — check non-search primaries
+    non_search_sids = {s for s in primary_sids if s != "s11_saos_search"}
+    attempt_sids = set(attempts_by_source.keys())
+    missing_in_attempts = non_search_sids - attempt_sids
+    if not missing_in_attempts:
+        checks.append(f"  PASS: all {len(non_search_sids)} non-search primaries have attempt records")
+    else:
+        checks.append(f"  FAIL: {len(missing_in_attempts)} primaries missing from fetch_attempts: {missing_in_attempts}")
+        fail = True
+
+    # 3. Reason completeness: no null reason_code in not_loaded
+    null_reasons = [nl for nl in not_loaded if not nl.get("reason_code") or not nl.get("reason_text")]
+    if not null_reasons:
+        checks.append("  PASS: no null reason_code/reason_text in not_loaded")
+    else:
+        checks.append(f"  FAIL: {len(null_reasons)} not_loaded entries with null reason")
+        fail = True
 
     for c in checks:
         print(c)
 
-    all_pass = all("PASS" in c for c in checks)
+    all_pass = not fail
     print(f"\n  Overall: {'ALL PASS' if all_pass else 'SOME FAIL'}")
+
+    if fail:
+        sys.exit(1)
+    return 0
 
 
 if __name__ == "__main__":
