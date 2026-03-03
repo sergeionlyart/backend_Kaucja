@@ -66,10 +66,10 @@ class TestE2EChain:
         assert len(data1["analysis_run_id"]) > 0
         assert "case_id" in data1
 
-        # Warnings field: must be present, null or list[str]
-        assert "warnings" in data1 or data1.get("warnings") is None, \
-            "warnings key must be present in analyze response"
-        w1 = data1.get("warnings")
+        # Warnings field: strict presence, then type-check
+        assert "warnings" in data1, \
+            f"'warnings' key must be present in analyze response, got keys: {list(data1.keys())}"
+        w1 = data1["warnings"]
         assert w1 is None or isinstance(w1, list), \
             f"warnings must be null or list, got {type(w1)}"
         if isinstance(w1, list):
@@ -102,8 +102,10 @@ class TestE2EChain:
         assert isinstance(data2["analysis_run_id"], str)
         assert len(data2["analysis_run_id"]) > 0
 
-        # Warnings on reanalyze: same contract as analyze
-        w2 = data2.get("warnings")
+        # Warnings on reanalyze: strict presence, same contract as analyze
+        assert "warnings" in data2, \
+            f"'warnings' key must be present in reanalyze response, got keys: {list(data2.keys())}"
+        w2 = data2["warnings"]
         assert w2 is None or isinstance(w2, list), \
             f"reanalyze warnings must be null or list, got {type(w2)}"
         if isinstance(w2, list):
@@ -177,10 +179,23 @@ class TestE2EChain:
 
 
 class TestE2ENegative:
-    """Negative e2e scenarios — error format verification."""
+    """Negative e2e — unified error envelope verification."""
+
+    def _assert_error_envelope(self, body: dict, expected_code: str) -> None:
+        """Assert the unified error envelope shape."""
+        assert "error" in body, f"Missing 'error' key in: {body}"
+        err = body["error"]
+        assert err["code"] == expected_code
+        assert isinstance(err["message"], str) and len(err["message"]) > 0, \
+            f"error.message must be non-empty str, got: {err.get('message')!r}"
+        assert isinstance(err.get("request_id"), str) and len(err["request_id"]) > 0, \
+            f"error.request_id must be non-empty str, got: {err.get('request_id')!r}"
+        if "details" in err:
+            assert isinstance(err["details"], dict), \
+                f"error.details must be dict, got: {type(err['details'])}"
 
     def test_analyze_missing_case_id(self, _clean_case, client):
-        """Missing case_id returns 422 with structured error."""
+        """Missing case_id → 422 with full error envelope."""
         pdf = _pdf("neg")
         resp = client.post(
             "/api/v2/case/documents/analyze",
@@ -188,12 +203,10 @@ class TestE2ENegative:
             files=[("files", ("neg.pdf", io.BytesIO(pdf), "application/pdf"))],
         )
         assert resp.status_code == 422
-        body = resp.json()
-        assert "error" in body
-        assert body["error"]["code"] == "VALIDATION_ERROR"
+        self._assert_error_envelope(resp.json(), "VALIDATION_ERROR")
 
     def test_submit_missing_email(self, _clean_case, client):
-        """Submit without email returns 422."""
+        """Submit without email → 422 with full error envelope."""
         resp = client.post(
             "/api/v2/case/submit",
             json={
@@ -202,6 +215,13 @@ class TestE2ENegative:
             },
         )
         assert resp.status_code == 422
-        body = resp.json()
-        assert "error" in body
-        assert body["error"]["code"] == "VALIDATION_ERROR"
+        self._assert_error_envelope(resp.json(), "VALIDATION_ERROR")
+
+    def test_reanalyze_nonexistent_case(self, _clean_case, client):
+        """Reanalyze with unknown doc_id → graceful handling."""
+        resp = client.post(
+            "/api/v2/case/documents/reanalyze",
+            json={"case_id": "KJ-NONEXISTENT", "reuse_existing": True},
+        )
+        # Should either succeed with 0 docs or fail gracefully
+        assert resp.status_code in (200, 404, 422)
