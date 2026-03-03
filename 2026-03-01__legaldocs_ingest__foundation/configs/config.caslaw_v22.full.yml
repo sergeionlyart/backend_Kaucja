@@ -1,12 +1,12 @@
 run:
-  run_id: "iter3_caslaw_v22_full_fix1"
+  run_id: "iter4_caslaw_v22_full_recovery"
   dry_run: false
-  artifact_dir: "./artifacts_iter3"
+  artifact_dir: "./artifacts_iter4"
   concurrency: 4
   http:
     user_agent: "LegalRAG-Ingest/0.1"
-    timeout_seconds: 60
-    max_retries: 4
+    timeout_seconds: 120
+    max_retries: 6
     retry_backoff_seconds: 2.0
 
 mongo:
@@ -282,33 +282,33 @@ sources:
     jurisdiction: "EU"
     language: "en"
 
-  # --- 31. EU — CJEU 137830 ---
+  # --- 31. EU — CJEU C-415/11 Aziz (via EUR-Lex CELEX, recovery from Curia JSF) ---
   - source_id: "s31_curia_137830"
-    url: "https://curia.europa.eu/juris/document/document.jsf?docid=137830&doclang=EN"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62011CJ0415"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "EU"
     language: "en"
 
-  # --- 32. EU — CJEU 237043 ---
+  # --- 32. EU — CJEU C-725/19 Impuls Leasing (via EUR-Lex CELEX, recovery from Curia JSF) ---
   - source_id: "s32_curia_237043"
-    url: "https://curia.europa.eu/juris/document/document.jsf?docid=237043&doclang=en"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62019CJ0725"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "EU"
     language: "en"
 
-  # --- 33. EU — CJEU 74812 ---
+  # --- 33. EU — CJEU C-243/08 Pannon (via EUR-Lex CELEX, recovery from Curia JSF) ---
   - source_id: "s33_curia_74812"
-    url: "https://curia.europa.eu/juris/document/document.jsf?docid=74812&doclang=EN"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62008CJ0243"
     fetch_strategy: "direct"
     doc_type_hint: "CASELAW"
     jurisdiction: "EU"
     language: "en"
 
-  # --- 34. EU — CJEU guide ---
+  # --- 34. EU — CJEU Recommendations to national courts (recovery: original 404, replaced with PDF) ---
   - source_id: "s34_curia_guide"
-    url: "https://curia.europa.eu/jcms/jcms/p1_4220451/en/"
+    url: "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ:C:2019:380:FULL"
     fetch_strategy: "direct"
     doc_type_hint: "GUIDANCE"
     jurisdiction: "EU"

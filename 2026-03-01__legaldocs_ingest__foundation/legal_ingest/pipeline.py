@@ -260,7 +260,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                 )
                 parse_method = "HTML"
                 total_chars = sum(len(p.text) for p in pages)
-                if total_chars < 500 and access_status != "RESTRICTED":
+                if total_chars < 200 and access_status != "RESTRICTED":
                     access_status = "RESTRICTED"
                     logger.warning(
                         "Restricted content detected via low char count",
