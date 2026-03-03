@@ -1,0 +1,112 @@
+[
+  {
+    "index": 25,
+    "source_id": "s25_eurlex_dir13",
+    "url": "https://eur-lex.europa.eu/eli/dir/1993/13/oj/eng",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 26,
+    "source_id": "s26_eurlex_celex13",
+    "url": "https://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=CELEX:31993L0013:en:HTML",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 27,
+    "source_id": "s27_eurlex_guide",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?from=FR&uri=CELEX:52019XC0927(01)",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 28,
+    "source_id": "s28_eurlex_reg861",
+    "url": "https://eur-lex.europa.eu/eli/reg/2007/861/oj/eng",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 29,
+    "source_id": "s29_eurlex_reg1896",
+    "url": "https://eur-lex.europa.eu/eli/reg/2006/1896/oj/eng",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 30,
+    "source_id": "s30_eurlex_reg805",
+    "url": "https://eur-lex.europa.eu/eli/reg/2004/805/oj/eng",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 31,
+    "source_id": "s31_curia_137830",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62011CJ0415",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 32,
+    "source_id": "s32_curia_237043",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62019CJ0725",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 33,
+    "source_id": "s33_curia_74812",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:62008CJ0243",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 34,
+    "source_id": "s34_curia_guide",
+    "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ:C:2019:380:FULL",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_3_caslaw_v22_full"
+  },
+  {
+    "index": 35,
+    "source_id": "s35_uokik_dec",
+    "url": "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: [Errno 60] Operation timed out",
+    "http_status": null,
+    "run_id": "iter4_3_caslaw_v22_full"
+  }
+]

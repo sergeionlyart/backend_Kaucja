@@ -30,7 +30,7 @@ def test_pipeline_artifacts_creation(
     mock_resp.headers = {"content-type": "text/html"}
     mock_resp.status_code = 200
     mock_resp.final_url = "http://test.com"
-    mock_fetch.return_value = mock_resp
+    mock_fetch.return_value = (mock_resp, [])
 
     with TemporaryDirectory() as tmpdir:
         config = PipelineConfig(
@@ -103,7 +103,7 @@ def test_pipeline_commercial_html_with_cookie_low_chars_still_restricted(
     mock_resp.headers = {"content-type": "text/html"}
     mock_resp.status_code = 200
     mock_resp.final_url = "https://sip.lex.pl/fake"
-    mock_fetch.return_value = mock_resp
+    mock_fetch.return_value = (mock_resp, [])
 
     with TemporaryDirectory() as tmpdir:
         config = PipelineConfig(
@@ -157,7 +157,7 @@ def test_pipeline_commercial_html_paywall_marker_restricted_even_with_cookie(
     mock_resp.headers = {"content-type": "text/html"}
     mock_resp.status_code = 200
     mock_resp.final_url = "https://sip.lex.pl/fake"
-    mock_fetch.return_value = mock_resp
+    mock_fetch.return_value = (mock_resp, [])
 
     with TemporaryDirectory() as tmpdir:
         config = PipelineConfig(

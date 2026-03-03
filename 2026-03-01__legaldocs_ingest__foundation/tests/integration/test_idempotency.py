@@ -1,3 +1,4 @@
+import os
 import pytest
 import pymongo
 from legal_ingest.config import MongoConfig
@@ -15,7 +16,8 @@ from legal_ingest.store.models import (
 
 @pytest.fixture
 def mongo_cfg():
-    return MongoConfig(uri="mongodb://localhost:27017", db="test_legal_rag_idempotency")
+    uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
+    return MongoConfig(uri=uri, db="test_legal_rag_idempotency")
 
 
 def test_idempotent_upsert(mongo_cfg):

@@ -137,6 +137,14 @@ class RunError(BaseModel):
     message: str
 
 
+class TransportMetrics(BaseModel):
+    direct_attempts: int = 0
+    browser_attempts: int = 0
+    browser_success: int = 0
+    browser_fail: int = 0
+    fallback_trigger_counts: Dict[str, int] = Field(default_factory=dict)
+
+
 class RunStats(BaseModel):
     sources_total: int = 0
     docs_ok: int = 0
@@ -145,6 +153,7 @@ class RunStats(BaseModel):
     pages_written: int = 0
     nodes_written: int = 0
     citations_written: int = 0
+    transport_metrics: TransportMetrics = Field(default_factory=TransportMetrics)
 
 
 class IngestRun(BaseModel):

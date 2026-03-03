@@ -1,0 +1,79 @@
+[
+  {
+    "index": 5,
+    "source_id": "s05_lex_art118",
+    "url": "https://sip.lex.pl/akty-prawne/dzu-dziennik-ustaw/kodeks-cywilny-16785996/art-118",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Restricted content detected via low char count",
+    "http_status": 200,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  },
+  {
+    "index": 24,
+    "source_id": "s24_orzeczenia_katowice",
+    "url": "https://orzeczenia.katowice.sa.gov.pl/content/$N/151500000002503_V_ACa_000599_2014_Uz_2015-02-18_001",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: Server disconnected without sending a response.\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transpor",
+    "http_status": null,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  },
+  {
+    "index": 31,
+    "source_id": "s31_curia_137830",
+    "url": "https://curia.europa.eu/juris/document/document.jsf?docid=137830&doclang=EN",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Restricted content detected via low char count",
+    "http_status": 200,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  },
+  {
+    "index": 32,
+    "source_id": "s32_curia_237043",
+    "url": "https://curia.europa.eu/juris/document/document.jsf?docid=237043&doclang=en",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Restricted content detected via low char count",
+    "http_status": 200,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  },
+  {
+    "index": 33,
+    "source_id": "s33_curia_74812",
+    "url": "https://curia.europa.eu/juris/document/document.jsf?docid=74812&doclang=EN",
+    "fetch_strategy": "direct",
+    "status": "RESTRICTED",
+    "reason": "Restricted content detected via low char count",
+    "http_status": 200,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  },
+  {
+    "index": 34,
+    "source_id": "s34_curia_guide",
+    "url": "https://curia.europa.eu/jcms/jcms/p1_4220451/en/",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: Client error '404 ' for url 'https://curia.europa.eu/jcms/jcms/p1_4220451/en/'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDo",
+    "http_status": null,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  },
+  {
+    "index": 35,
+    "source_id": "s35_uokik_dec",
+    "url": "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: timed out\nTraceback (most recent call last):\n  File \"/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja-labs/2026-03-01__legaldocs_ingest__foundation/venv/lib/python3.11/site-packages/httpx/_transports/default.py\", line 101, in map_httpc",
+    "http_status": null,
+    "final_url": null,
+    "run_id": "iter3_caslaw_v22_full_fix1"
+  }
+]

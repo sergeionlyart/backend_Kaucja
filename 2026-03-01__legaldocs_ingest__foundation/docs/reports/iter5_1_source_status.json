@@ -1,0 +1,268 @@
+[
+  {
+    "index": 1,
+    "source_id": "s01_eli_pdf",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 2,
+    "source_id": "s02_isap_pdf",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 3,
+    "source_id": "s03_lex_lokator",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 4,
+    "source_id": "s04_lex_art19a",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 5,
+    "source_id": "s05_lex_art118",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 6,
+    "source_id": "s06_sn_czp58",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 7,
+    "source_id": "s07_sn_csk862",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 8,
+    "source_id": "s08_sn_csk292",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 9,
+    "source_id": "s09_sn_csk480",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 10,
+    "source_id": "s10_sn_cnp31",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 11,
+    "source_id": "s11_saos_search",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 12,
+    "source_id": "s12_saos_171957",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 13,
+    "source_id": "s13_saos_205996",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 14,
+    "source_id": "s14_saos_279345",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 15,
+    "source_id": "s15_saos_330695",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 16,
+    "source_id": "s16_saos_346698",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 17,
+    "source_id": "s17_saos_472812",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 18,
+    "source_id": "s18_saos_486542",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 19,
+    "source_id": "s19_saos_487012",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 20,
+    "source_id": "s20_saos_505310",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 21,
+    "source_id": "s21_saos_521555",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 22,
+    "source_id": "s22_orzeczenia_wloclawek",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 23,
+    "source_id": "s23_orzeczenia_ms",
+    "status": "ERROR",
+    "reason_code": "EXTERNAL_DISCONNECT",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 24,
+    "source_id": "s24_orzeczenia_katowice",
+    "status": "ERROR",
+    "reason_code": "EXTERNAL_DISCONNECT",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 25,
+    "source_id": "s25_eurlex_dir13",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 26,
+    "source_id": "s26_eurlex_celex13",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 27,
+    "source_id": "s27_eurlex_guide",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 28,
+    "source_id": "s28_eurlex_reg861",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 29,
+    "source_id": "s29_eurlex_reg1896",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 30,
+    "source_id": "s30_eurlex_reg805",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 31,
+    "source_id": "s31_curia_137830",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 32,
+    "source_id": "s32_curia_237043",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 33,
+    "source_id": "s33_curia_74812",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 34,
+    "source_id": "s34_curia_guide",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "browser_playwright"
+  },
+  {
+    "index": 35,
+    "source_id": "s35_uokik_dec",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 36,
+    "source_id": "s36_uokik_clauses",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 37,
+    "source_id": "s37_uokik_amc86",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  },
+  {
+    "index": 38,
+    "source_id": "s38_prawo_klauzule",
+    "status": "OK",
+    "reason_code": "OK",
+    "transport_method": "direct_httpx"
+  }
+]

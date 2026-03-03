@@ -1,0 +1,70 @@
+# CI smoke config — Mode B (browser fallback disabled).
+# Same sources as Mode A, but browser is off.
+# EUR-Lex source expected to fail with EURLEX_WAF_CHALLENGE.
+
+run:
+  run_id: "ci_smoke_b"
+  dry_run: false
+  artifact_dir: "./artifacts_ci"
+  concurrency: 2
+  http:
+    user_agent: "LegalRAG-Ingest/0.1-CI"
+    timeout_seconds: 60
+    max_retries: 3
+    retry_backoff_seconds: 1.0
+  browser_fallback:
+    enabled: false
+    allowed_domains: []
+    browser_timeout_ms: 30000
+    browser_retries: 1
+    max_browser_fallbacks_per_run: 0
+
+mongo:
+  uri: "mongodb://localhost:27017"
+  db: "ci_legal_ingest_smoke"
+  write_concern: "majority"
+
+parsers:
+  pdf:
+    engine: "pymupdf"
+    min_avg_chars_per_page: 200
+    max_empty_page_ratio: 0.30
+  html:
+    engine: "bs4"
+    max_tokens_per_virtual_page: 1200
+    min_heading_to_split: 2
+
+ocr:
+  enabled: false
+  api_key_env: "MISTRAL_API_KEY"
+
+sources:
+  # Fast direct sources (PL)
+  - source_id: "s01_eli_pdf"
+    url: "https://eli.gov.pl/api/acts/DU/2001/733/text/O/D20010733.pdf"
+    fetch_strategy: "direct"
+    doc_type_hint: "STATUTE"
+    jurisdiction: "PL"
+    language: "pl"
+
+  - source_id: "s36_uokik_clauses"
+    url: "https://uokik.gov.pl/niedozwolone-klauzule"
+    fetch_strategy: "direct"
+    doc_type_hint: "GUIDANCE"
+    jurisdiction: "PL"
+    language: "pl"
+
+  - source_id: "s38_prawo_klauzule"
+    url: "https://www.prawo.pl/student/niedozwolone-klauzule-w-umowach-najmu-skutki-ochrona-lokatora%2C510151.html"
+    fetch_strategy: "direct"
+    doc_type_hint: "COMMENTARY"
+    jurisdiction: "PL"
+    language: "pl"
+
+  # EUR-Lex source (will fail with EURLEX_WAF_CHALLENGE — no browser)
+  - source_id: "s25_eurlex_dir13"
+    url: "https://eur-lex.europa.eu/eli/dir/2008/48/oj/eng"
+    fetch_strategy: "direct"
+    doc_type_hint: "EU_ACT"
+    jurisdiction: "EU"
+    language: "en"

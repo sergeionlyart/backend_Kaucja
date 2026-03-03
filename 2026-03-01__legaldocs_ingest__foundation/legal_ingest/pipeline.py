@@ -19,7 +19,7 @@ from .store.models import (
     HttpMeta,
 )
 from .ids import generate_doc_uid, generate_source_hash, generate_source_id
-from .fetch import fetch_source
+from .fetch import fetch_source, is_saos_maintenance
 from .store.mongo import save_run, save_document_pipeline_results
 
 from .parsers.pdf import parse_pdf
@@ -116,6 +116,8 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
     )
 
     stats = RunStats(sources_total=len(config.sources))
+    all_fetch_attempts: list[dict] = []  # collect for fetch_attempts.jsonl
+    browser_fallback_counter = [0]  # mutable counter for circuit breaker
 
     if not config.run.dry_run:
         save_run(config.mongo, run_model)
@@ -135,11 +137,33 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                     f"saos_search yielded {len(new_s)} judgments",
                     extra={"stage": "init"},
                 )
+                # Synthetic attempt record for telemetry coverage (38/38)
+                all_fetch_attempts.append({
+                    "source_id": s.source_id,
+                    "attempt_no": 1,
+                    "method": "saos_expansion",
+                    "status_code": 200,
+                    "bytes": None,
+                    "reason_code": "OK",
+                    "duration_ms": 0,
+                    "final_outcome": "OK",
+                    "expanded_count": len(new_s),
+                })
             except Exception as e:
                 logger.error(
                     f"Failed to expand saos_search {s.source_id}: {e}",
                     extra={"stage": "init"},
                 )
+                all_fetch_attempts.append({
+                    "source_id": s.source_id,
+                    "attempt_no": 1,
+                    "method": "saos_expansion",
+                    "status_code": None,
+                    "bytes": None,
+                    "reason_code": "SAOS_EXPANSION_ERROR",
+                    "duration_ms": 0,
+                    "final_outcome": "ERROR",
+                })
         else:
             expanded_sources.append(s)
 
@@ -162,7 +186,12 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             # 1. Fetch
             set_log_context(stage="fetch")
             t0 = time.time()
-            fetch_result = fetch_source(config.run.http, source)
+            fetch_result, attempt_log = fetch_source(
+                config.run.http, source,
+                browser_fallback_config=config.run.browser_fallback,
+                browser_fallback_counter=browser_fallback_counter,
+            )
+            all_fetch_attempts.extend(attempt_log)
 
             source_hash = generate_source_hash(fetch_result.raw_bytes)
             mime = detect_mime(fetch_result, str(source.url))
@@ -260,13 +289,22 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
                 )
                 parse_method = "HTML"
                 total_chars = sum(len(p.text) for p in pages)
-                if total_chars < 500 and access_status != "RESTRICTED":
+                # Explicit SAOS maintenance check (before generic threshold)
+                if is_saos_maintenance(fetch_result.raw_bytes):
                     access_status = "RESTRICTED"
                     logger.warning(
-                        "Restricted content detected via low char count",
+                        "SAOS maintenance page detected (Przerwa techniczna)",
                         extra={"stage": "parse"},
                     )
-            elif mime == "application/json" or source.fetch_strategy == "saos_judgment":
+                else:
+                    min_chars = source.min_chars_override if source.min_chars_override is not None else 500
+                    if total_chars < min_chars and access_status != "RESTRICTED":
+                        access_status = "RESTRICTED"
+                        logger.warning(
+                            "Restricted content detected via low char count",
+                            extra={"stage": "parse"},
+                        )
+            elif mime == "application/json" and source.fetch_strategy == "saos_judgment":
                 pages = parse_saos(fetch_result.raw_bytes, doc_uid, source_hash)
                 parse_method = "SAOS_JSON"
                 access_status = "OK"  # saos is ok
@@ -291,7 +329,7 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             citations = []
 
             # Extract citations for SAOS
-            if mime == "application/json" or source.fetch_strategy == "saos_judgment":
+            if mime == "application/json" and source.fetch_strategy == "saos_judgment":
                 from .parsers.saos import extract_saos_citations
 
                 citations = extract_saos_citations(
@@ -392,6 +430,11 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
             )
 
         except Exception as e:
+            # Recover attempt_log from exception (attached by fetch_source)
+            exc_attempts = getattr(e, "attempt_log", None)
+            if exc_attempts:
+                all_fetch_attempts.extend(exc_attempts)
+
             logger.error(
                 f"Error processing source: {e}\n{traceback.format_exc()}",
                 extra={"stage": "pipeline"},
@@ -459,16 +502,39 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
 
             set_log_context(stage="save")
             if not config.run.dry_run:
-                save_document_pipeline_results(
-                    config.mongo,
-                    err_doc_source,
-                    pages=[],
-                    nodes=[],
-                    citations=[],
-                    document=err_doc_model,
-                )
+                try:
+                    save_document_pipeline_results(
+                        config.mongo,
+                        err_doc_source,
+                        pages=[],
+                        nodes=[],
+                        citations=[],
+                        document=err_doc_model,
+                    )
+                except Exception as save_err:
+                    logger.error(
+                        f"Failed to save ERROR document: {save_err}",
+                        extra={"stage": "save"},
+                    )
 
     # Finalize
+    # Compute transport_metrics from fetch attempts
+    from .store.models import TransportMetrics
+    tm = TransportMetrics()
+    for a in all_fetch_attempts:
+        if a.get("method") == "direct_httpx":
+            tm.direct_attempts += 1
+        elif a.get("method") == "browser_playwright":
+            tm.browser_attempts += 1
+            if a.get("final_outcome") == "OK":
+                tm.browser_success += 1
+            else:
+                tm.browser_fail += 1
+        if a.get("final_outcome") == "FALLBACK_TO_BROWSER":
+            rc = a.get("reason_code", "UNKNOWN")
+            tm.fallback_trigger_counts[rc] = tm.fallback_trigger_counts.get(rc, 0) + 1
+    stats.transport_metrics = tm
+
     run_model.stats = stats
     run_model.finished_at = datetime.utcnow()
 
@@ -478,6 +544,19 @@ def run_pipeline(config: PipelineConfig, limit: int = None) -> dict:
     report_path = os.path.join(artifact_dir, "run_report.json")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(run_model.model_dump_json(by_alias=True, indent=2))
+
+    # Write fetch_attempts.jsonl
+    attempts_path = os.path.join(artifact_dir, "fetch_attempts.jsonl")
+    with open(attempts_path, "w", encoding="utf-8") as f:
+        for attempt in all_fetch_attempts:
+            f.write(json.dumps(attempt, ensure_ascii=False) + "\n")
+
+    # Cleanup browser if it was used
+    try:
+        from .fetch_browser import close_browser
+        close_browser()
+    except Exception:
+        pass
 
     logger.info(
         "Pipeline run finished",

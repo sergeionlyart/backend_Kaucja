@@ -1,0 +1,122 @@
+[
+  {
+    "index": 12,
+    "source_id": "s12_saos_171957",
+    "url": "https://www.saos.org.pl/judgments/171957",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 13,
+    "source_id": "s13_saos_205996",
+    "url": "https://www.saos.org.pl/judgments/205996",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 14,
+    "source_id": "s14_saos_279345",
+    "url": "https://www.saos.org.pl/judgments/279345",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 15,
+    "source_id": "s15_saos_330695",
+    "url": "https://www.saos.org.pl/judgments/330695",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 16,
+    "source_id": "s16_saos_346698",
+    "url": "https://www.saos.org.pl/judgments/346698",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 17,
+    "source_id": "s17_saos_472812",
+    "url": "https://www.saos.org.pl/judgments/472812",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 18,
+    "source_id": "s18_saos_486542",
+    "url": "https://www.saos.org.pl/judgments/486542",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 19,
+    "source_id": "s19_saos_487012",
+    "url": "https://www.saos.org.pl/judgments/487012",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 20,
+    "source_id": "s20_saos_505310",
+    "url": "https://www.saos.org.pl/judgments/505310",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 21,
+    "source_id": "s21_saos_521555",
+    "url": "https://www.saos.org.pl/judgments/521555",
+    "fetch_strategy": "saos_judgment",
+    "status": "RESTRICTED",
+    "reason": "Saved with restricted content (low char count)",
+    "http_status": 200,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 24,
+    "source_id": "s24_orzeczenia_katowice",
+    "url": "https://orzeczenia.katowice.sa.gov.pl/content/$N/151500000002503_V_ACa_000599_2014_Uz_2015-02-18_001",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: Server disconnected without sending a response.",
+    "http_status": null,
+    "run_id": "iter4_caslaw_v22_full_final"
+  },
+  {
+    "index": 35,
+    "source_id": "s35_uokik_dec",
+    "url": "https://decyzje.uokik.gov.pl/bp/dec_prez.nsf/43104c28a7a1be23c1257eac006d8dd4/6168c41ed23328e8c1257ec6007ba3ca/$FILE/RKR-37-2013%20Novis%20MSK.pdf",
+    "fetch_strategy": "direct",
+    "status": "ERROR",
+    "reason": "Error processing source: [Errno 60] Operation timed out",
+    "http_status": null,
+    "run_id": "iter4_caslaw_v22_full_final"
+  }
+]
