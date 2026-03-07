@@ -69,6 +69,28 @@ class SuccessLLMClient:
         )
 
 
+class PlainTextLLMClient:
+    def __init__(self, raw_text: str) -> None:
+        self._raw_text = raw_text
+
+    def generate_text(self, **kwargs: Any) -> LLMResult:
+        del kwargs
+        return LLMResult(
+            raw_text=self._raw_text,
+            parsed_json=None,
+            raw_response={"provider": "mock"},
+            usage_raw={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            usage_normalized={
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "thoughts_tokens": None,
+            },
+            cost={"llm_cost_usd": 0.0001, "total_cost_usd": 0.0001},
+            timings={"t_llm_total_ms": 5.0},
+        )
+
+
 class FailingLLMClient:
     def __init__(self, error: Exception) -> None:
         self._error = error
@@ -159,6 +181,25 @@ def _setup_orchestrator(
         canonical_prompt_text, encoding="utf-8"
     )
     (prompt_dir / "schema.json").write_text(canonical_schema_text, encoding="utf-8")
+    (prompt_dir / "meta.yaml").write_text(
+        "response_mode: structured_json\ncreated_at: 2026-03-07T00:00:00+00:00\n",
+        encoding="utf-8",
+    )
+
+    plain_text_prompt_dir = prompt_root / "canonical_prompt_v3_1" / "v001"
+    plain_text_prompt_dir.mkdir(parents=True, exist_ok=True)
+    (plain_text_prompt_dir / "system_prompt.txt").write_text(
+        "Return plain text legal brief.",
+        encoding="utf-8",
+    )
+    (plain_text_prompt_dir / "schema.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    (plain_text_prompt_dir / "meta.yaml").write_text(
+        "response_mode: plain_text\ncreated_at: 2026-03-07T00:00:00+00:00\n",
+        encoding="utf-8",
+    )
 
     # To pass TechSpec Fail-Closed logic which checks 'app/prompts/...' relative to cwd:
     app_prompts = tmp_path / "app" / "prompts"
@@ -312,6 +353,59 @@ def test_full_pipeline_schema_invalid_marks_run_failed_and_persists_validation(
     assert llm_output.response_valid is False
     assert llm_output.schema_validation_errors_path is not None
     assert Path(llm_output.schema_validation_errors_path).is_file()
+
+
+def test_full_pipeline_plain_text_prompt_skips_schema_validation(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    orchestrator = _setup_orchestrator(
+        tmp_path,
+        monkeypatch=monkeypatch,
+        llm_clients={"openai": PlainTextLLMClient("Plain text legal brief")},
+    )
+
+    file_one = tmp_path / "one.pdf"
+    file_one.write_bytes(b"one")
+
+    result = orchestrator.run_full_pipeline(
+        input_files=[file_one],
+        session_id=None,
+        provider="openai",
+        model="gpt-5.4",
+        prompt_name="canonical_prompt_v3_1",
+        prompt_version="v001",
+        ocr_options=OCROptions(model="mistral-ocr-latest"),
+    )
+
+    assert result.run_status == "completed"
+    assert result.response_mode == "plain_text"
+    assert result.raw_json_text == "Plain text legal brief"
+    assert result.parsed_json is None
+    assert result.validation_valid is True
+    assert result.critical_gaps_summary == []
+    assert result.next_questions_to_user == []
+
+    run = orchestrator.repo.get_run(result.run_id)
+    assert run is not None
+    artifacts_root = Path(run.artifacts_root_path)
+    parsed_path = artifacts_root / "llm" / "response_parsed.json"
+    validation_path = artifacts_root / "llm" / "validation.json"
+    manifest_path = artifacts_root / "run.json"
+
+    assert json.loads(parsed_path.read_text(encoding="utf-8")) == {}
+    validation_payload = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation_payload["status"] == "skipped"
+    assert validation_payload["response_mode"] == "plain_text"
+    assert validation_payload["valid"] is True
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["inputs"]["prompt_response_mode"] == "plain_text"
+
+    llm_output = orchestrator.repo.get_llm_output(run_id=result.run_id)
+    assert llm_output is not None
+    assert llm_output.response_valid is True
+    assert llm_output.schema_validation_errors_path is None
 
 
 def test_full_pipeline_invalid_json_marks_run_failed(

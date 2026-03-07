@@ -45,6 +45,46 @@ class GeminiLLMClient:
             params=params,
         )
 
+        return self._execute_request(
+            service=service,
+            payload=payload,
+            model=model,
+            parse_json=True,
+        )
+
+    def generate_text(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        model: str,
+        params: dict[str, Any],
+        run_meta: dict[str, Any],
+    ) -> LLMResult:
+        del run_meta
+        service = self._resolve_service()
+        payload = self.build_text_request_payload(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            model=model,
+            params=params,
+        )
+
+        return self._execute_request(
+            service=service,
+            payload=payload,
+            model=model,
+            parse_json=False,
+        )
+
+    def _execute_request(
+        self,
+        *,
+        service: GeminiGenerateService,
+        payload: dict[str, Any],
+        model: str,
+        parse_json: bool,
+    ) -> LLMResult:
         start_time = time.perf_counter()
         response = service.generate_content(**payload)
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -53,7 +93,7 @@ class GeminiLLMClient:
         raw_text = _extract_gemini_output_text(
             response=response, payload=response_payload
         )
-        parsed_json = json.loads(raw_text)
+        parsed_json = json.loads(raw_text) if parse_json else None
 
         usage_raw = _extract_usage(response=response, payload=response_payload)
         usage_normalized = normalize_gemini_usage(usage_raw)
@@ -75,6 +115,25 @@ class GeminiLLMClient:
         )
 
     @staticmethod
+    def build_text_request_payload(
+        *,
+        system_prompt: str,
+        user_content: str,
+        model: str,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        config = _base_config(
+            system_prompt=system_prompt,
+            model=model,
+            params=params,
+        )
+        return {
+            "model": model,
+            "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+            "config": config,
+        }
+
+    @staticmethod
     def build_request_payload(
         *,
         system_prompt: str,
@@ -83,43 +142,13 @@ class GeminiLLMClient:
         model: str,
         params: dict[str, Any],
     ) -> dict[str, Any]:
-        config: dict[str, Any] = {
-            "system_instruction": system_prompt,
-            "response_mime_type": "application/json",
-            "response_json_schema": json_schema,
-        }
-
-        thinking_level = str(
-            params.get("gemini_thinking_level")
-            or params.get("thinking_level")
-            or "auto"
+        config = _base_config(
+            system_prompt=system_prompt,
+            model=model,
+            params=params,
         )
-        mapped_level = _map_thinking_level(thinking_level)
-        if mapped_level is not None:
-            # Look up model capabilities unconditionally via configured providers
-            from app.config.settings import get_settings
-            settings = get_settings()
-            providers_config = settings.providers_config.get("llm_providers", {})
-            google_config = providers_config.get("google", {})
-            model_config = google_config.get("models", {}).get(model, {})
-            supports_thinking = model_config.get("supports_thinking", False)
-
-            if supports_thinking:
-                config["thinking_config"] = {"thinking_level": mapped_level}
-            else:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Model %s does not support thinking_config. Degrading thinking_level to auto.", model
-                )
-
-        temperature = params.get("temperature")
-        if temperature is not None:
-            config["temperature"] = temperature
-
-        max_output_tokens = params.get("max_output_tokens")
-        if max_output_tokens is not None:
-            config["max_output_tokens"] = int(max_output_tokens)
-
+        config["response_mime_type"] = "application/json"
+        config["response_json_schema"] = json_schema
         return {
             "model": model,
             "contents": [{"role": "user", "parts": [{"text": user_content}]}],
@@ -156,6 +185,51 @@ def _map_thinking_level(value: str) -> str | None:
     if normalized not in {"low", "medium", "high"}:
         return None
     return normalized
+
+
+def _base_config(
+    *,
+    system_prompt: str,
+    model: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    config: dict[str, Any] = {
+        "system_instruction": system_prompt,
+    }
+
+    thinking_level = str(
+        params.get("gemini_thinking_level") or params.get("thinking_level") or "auto"
+    )
+    mapped_level = _map_thinking_level(thinking_level)
+    if mapped_level is not None:
+        # Look up model capabilities unconditionally via configured providers
+        from app.config.settings import get_settings
+
+        settings = get_settings()
+        providers_config = settings.providers_config.get("llm_providers", {})
+        google_config = providers_config.get("google", {})
+        model_config = google_config.get("models", {}).get(model, {})
+        supports_thinking = model_config.get("supports_thinking", False)
+
+        if supports_thinking:
+            config["thinking_config"] = {"thinking_level": mapped_level}
+        else:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Model %s does not support thinking_config. Degrading thinking_level to auto.",
+                model,
+            )
+
+    temperature = params.get("temperature")
+    if temperature is not None:
+        config["temperature"] = temperature
+
+    max_output_tokens = params.get("max_output_tokens")
+    if max_output_tokens is not None:
+        config["max_output_tokens"] = int(max_output_tokens)
+
+    return config
 
 
 def _extract_usage(*, response: Any, payload: dict[str, Any]) -> dict[str, Any]:

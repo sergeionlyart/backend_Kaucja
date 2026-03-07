@@ -1,5 +1,12 @@
 # Operations Guide
 
+## Current Working Runtime
+
+As of **2026-03-07**, the primary working runtime for launch is `main` after the merge
+that carries tag `kaucja-working-main-20260307`.
+
+Reference: `docs/iteration_74_working_runtime_designation.md`
+
 ## Local Run
 
 ```bash

@@ -10,9 +10,9 @@
 
 3. формирования единого запроса к LLM по фиксированному формату \<BEGIN\_DOCUMENTS\>…,
 
-4. получения **строго валидного JSON** по заданной **JSON Schema**,
+4. получения либо **строго валидного JSON** по заданной **JSON Schema**, либо **plain-text ответа** в зависимости от выбранного prompt set,
 
-5. визуализации результата \+ “gap list” (чего не хватает) \+ метрик (tokens, стоимость, тайминги),
+5. визуализации результата \+ “gap list” (чего не хватает, если prompt возвращает structured JSON) \+ метрик (tokens, стоимость, тайминги),
 
 6. управления версиями промптов (и связанной схемы).
 
@@ -38,7 +38,7 @@
 
     * человекочитаемого результата,
 
-    * сырого JSON,
+    * сырого ответа модели (JSON или plain text),
 
     * списка “что запросить у пользователя”,
 
@@ -66,11 +66,13 @@
 
   * session\_id/run\_id,
 
-  * сохранение параметров, артефактов, итогового JSON, usage/стоимости/таймингов, статуса/ошибок.
+  * сохранение параметров, артефактов, итогового JSON или plain-text ответа, usage/стоимости/таймингов, статуса/ошибок.
 
 * Валидация:
 
-  * проверка JSON на соответствие JSON Schema,
+  * для prompt set с `response_mode=structured_json`: проверка JSON на соответствие JSON Schema,
+
+  * для prompt set с `response_mode=plain_text`: явная фиксация, что schema-validation пропущена,
 
   * фиксация ошибок в UI и базе.
 
@@ -96,7 +98,7 @@
 
 * Model dropdown:
 
-  * OpenAI: gpt-5.1, gpt-5.2 (строки должны совпадать с API).
+  * OpenAI: gpt-5.1, gpt-5.2, gpt-5.4 (строки должны совпадать с API).
 
   * Google: gemini-3.1-pro-preview, gemini-3.1-flash-preview (или актуальные, см. конфиг). 
 
@@ -108,7 +110,7 @@
 
 * Prompt set:
 
-  * Prompt name (например kaucja\_gap\_analysis)
+  * Prompt name (например kaucja\_gap\_analysis или canonical\_prompt\_v3\_1)
 
   * Version dropdown (v001, v002, …)
 
@@ -134,15 +136,17 @@
 
 * Human-readable view:
 
-  * critical\_gaps\_summary (список),
+  * structured JSON prompt: critical\_gaps\_summary (список),
 
-  * next\_questions\_to\_user (до 10),
+  * structured JSON prompt: next\_questions\_to\_user (до 10),
+
+  * plain-text prompt: исходный текстовый бриф модели,
 
   * checklist таблица (item\_id, importance, status, confidence),
 
   * раскрываемые детали по item\_id (findings/quotes/requests).
 
-* Raw JSON viewer (текст \+ кнопки Copy/Download).
+* Raw response viewer (текст \+ кнопки Copy/Download).
 
 * Метрики:
 
@@ -166,7 +170,7 @@
 
 * Пользователь выбирает prompt version, загружает файлы, выбирает модель, жмёт Analyze.
 
-* Видит прогресс, затем результат, raw JSON, gap list, метрики.
+* Видит прогресс, затем результат, raw response, gap list (если применимо), метрики.
 
 * При ошибке (OCR/LLM/JSON) видит понятное сообщение \+ технический stacktrace в раскрываемом блоке.
 
@@ -210,6 +214,11 @@ app/
         meta.yaml  
       v002/  
         ...  
+    canonical\_prompt\_v3\_1/  
+      v001/  
+        schema.json  
+        meta.yaml  
+        \# system\_prompt.txt может отсутствовать, если meta.yaml ссылается на внешний source file в read-only режиме  
   schemas/  
     kaucja\_gap\_analysis\_v001.json   \# копия/линк на prompts/.../schema.json (по выбору)  
   ocr\_client/  
@@ -461,7 +470,9 @@ data/
 
 ### **5.2.4 Строгий JSON по JSON Schema**
 
-В Responses API: text: { format: { type:"json\_schema", name:"...", schema:{...}, strict:true } } — это и есть enforcement schema. 
+Для prompt set с `response_mode=structured_json` в Responses API использовать: text: { format: { type:"json\_schema", name:"...", schema:{...}, strict:true } } — это и есть enforcement schema.  
+
+Для prompt set с `response_mode=plain_text` JSON Schema не передаётся; ответ принимается как обычный текст.
 
 ### **5.2.5 Usage**
 
@@ -517,13 +528,15 @@ Gemini API поддерживает system\_instruction / systemInstruction; в 
 
 ### **5.3.4 Строгий JSON по JSON Schema**
 
-Gemini structured outputs:
+Для prompt set с `response_mode=structured_json` Gemini structured outputs:
 
 * response\_mime\_type \= "application/json"
 
 * response\_json\_schema \= \<json schema\> 
 
-В MVP: schema брать из выбранной версии prompt set (одна версия system prompt ↔ одна schema).
+В MVP: schema брать из выбранной версии prompt set (одна версия system prompt ↔ одна schema).  
+
+Для prompt set с `response_mode=plain_text` `response_mime_type=application/json` и `response_json_schema` не передавать.
 
 ### **5.3.5 Usage / tokens**
 
@@ -562,6 +575,17 @@ class LLMClient(Protocol):
         params: dict,          \# reasoning/thinking/temp/max\_tokens  
         run\_meta: dict,        \# session\_id, run\_id, prompt\_version, etc.  
     ) \-\> LLMResult:            \# {raw\_text, parsed\_json, raw\_response, usage\_raw, usage\_norm, cost, timings}  
+        ...
+
+    def generate\_text(  
+        self,  
+        \*,  
+        system\_prompt: str,  
+        user\_content: str,  
+        model: str,  
+        params: dict,  
+        run\_meta: dict,  
+    ) \-\> LLMResult:  
         ...
 
 ### **5.4.2 OCRClient контракт**
@@ -618,17 +642,23 @@ class OCRClient(Protocol):
 
 4. **LLM call**
 
-* загрузить выбранную system\_prompt.txt и schema.json по prompt\_version,
+* загрузить выбранный system prompt (из `system\_prompt.txt` или из `meta.yaml -> system_prompt_source_path`) и schema.json по prompt\_version,
 
-* вызвать LLM client (OpenAI/Gemini) с enforced JSON schema,
+* вызвать LLM client (OpenAI/Gemini) в режиме, заданном prompt set:
 
-* сохранить raw response, parsed JSON.
+  * `structured_json` → с enforced JSON schema,
+
+  * `plain_text` → без schema enforcement,
+
+* сохранить raw response; для structured JSON дополнительно parsed JSON, для plain-text сохранить пустой JSON-placeholder для совместимости артефактов.
 
 5. **Validation**
 
-* проверить parsed JSON jsonschema-валидатором,
+* для `structured_json`: проверить parsed JSON jsonschema-валидатором,
 
-* дополнительно проверить “семантические инварианты” (см. ниже).
+* для `structured_json`: дополнительно проверить “семантические инварианты” (см. ниже),
+
+* для `plain_text`: записать validation artifact со статусом `skipped`.
 
 6. **Persist & finalize**
 
@@ -796,7 +826,7 @@ MVP считается готовым, если:
 
 4. OpenAI провайдер:
 
-   * работает gpt-5.1 и gpt-5.2,
+   * работает gpt-5.1, gpt-5.2 и gpt-5.4,
 
    * переключается reasoning effort,
 
@@ -1155,7 +1185,7 @@ MVP считается готовым, если:
 
 ---
 
-## **Итерация 3 — LLM clients (OpenAI \+ Gemini) \+ structured outputs**
+## **Итерация 3 — LLM clients (OpenAI \+ Gemini) \+ structured outputs / plain-text**
 
 **Задачи**
 
@@ -1165,9 +1195,13 @@ MVP считается готовым, если:
 
   * Извлечь output JSON string, распарсить.
 
+  * Для plain-text prompt set уметь принимать обычный текст без JSON parsing.
+
 * Gemini:
 
   * Реализовать system\_instruction, response\_mime\_type=application/json, response\_json\_schema.
+
+  * Для plain-text prompt set уметь выполнять вызов без `response_json_schema`.
 
 * normalize usage для обоих провайдеров.
 
@@ -1175,7 +1209,7 @@ MVP считается готовым, если:
 
 **Приёмка**
 
-* Можно прогнать фиктивный \<BEGIN\_DOCUMENTS\> и получить валидный JSON (хотя бы “hello schema”).
+* Можно прогнать фиктивный \<BEGIN\_DOCUMENTS\> и получить либо валидный JSON (хотя бы “hello schema”), либо plain-text ответ для text prompt set.
 
 * В UI показываются токены и стоимость.
 
@@ -1205,7 +1239,7 @@ MVP считается готовым, если:
 
 * Просмотр critical gaps \+ next questions.
 
-* Raw JSON viewer.
+* Raw response viewer.
 
 * История прогонов, переключение run\_id.
 
@@ -1335,6 +1369,17 @@ Gemini structured outputs поддерживает подмножество JSON
         service\_tier: "auto"       \# OpenAI Responses API: auto/default/flex/priority (опционально)  
     
       models:  
+        gpt-5.4:  
+          id: "gpt-5.4"  
+          display\_name: "GPT-5.4"  
+          capabilities:  
+            structured\_output\_json\_schema: true  
+            reasoning\_effort\_supported: \["none", "low", "medium", "high"\]  
+            images\_as\_input: true  
+          limits:  
+            context\_window\_tokens: 400000  
+            max\_output\_tokens: 128000  
+
         gpt-5.2:  
           id: "gpt-5.2"  
           display\_name: "GPT-5.2"  
@@ -1415,7 +1460,7 @@ Gemini structured outputs поддерживает подмножество JSON
 
   ### **Почему именно такие model\_id**
 
-* OpenAI: gpt-5.1, gpt-5.2, обе поддерживают structured outputs и reasoning effort (у 5.2 есть xhigh). 
+* OpenAI: gpt-5.1, gpt-5.2, gpt-5.4. Все поддерживают structured outputs; reasoning effort поддерживается, у 5.2 дополнительно есть xhigh. 
 
 * Google Gemini: для Gemini API актуальны gemini-3.1-pro-preview и gemini-3-flash-preview. 
 
@@ -2378,7 +2423,7 @@ class Orchestrator:
 
 Пример ниже использует официальные цены:
 
-* OpenAI (Standard/Flex/Priority) для gpt-5.1 и gpt-5.2 
+* OpenAI (Standard/Flex/Priority) для gpt-5.1 и gpt-5.2; для gpt-5.4 использовать официальные тарифы OpenAI API и не выводить коэффициенты tier-режимов без подтверждения вендора. 
 
 * Gemini Developer API для gemini-3.1-pro-preview и gemini-3-flash-preview 
 
@@ -3141,4 +3186,3 @@ def estimate\_total\_cost(
   ---
 
   
-

@@ -37,6 +37,15 @@ from app.utils.error_taxonomy import ERROR_FRIENDLY_MESSAGES
 
 PreflightChecker = Callable[[str], str | None]
 
+_APP_CSS = """
+#raw_json_box textarea {
+  resize: vertical !important;
+  min-height: 18rem !important;
+  max-height: 75vh;
+  overflow: auto !important;
+}
+"""
+
 
 def run_full_pipeline(
     *,
@@ -69,6 +78,7 @@ def run_full_pipeline(
         )
 
     from app.config.settings import get_settings
+
     settings_guard = get_settings()
     llm_providers_guard = settings_guard.providers_config.get("llm_providers", {})
     provider_config_guard = llm_providers_guard.get(provider, {})
@@ -109,8 +119,11 @@ def run_full_pipeline(
         run_id=result.run_id,
     )
     parsed_json = _safe_parsed_json(
-        raw_text=result.raw_json_text, parsed=result.parsed_json
+        raw_text=result.raw_json_text,
+        parsed=result.parsed_json,
     )
+    if result.response_mode != "structured_json":
+        parsed_json = None
     progress = _build_progress_text(
         artifacts_root=artifacts_root,
         run_status=result.run_status,
@@ -123,7 +136,10 @@ def run_full_pipeline(
         error_code=result.error_code,
         error_message=result.error_message,
     )
-    details_selector, details_text = _details_payload(parsed_json=parsed_json)
+    details_selector, details_text = _details_payload(
+        parsed_json=parsed_json,
+        response_mode=result.response_mode,
+    )
 
     return (
         run_status,
@@ -580,12 +596,21 @@ def load_history_run(
     run = bundle.run
     artifacts_root = run.artifacts_root_path
     manifest, manifest_error = safe_load_run_manifest(artifacts_root)
-    parsed_json = _load_parsed_json(bundle=bundle, artifacts_root=artifacts_root)
+    response_mode = _resolve_history_response_mode(
+        manifest=manifest,
+        artifacts_root=artifacts_root,
+    )
+    parsed_json = None
+    if response_mode == "structured_json":
+        parsed_json = _load_parsed_json(bundle=bundle, artifacts_root=artifacts_root)
     raw_json_text = _load_raw_json_text(
         artifacts_root=artifacts_root,
         parsed_json=parsed_json,
     )
-    validation_text = _load_validation_text(artifacts_root=artifacts_root)
+    validation_text = _load_validation_text(
+        artifacts_root=artifacts_root,
+        response_mode=response_mode,
+    )
     status_message = (
         f"History loaded. session_id={run.session_id} run_id={run.run_id} "
         f"status={run.status}"
@@ -607,7 +632,10 @@ def load_history_run(
         artifacts_root=artifacts_root,
         line_count=30,
     )
-    details_selector, details_text = _details_payload(parsed_json=parsed_json)
+    details_selector, details_text = _details_payload(
+        parsed_json=parsed_json,
+        response_mode=response_mode,
+    )
 
     return (
         status_message,
@@ -625,7 +653,11 @@ def load_history_run(
         build_gap_rows(parsed_json),
         details_selector,
         details_text,
-        _summary_from_payload(parsed_json),
+        _summary_from_payload(
+            payload=parsed_json,
+            response_mode=response_mode,
+            raw_text=raw_json_text,
+        ),
         raw_json_text,
         validation_text,
         _metrics_text_for_history(run=run, manifest=manifest),
@@ -638,10 +670,10 @@ def load_prompt_for_ui(
     prompt_manager: PromptManager,
     prompt_name: str,
     prompt_version: str | None = None,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, str]:
     versions = prompt_manager.list_versions(prompt_name)
     if not versions:
-        return "", "", "Prompt versions not found."
+        return "", "", "Prompt versions not found.", "structured_json"
 
     selected_version = prompt_version or versions[-1]
     if selected_version not in versions:
@@ -651,7 +683,12 @@ def load_prompt_for_ui(
         prompt_name=prompt_name,
         version=selected_version,
     )
-    return selected_version, prompt_set.system_prompt_text, prompt_set.schema_text
+    return (
+        selected_version,
+        prompt_set.system_prompt_text,
+        prompt_set.schema_text,
+        prompt_set.response_mode,
+    )
 
 
 def on_prompt_name_change(
@@ -669,17 +706,23 @@ def on_prompt_name_change(
             f"No versions found for prompt: {prompt_name}",
         )
 
-    selected_version, system_prompt_text, schema_text = load_prompt_for_ui(
-        prompt_manager=prompt_manager,
-        prompt_name=prompt_name,
-        prompt_version=versions[-1],
+    selected_version, system_prompt_text, schema_text, response_mode = (
+        load_prompt_for_ui(
+            prompt_manager=prompt_manager,
+            prompt_name=prompt_name,
+            prompt_version=versions[-1],
+        )
     )
     return (
         gr.update(choices=versions, value=selected_version),
         gr.update(choices=[""] + versions, value=""),
         system_prompt_text,
         schema_text,
-        f"Loaded {prompt_name}/{selected_version}",
+        _prompt_load_status(
+            prompt_name=prompt_name,
+            prompt_version=selected_version,
+            response_mode=response_mode,
+        ),
     )
 
 
@@ -690,7 +733,7 @@ def on_prompt_version_change(
     prompt_version: str,
 ) -> tuple[str, str, str]:
     try:
-        _, system_prompt_text, schema_text = load_prompt_for_ui(
+        _, system_prompt_text, schema_text, response_mode = load_prompt_for_ui(
             prompt_manager=prompt_manager,
             prompt_name=prompt_name,
             prompt_version=prompt_version,
@@ -698,7 +741,15 @@ def on_prompt_version_change(
     except Exception as error:  # noqa: BLE001
         return "", "", f"Failed to load prompt assets: {error}"
 
-    return system_prompt_text, schema_text, f"Loaded {prompt_name}/{prompt_version}"
+    return (
+        system_prompt_text,
+        schema_text,
+        _prompt_load_status(
+            prompt_name=prompt_name,
+            prompt_version=prompt_version,
+            response_mode=response_mode,
+        ),
+    )
 
 
 def save_prompt_as_new_version_for_ui(
@@ -743,6 +794,7 @@ def render_details_from_state(
 
 def on_provider_change_ui(selected_provider: str) -> Any:
     from app.config.settings import get_settings
+
     settings = get_settings()
     choices = _build_model_choices(settings, selected_provider)
     llm_providers = settings.providers_config.get("llm_providers", {})
@@ -788,7 +840,7 @@ def build_app(
     )
 
     try:
-        _, initial_system_prompt, initial_schema_text = load_prompt_for_ui(
+        _, initial_system_prompt, initial_schema_text, _ = load_prompt_for_ui(
             prompt_manager=prompt_manager,
             prompt_name=default_prompt_name,
             prompt_version=default_prompt_version,
@@ -825,10 +877,12 @@ def build_app(
 
     model_choices = _build_model_choices(settings, provider=default_provider)
     ocr_model_choices = _build_ocr_model_choices(settings)
-    
-    provider_config = settings.providers_config.get("llm_providers", {}).get(default_provider, {})
+
+    provider_config = settings.providers_config.get("llm_providers", {}).get(
+        default_provider, {}
+    )
     explicit_default = provider_config.get("default_model")
-    
+
     if explicit_default and explicit_default in model_choices:
         default_model = str(explicit_default)
     else:
@@ -874,7 +928,7 @@ def build_app(
                 value=default_model,
             )
             prompt_name = gr.Dropdown(
-                label="Prompt Name",
+                label="System Prompt",
                 choices=prompt_names or [default_prompt_name],
                 value=default_prompt_name,
             )
@@ -1007,8 +1061,8 @@ def build_app(
             elem_id="summary_box",
         )
         raw_json_box = gr.Textbox(
-            label="Raw JSON",
-            lines=12,
+            label="Raw LLM Response",
+            lines=16,
             interactive=False,
             elem_id="raw_json_box",
         )
@@ -1284,17 +1338,7 @@ def build_app(
         )
 
         analyze_button.click(
-            fn=lambda current_session_id,
-            uploaded,
-            selected_provider,
-            selected_model,
-            selected_prompt_name,
-            selected_prompt_version,
-            selected_ocr_model,
-            selected_table_format,
-            selected_include_images,
-            selected_reasoning,
-            selected_thinking: (
+            fn=lambda current_session_id, uploaded, selected_provider, selected_model, selected_prompt_name, selected_prompt_version, selected_ocr_model, selected_table_format, selected_include_images, selected_reasoning, selected_thinking: (
                 run_full_pipeline(
                     orchestrator=full_orchestrator,
                     prompt_name=selected_prompt_name,
@@ -1362,13 +1406,7 @@ def build_app(
         )
 
         history_refresh_button.click(
-            fn=lambda session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: (
+            fn=lambda session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
                 refresh_history_for_ui(
                     repo=storage_repo,
                     session_id=session_filter,
@@ -1433,17 +1471,7 @@ def build_app(
         )
 
         restore_button.click(
-            fn=lambda selected_zip_file,
-            overwrite_existing_flag,
-            verify_only_flag,
-            require_signature_flag,
-            session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: (
+            fn=lambda selected_zip_file, overwrite_existing_flag, verify_only_flag, require_signature_flag, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
                 restore_history_run_bundle(
                     repo=storage_repo,
                     zip_file_path=selected_zip_file,
@@ -1487,16 +1515,7 @@ def build_app(
         )
 
         delete_history_button.click(
-            fn=lambda selected_run_id,
-            confirmed_run_id,
-            create_backup_before_delete,
-            session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: (
+            fn=lambda selected_run_id, confirmed_run_id, create_backup_before_delete, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit: (
                 delete_history_run(
                     repo=storage_repo,
                     run_id=selected_run_id,
@@ -1581,12 +1600,7 @@ def build_app(
         )
 
         save_prompt_button.click(
-            fn=lambda selected_prompt_name,
-            selected_prompt_version,
-            edited_prompt,
-            current_schema,
-            author,
-            note: (
+            fn=lambda selected_prompt_name, selected_prompt_version, edited_prompt, current_schema, author, note: (
                 save_prompt_as_new_version_for_ui(
                     prompt_manager=prompt_manager,
                     prompt_name=selected_prompt_name,
@@ -1714,13 +1728,22 @@ def _ocr_rows(result: FullPipelineResult) -> list[list[str]]:
 
 
 def _human_summary(result: FullPipelineResult) -> str:
+    if result.response_mode == "plain_text":
+        return _plain_text_summary(result.raw_json_text)
     return _summary_lines(
         critical_gaps_summary=result.critical_gaps_summary,
         next_questions_to_user=result.next_questions_to_user,
     )
 
 
-def _summary_from_payload(payload: dict[str, Any] | None) -> str:
+def _summary_from_payload(
+    *,
+    payload: dict[str, Any] | None,
+    response_mode: str,
+    raw_text: str,
+) -> str:
+    if response_mode == "plain_text":
+        return _plain_text_summary(raw_text)
     if not isinstance(payload, dict):
         return "critical_gaps_summary:\n- (unavailable)\n\nnext_questions_to_user:\n- (unavailable)"
 
@@ -1728,6 +1751,13 @@ def _summary_from_payload(payload: dict[str, Any] | None) -> str:
         critical_gaps_summary=_to_string_list(payload.get("critical_gaps_summary")),
         next_questions_to_user=_to_string_list(payload.get("next_questions_to_user")),
     )
+
+
+def _plain_text_summary(raw_text: str) -> str:
+    text = raw_text.strip()
+    if text:
+        return text
+    return "(empty plain-text response)"
 
 
 def _summary_lines(
@@ -1760,6 +1790,12 @@ def _raw_json_text(result: FullPipelineResult) -> str:
 
 
 def _validation_text(result: FullPipelineResult) -> str:
+    if (
+        result.response_mode == "plain_text"
+        and result.validation_valid
+        and not result.validation_errors
+    ):
+        return "Validation: skipped (plain-text prompt)"
     if result.validation_valid:
         return "Validation: valid"
 
@@ -1803,12 +1839,24 @@ def _load_raw_json_text(
     return json.dumps(parsed_json, ensure_ascii=False, indent=2)
 
 
-def _load_validation_text(*, artifacts_root: str) -> str:
+def _load_validation_text(
+    *,
+    artifacts_root: str,
+    response_mode: str,
+) -> str:
     payload, error = safe_load_llm_validation_json(artifacts_root)
     if error is not None:
         return f"Validation artifact unavailable: {error}"
     if payload is None:
         return "Validation artifact unavailable."
+
+    payload_mode = str(payload.get("response_mode") or response_mode).strip().lower()
+    status = str(payload.get("status") or "").strip().lower()
+    if payload_mode == "plain_text" or status == "skipped":
+        note = str(payload.get("note") or "").strip()
+        if note:
+            return f"Validation: skipped ({note})"
+        return "Validation: skipped (plain-text prompt)"
 
     valid = bool(payload.get("valid"))
     if valid:
@@ -1846,13 +1894,61 @@ def _metrics_text_for_history(*, run: Any, manifest: dict[str, Any] | None) -> s
     return json.dumps(metrics, ensure_ascii=False, indent=2)
 
 
-def _details_payload(parsed_json: dict[str, Any] | None) -> tuple[Any, str]:
+def _details_payload(
+    *,
+    parsed_json: dict[str, Any] | None,
+    response_mode: str,
+) -> tuple[Any, str]:
+    if response_mode != "structured_json":
+        return (
+            _details_selector_update([]),
+            "Details are unavailable for plain-text prompt.",
+        )
     item_ids = checklist_item_ids(parsed_json)
     selector_update = _details_selector_update(item_ids)
     if not item_ids:
         return selector_update, "No details available for selected item."
     details_text = render_checklist_details(parsed_json, item_ids[0])
     return selector_update, details_text
+
+
+def _resolve_history_response_mode(
+    *,
+    manifest: dict[str, Any] | None,
+    artifacts_root: str,
+) -> str:
+    if isinstance(manifest, dict):
+        inputs = manifest.get("inputs")
+        if isinstance(inputs, dict):
+            value = inputs.get("prompt_response_mode")
+            normalized = _normalize_response_mode(value)
+            if normalized is not None:
+                return normalized
+
+    validation_payload, validation_error = safe_load_llm_validation_json(artifacts_root)
+    if validation_error is None and isinstance(validation_payload, dict):
+        normalized = _normalize_response_mode(validation_payload.get("response_mode"))
+        if normalized is not None:
+            return normalized
+
+    return "structured_json"
+
+
+def _normalize_response_mode(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in {"structured_json", "plain_text"}:
+        return text
+    return None
+
+
+def _prompt_load_status(
+    *,
+    prompt_name: str,
+    prompt_version: str,
+    response_mode: str,
+) -> str:
+    mode_label = "plain text" if response_mode == "plain_text" else "structured json"
+    return f"Loaded {prompt_name}/{prompt_version} ({mode_label})"
 
 
 def _details_selector_update(item_ids: list[str]) -> Any:
@@ -2207,6 +2303,7 @@ def main() -> None:
             app.launch(
                 server_name=settings.gradio_server_name,
                 server_port=port,
+                css=_APP_CSS,
             )
             return
         except OSError as e:

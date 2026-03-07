@@ -45,6 +45,46 @@ class OpenAILLMClient:
             run_meta=run_meta,
         )
 
+        return self._execute_request(
+            service=service,
+            payload=payload,
+            model=model,
+            parse_json=True,
+        )
+
+    def generate_text(
+        self,
+        *,
+        system_prompt: str,
+        user_content: str,
+        model: str,
+        params: dict[str, Any],
+        run_meta: dict[str, Any],
+    ) -> LLMResult:
+        del run_meta
+        service = self._resolve_service()
+        payload = self.build_text_request_payload(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            model=model,
+            params=params,
+        )
+
+        return self._execute_request(
+            service=service,
+            payload=payload,
+            model=model,
+            parse_json=False,
+        )
+
+    def _execute_request(
+        self,
+        *,
+        service: OpenAIResponsesService,
+        payload: dict[str, Any],
+        model: str,
+        parse_json: bool,
+    ) -> LLMResult:
         start_time = time.perf_counter()
         response = service.create(**payload)
         elapsed_ms = (time.perf_counter() - start_time) * 1000
@@ -53,7 +93,7 @@ class OpenAILLMClient:
         raw_text = _extract_openai_output_text(
             response=response, payload=response_payload
         )
-        parsed_json = json.loads(raw_text)
+        parsed_json = json.loads(raw_text) if parse_json else None
 
         usage_raw = _extract_usage(response=response, payload=response_payload)
         usage_normalized = normalize_openai_usage(usage_raw)
@@ -75,6 +115,22 @@ class OpenAILLMClient:
         )
 
     @staticmethod
+    def build_text_request_payload(
+        *,
+        system_prompt: str,
+        user_content: str,
+        model: str,
+        params: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = _base_request_payload(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            model=model,
+            params=params,
+        )
+        return payload
+
+    @staticmethod
     def build_request_payload(
         *,
         system_prompt: str,
@@ -85,46 +141,20 @@ class OpenAILLMClient:
         run_meta: dict[str, Any],
     ) -> dict[str, Any]:
         schema_name = str(run_meta.get("schema_name") or "kaucja_gap_analysis")
-        payload: dict[str, Any] = {
-            "model": model,
-            "input": [
-                {
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": system_prompt}],
-                },
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": user_content}],
-                },
-            ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": schema_name,
-                    "schema": json_schema,
-                    "strict": True,
-                }
-            },
-            "tools": [],
-            "tool_choice": "none",
-        }
-
-        reasoning_effort = str(
-            params.get("openai_reasoning_effort")
-            or params.get("reasoning_effort")
-            or "auto"
+        payload = _base_request_payload(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            model=model,
+            params=params,
         )
-        if reasoning_effort in {"low", "medium", "high"}:
-            payload["reasoning"] = {"effort": reasoning_effort}
-
-        temperature = params.get("temperature")
-        if temperature is not None:
-            payload["temperature"] = temperature
-
-        max_output_tokens = params.get("max_output_tokens")
-        if max_output_tokens is not None:
-            payload["max_output_tokens"] = int(max_output_tokens)
-
+        payload["text"] = {
+            "format": {
+                "type": "json_schema",
+                "name": schema_name,
+                "schema": json_schema,
+                "strict": True,
+            }
+        }
         return payload
 
     def _resolve_service(self) -> OpenAIResponsesService:
@@ -142,6 +172,48 @@ class OpenAILLMClient:
         client = OpenAI(api_key=self._api_key)
         self._responses_service = client.responses
         return self._responses_service
+
+
+def _base_request_payload(
+    *,
+    system_prompt: str,
+    user_content: str,
+    model: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "input": [
+            {
+                "role": "system",
+                "content": [{"type": "input_text", "text": system_prompt}],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": user_content}],
+            },
+        ],
+        "tools": [],
+        "tool_choice": "none",
+    }
+
+    reasoning_effort = str(
+        params.get("openai_reasoning_effort")
+        or params.get("reasoning_effort")
+        or "auto"
+    )
+    if reasoning_effort in {"low", "medium", "high"}:
+        payload["reasoning"] = {"effort": reasoning_effort}
+
+    temperature = params.get("temperature")
+    if temperature is not None:
+        payload["temperature"] = temperature
+
+    max_output_tokens = params.get("max_output_tokens")
+    if max_output_tokens is not None:
+        payload["max_output_tokens"] = int(max_output_tokens)
+
+    return payload
 
 
 def _extract_usage(*, response: Any, payload: dict[str, Any]) -> dict[str, Any]:
