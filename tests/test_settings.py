@@ -22,6 +22,7 @@ def test_settings_loads_provider_config() -> None:
 
     assert "llm_providers" in providers
     assert "openai" in providers["llm_providers"]
+    assert "gpt-5.4" in providers["llm_providers"]["openai"]["models"]
 
 
 def test_settings_reads_restore_limits_and_signature_env(monkeypatch) -> None:

@@ -1,0 +1,9 @@
+prompt_name: canonical_prompt_v3_1
+prompt_version: v001
+schema_version: v001
+response_mode: plain_text
+display_name: Canonical Prompt V3.1
+system_prompt_source_path: "/Users/sergejavdejcik/Library/Mobile Documents/com~apple~CloudDocs/2026_1/backend_Kaucja/app/prompts/canonical_prompt_V3_1.md"
+created_at: "2026-03-07"
+author: coder
+note: Plain-text legal brief prompt sourced from canonical_prompt_V3_1.md.

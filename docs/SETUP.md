@@ -1,5 +1,12 @@
 # Local Bootstrap
 
+## Current Working Baseline
+
+As of **2026-03-07**, the primary working variant for launch is `main` after the merge
+that carries tag `kaucja-working-main-20260307`.
+
+Reference: `docs/iteration_74_working_runtime_designation.md`
+
 The easiest way to set up the environment and install dependencies is to use the bootstrap script:
 
 ```bash
@@ -23,6 +30,8 @@ Start the Gradio application using the startup wrapper (which automatically acti
 ```bash
 ./scripts/start.sh
 ```
+
+For day-to-day launch, use `main` as the source branch for this repository.
 
 Default port policy:
 

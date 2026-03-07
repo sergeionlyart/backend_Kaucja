@@ -20,6 +20,7 @@ class PromptSet:
     schema_text: str
     meta: dict[str, Any]
     prompt_dir: Path
+    response_mode: str
 
 
 class PromptManager:
@@ -66,20 +67,24 @@ class PromptManager:
         schema_path = prompt_dir / "schema.json"
         meta_path = prompt_dir / "meta.yaml"
 
-        if not system_prompt_path.exists():
-            raise FileNotFoundError(f"system prompt not found: {system_prompt_path}")
-        if not schema_path.exists():
-            raise FileNotFoundError(f"schema not found: {schema_path}")
-
-        system_prompt_text = system_prompt_path.read_text(encoding="utf-8")
-        schema_text = schema_path.read_text(encoding="utf-8")
-        _validate_schema_text(schema_text)
-
         meta: dict[str, Any] = {}
         if meta_path.exists():
             parsed_meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
             if isinstance(parsed_meta, dict):
                 meta = parsed_meta
+
+        response_mode = _normalize_response_mode(meta.get("response_mode"))
+
+        if not schema_path.exists():
+            raise FileNotFoundError(f"schema not found: {schema_path}")
+
+        system_prompt_text = _read_system_prompt_text(
+            system_prompt_path=system_prompt_path,
+            prompt_dir=prompt_dir,
+            meta=meta,
+        )
+        schema_text = schema_path.read_text(encoding="utf-8")
+        _validate_schema_text(schema_text)
 
         return PromptSet(
             prompt_name=prompt_name,
@@ -88,6 +93,7 @@ class PromptManager:
             schema_text=schema_text,
             meta=meta,
             prompt_dir=prompt_dir,
+            response_mode=response_mode,
         )
 
     def save_as_new_version(
@@ -114,11 +120,18 @@ class PromptManager:
         (new_dir / "schema.json").write_text(effective_schema_text, encoding="utf-8")
 
         meta_payload = {
-            "created_at": _utc_now(),
-            "author": author.strip() or "unknown",
-            "note": note.strip(),
-            "source_version": source_version,
+            key: value
+            for key, value in source.meta.items()
+            if key != "system_prompt_source_path"
         }
+        meta_payload.update(
+            {
+                "created_at": _utc_now(),
+                "author": author.strip() or "unknown",
+                "note": note.strip(),
+                "source_version": source_version,
+            }
+        )
         (new_dir / "meta.yaml").write_text(
             yaml.safe_dump(meta_payload, sort_keys=False, allow_unicode=False),
             encoding="utf-8",
@@ -148,6 +161,36 @@ def _version_to_int(version: str) -> int:
     if match is None:
         raise ValueError(f"Invalid version format: {version}")
     return int(match.group(1))
+
+
+def _normalize_response_mode(value: Any) -> str:
+    normalized = str(value or "structured_json").strip().lower()
+    if normalized not in {"structured_json", "plain_text"}:
+        raise ValueError(f"Unsupported prompt response_mode: {value}")
+    return normalized
+
+
+def _read_system_prompt_text(
+    *,
+    system_prompt_path: Path,
+    prompt_dir: Path,
+    meta: dict[str, Any],
+) -> str:
+    if system_prompt_path.exists():
+        return system_prompt_path.read_text(encoding="utf-8")
+
+    source_path_value = meta.get("system_prompt_source_path")
+    if source_path_value is None:
+        raise FileNotFoundError(f"system prompt not found: {system_prompt_path}")
+
+    source_path = Path(str(source_path_value))
+    if not source_path.is_absolute():
+        source_path = (prompt_dir / source_path).resolve()
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"system prompt source not found: {source_path}")
+
+    return source_path.read_text(encoding="utf-8")
 
 
 def _utc_now() -> str:

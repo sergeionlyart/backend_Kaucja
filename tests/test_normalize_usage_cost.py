@@ -50,16 +50,16 @@ def test_estimate_llm_cost() -> None:
             "llm": {
                 "openai": {
                     "models": {
-                        "gpt-5.1": {
-                            "input": 1.25,
-                            "output": 10.0,
+                        "gpt-5.4": {
+                            "input": 2.5,
+                            "output": 15.0,
                         }
                     }
                 }
             },
         },
         provider="openai",
-        model="gpt-5.1",
+        model="gpt-5.4",
         usage_normalized={
             "prompt_tokens": 1_000,
             "completion_tokens": 2_000,
@@ -69,4 +69,4 @@ def test_estimate_llm_cost() -> None:
     )
 
     assert cost["currency"] == "USD"
-    assert cost["llm_cost_usd"] == 0.02125
+    assert cost["llm_cost_usd"] == 0.0325

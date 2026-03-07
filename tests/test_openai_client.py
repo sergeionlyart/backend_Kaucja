@@ -6,8 +6,9 @@ from app.llm_client.openai_client import OpenAILLMClient
 
 
 class FakeResponsesService:
-    def __init__(self) -> None:
+    def __init__(self, output_text: str = '{"result": "ok"}') -> None:
         self.calls: list[dict[str, Any]] = []
+        self.output_text = output_text
 
     def create(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
@@ -15,7 +16,7 @@ class FakeResponsesService:
             "output": [
                 {
                     "content": [
-                        {"type": "output_text", "text": '{"result": "ok"}'},
+                        {"type": "output_text", "text": self.output_text},
                     ]
                 }
             ],
@@ -32,11 +33,12 @@ def test_openai_payload_builder_auto_reasoning_omits_reasoning_field() -> None:
         system_prompt="sys",
         user_content="user",
         json_schema={"type": "object"},
-        model="gpt-5.1",
+        model="gpt-5.4",
         params={"openai_reasoning_effort": "auto"},
         run_meta={"schema_name": "schema-v1"},
     )
 
+    assert payload["model"] == "gpt-5.4"
     assert payload["text"]["format"]["strict"] is True
     assert payload["tools"] == []
     assert payload["tool_choice"] == "none"
@@ -48,7 +50,7 @@ def test_openai_payload_builder_low_reasoning_includes_reasoning_field() -> None
         system_prompt="sys",
         user_content="user",
         json_schema={"type": "object"},
-        model="gpt-5.1",
+        model="gpt-5.4",
         params={"openai_reasoning_effort": "low"},
         run_meta={"schema_name": "schema-v1"},
     )
@@ -66,9 +68,9 @@ def test_openai_generate_json_normalizes_usage_and_cost() -> None:
             "llm": {
                 "openai": {
                     "models": {
-                        "gpt-5.1": {
-                            "input": 1.25,
-                            "output": 10.0,
+                        "gpt-5.4": {
+                            "input": 2.5,
+                            "output": 15.0,
                         }
                     }
                 }
@@ -80,7 +82,7 @@ def test_openai_generate_json_normalizes_usage_and_cost() -> None:
         system_prompt="sys",
         user_content="user",
         json_schema={"type": "object"},
-        model="gpt-5.1",
+        model="gpt-5.4",
         params={"openai_reasoning_effort": "auto"},
         run_meta={"schema_name": "schema-v1"},
     )
@@ -91,3 +93,37 @@ def test_openai_generate_json_normalizes_usage_and_cost() -> None:
     assert result.usage_normalized["total_tokens"] == 150
     assert result.cost["llm_cost_usd"] > 0
     assert len(fake_service.calls) == 1
+
+
+def test_openai_generate_text_returns_plain_text_without_json_parsing() -> None:
+    fake_service = FakeResponsesService(output_text="Legal brief in plain text")
+    client = OpenAILLMClient(
+        responses_service=fake_service,
+        pricing_config={
+            "currency": "USD",
+            "updated_at": "2026-02-25",
+            "llm": {
+                "openai": {
+                    "models": {
+                        "gpt-5.4": {
+                            "input": 2.5,
+                            "output": 15.0,
+                        }
+                    }
+                }
+            },
+        },
+    )
+
+    result = client.generate_text(
+        system_prompt="sys",
+        user_content="user",
+        model="gpt-5.4",
+        params={"openai_reasoning_effort": "auto"},
+        run_meta={},
+    )
+
+    assert result.raw_text == "Legal brief in plain text"
+    assert result.parsed_json is None
+    assert len(fake_service.calls) == 1
+    assert "text" not in fake_service.calls[0]

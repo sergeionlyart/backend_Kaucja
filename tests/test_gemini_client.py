@@ -7,8 +7,9 @@ from app.llm_client.gemini_client import GeminiLLMClient
 
 
 class FakeGenerateService:
-    def __init__(self) -> None:
+    def __init__(self, output_text: str = '{"answer": 1}') -> None:
         self.calls: list[dict[str, Any]] = []
+        self.output_text = output_text
 
     def generate_content(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
@@ -16,7 +17,7 @@ class FakeGenerateService:
             "candidates": [
                 {
                     "content": {
-                        "parts": [{"text": '{"answer": 1}'}],
+                        "parts": [{"text": self.output_text}],
                     }
                 }
             ],
@@ -34,9 +35,7 @@ def test_gemini_payload_builder_enforces_json_schema_output() -> None:
         mock_settings.return_value.providers_config = {
             "llm_providers": {
                 "google": {
-                    "models": {
-                        "gemini-3.1-pro-preview": {"supports_thinking": False}
-                    }
+                    "models": {"gemini-3.1-pro-preview": {"supports_thinking": False}}
                 }
             }
         }
@@ -59,9 +58,7 @@ def test_gemini_payload_builder_maps_thinking_level() -> None:
         mock_settings.return_value.providers_config = {
             "llm_providers": {
                 "google": {
-                    "models": {
-                        "gemini-2.0-flash-thinking": {"supports_thinking": True}
-                    }
+                    "models": {"gemini-2.0-flash-thinking": {"supports_thinking": True}}
                 }
             }
         }
@@ -79,11 +76,7 @@ def test_gemini_payload_builder_omits_thinking_config_for_unsupported_models() -
     with patch("app.config.settings.get_settings") as mock_settings:
         mock_settings.return_value.providers_config = {
             "llm_providers": {
-                "google": {
-                    "models": {
-                        "gemini-2.5-flash": {"supports_thinking": False}
-                    }
-                }
+                "google": {"models": {"gemini-2.5-flash": {"supports_thinking": False}}}
             }
         }
         payload = GeminiLLMClient.build_request_payload(
@@ -132,3 +125,45 @@ def test_gemini_generate_json_normalizes_usage_and_cost() -> None:
     assert result.usage_normalized["thoughts_tokens"] == 5
     assert result.cost["llm_cost_usd"] > 0
     assert len(service.calls) == 1
+
+
+def test_gemini_generate_text_returns_plain_text_without_json_parsing() -> None:
+    service = FakeGenerateService(output_text="Plain text legal brief")
+    client = GeminiLLMClient(
+        generate_service=service,
+        pricing_config={
+            "currency": "USD",
+            "updated_at": "2026-02-25",
+            "llm": {
+                "google": {
+                    "models": {
+                        "gemini-3.1-pro-preview": {
+                            "input": 2.0,
+                            "output": 12.0,
+                        }
+                    }
+                }
+            },
+        },
+    )
+
+    with patch("app.config.settings.get_settings") as mock_settings:
+        mock_settings.return_value.providers_config = {
+            "llm_providers": {
+                "google": {
+                    "models": {"gemini-3.1-pro-preview": {"supports_thinking": False}}
+                }
+            }
+        }
+        result = client.generate_text(
+            system_prompt="sys",
+            user_content="user",
+            model="gemini-3.1-pro-preview",
+            params={"gemini_thinking_level": "auto"},
+            run_meta={},
+        )
+
+    assert result.raw_text == "Plain text legal brief"
+    assert result.parsed_json is None
+    assert len(service.calls) == 1
+    assert "response_mime_type" not in service.calls[0]["config"]

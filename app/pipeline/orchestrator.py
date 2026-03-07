@@ -14,6 +14,7 @@ from app.llm_client.base import LLMClient, LLMResult
 from app.ocr_client.types import OCROptions, OCRResult
 from app.pipeline.pack_documents import load_and_pack_documents
 from app.pipeline.validate_output import ValidationResult, validate_output
+from app.prompts.manager import PromptManager
 from app.storage.artifacts import ArtifactsManager, DocumentArtifacts, RunArtifacts
 from app.storage.models import OCRStatus
 from app.storage.repo import StorageRepo
@@ -73,6 +74,7 @@ class FullPipelineResult:
     metrics: dict[str, Any]
     error_code: str | None
     error_message: str | None
+    response_mode: str = "structured_json"
 
 
 _OCR_MAX_RETRIES = 1
@@ -415,6 +417,7 @@ class OCRPipelineOrchestrator:
                 error_message=error_message,
             )
 
+        prompt_assets: _PromptAssets | None = None
         try:
             update_run_manifest(
                 artifacts_root_path=run.artifacts_root_path,
@@ -422,9 +425,17 @@ class OCRPipelineOrchestrator:
                     "stages": {"llm": {"status": "running", "updated_at": _utc_now()}}
                 },
             )
-            system_prompt, schema = self._load_prompt_assets(
+            prompt_assets = self._load_prompt_assets(
                 prompt_name=prompt_name,
                 prompt_version=prompt_version,
+            )
+            update_run_manifest(
+                artifacts_root_path=run.artifacts_root_path,
+                updates={
+                    "inputs": {
+                        "prompt_response_mode": prompt_assets.response_mode,
+                    }
+                },
             )
             packed_documents = load_and_pack_documents(ocr_stage.packed_documents)
             context_char_limit = int(
@@ -440,24 +451,43 @@ class OCRPipelineOrchestrator:
                 )
             _write_request_artifact(
                 path=llm_artifacts.request_path,
-                system_prompt=system_prompt,
+                system_prompt=prompt_assets.system_prompt,
                 user_content=packed_documents,
             )
 
             llm_client = self._resolve_llm_client(provider)
+            if prompt_assets.response_mode == "plain_text":
+
+                def llm_operation() -> LLMResult:
+                    return llm_client.generate_text(
+                        system_prompt=prompt_assets.system_prompt,
+                        user_content=packed_documents,
+                        model=model,
+                        params=llm_runtime_params,
+                        run_meta={
+                            "session_id": session.session_id,
+                            "run_id": run.run_id,
+                            "schema_name": f"{prompt_name}_{prompt_version}",
+                        },
+                    )
+            else:
+
+                def llm_operation() -> LLMResult:
+                    return llm_client.generate_json(
+                        system_prompt=prompt_assets.system_prompt,
+                        user_content=packed_documents,
+                        json_schema=prompt_assets.schema,
+                        model=model,
+                        params=llm_runtime_params,
+                        run_meta={
+                            "session_id": session.session_id,
+                            "run_id": run.run_id,
+                            "schema_name": f"{prompt_name}_{prompt_version}",
+                        },
+                    )
+
             llm_result = run_with_retry(
-                operation=lambda: llm_client.generate_json(
-                    system_prompt=system_prompt,
-                    user_content=packed_documents,
-                    json_schema=schema,
-                    model=model,
-                    params=llm_runtime_params,
-                    run_meta={
-                        "session_id": session.session_id,
-                        "run_id": run.run_id,
-                        "schema_name": f"{prompt_name}_{prompt_version}",
-                    },
-                ),
+                operation=llm_operation,
                 should_retry=is_retryable_llm_exception,
                 max_retries=_LLM_MAX_RETRIES,
                 base_delay_seconds=_RETRY_BASE_DELAY_SECONDS,
@@ -476,11 +506,27 @@ class OCRPipelineOrchestrator:
                 response_parsed_path=llm_artifacts.response_parsed_path,
             )
 
-            validation = validate_output(
-                parsed_json=llm_result.parsed_json, schema=schema
-            )
+            validation_status = "valid"
+            validation_note: str | None = None
+            if prompt_assets.response_mode == "plain_text":
+                validation = ValidationResult(
+                    valid=True,
+                    schema_errors=[],
+                    invariant_errors=[],
+                )
+                validation_status = "skipped"
+                validation_note = "Validation skipped for plain-text prompt."
+            else:
+                validation = validate_output(
+                    parsed_json=llm_result.parsed_json, schema=prompt_assets.schema
+                )
+                validation_status = "valid" if validation.valid else "invalid"
             _write_validation_artifact(
-                path=llm_artifacts.validation_path, validation=validation
+                path=llm_artifacts.validation_path,
+                validation=validation,
+                status=validation_status,
+                response_mode=prompt_assets.response_mode,
+                note=validation_note,
             )
 
             self.repo.upsert_llm_output(
@@ -519,14 +565,19 @@ class OCRPipelineOrchestrator:
                         "llm": {"status": "completed", "updated_at": _utc_now()}
                     },
                     "metrics": metrics,
-                    "validation": {
-                        "valid": validation.valid,
-                        "errors": validation.errors,
-                    },
+                    "validation": _validation_manifest_payload(
+                        validation=validation,
+                        status=validation_status,
+                        response_mode=prompt_assets.response_mode,
+                        note=validation_note,
+                    ),
                 },
             )
 
-            if not validation.valid:
+            if (
+                prompt_assets.response_mode == "structured_json"
+                and not validation.valid
+            ):
                 error_message = "; ".join(validation.errors)
                 self.repo.update_run_status(
                     run_id=run.run_id,
@@ -570,6 +621,7 @@ class OCRPipelineOrchestrator:
                     metrics=metrics,
                     error_code="LLM_SCHEMA_INVALID",
                     error_message=error_message,
+                    response_mode=prompt_assets.response_mode,
                 )
 
             self.repo.update_run_status(run_id=run.run_id, status="completed")
@@ -591,11 +643,13 @@ class OCRPipelineOrchestrator:
                 run_id=run.run_id,
                 run_status="completed",
                 documents=ocr_stage.documents,
-                critical_gaps_summary=_extract_string_list(
-                    llm_result.parsed_json.get("critical_gaps_summary")
+                critical_gaps_summary=_extract_result_list(
+                    parsed_json=llm_result.parsed_json,
+                    field_name="critical_gaps_summary",
                 ),
-                next_questions_to_user=_extract_string_list(
-                    llm_result.parsed_json.get("next_questions_to_user")
+                next_questions_to_user=_extract_result_list(
+                    parsed_json=llm_result.parsed_json,
+                    field_name="next_questions_to_user",
                 ),
                 raw_json_text=llm_result.raw_text,
                 parsed_json=llm_result.parsed_json,
@@ -604,6 +658,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=None,
                 error_message=None,
+                response_mode=prompt_assets.response_mode,
             )
 
         except ContextTooLargeError as error:
@@ -705,6 +760,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_message,
+                response_mode=_result_response_mode(prompt_assets),
             )
 
         except json.JSONDecodeError as error:
@@ -802,6 +858,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_message,
+                response_mode=_result_response_mode(prompt_assets),
             )
 
         except Exception as error:  # noqa: BLE001
@@ -885,6 +942,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_details,
+                response_mode=_result_response_mode(prompt_assets),
             )
 
     def _run_ocr_documents(
@@ -1038,7 +1096,43 @@ class OCRPipelineOrchestrator:
         *,
         prompt_name: str,
         prompt_version: str,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> "_PromptAssets":
+        try:
+            prompt_set = PromptManager(self.prompt_root).load_prompt_set(
+                prompt_name=prompt_name,
+                version=prompt_version,
+            )
+        except ValueError as error:
+            if "Invalid prompt version format" not in str(error):
+                raise
+            return self._load_legacy_prompt_assets(
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+            )
+
+        schema = json.loads(prompt_set.schema_text)
+        if not isinstance(schema, dict):
+            raise ValueError("Schema must be a JSON object")
+
+        if prompt_set.response_mode == "structured_json":
+            self._enforce_structured_prompt_lock(
+                system_prompt=prompt_set.system_prompt_text,
+                schema=schema,
+                prompt_version=prompt_version,
+            )
+
+        return _PromptAssets(
+            system_prompt=prompt_set.system_prompt_text,
+            schema=schema,
+            response_mode=prompt_set.response_mode,
+        )
+
+    def _load_legacy_prompt_assets(
+        self,
+        *,
+        prompt_name: str,
+        prompt_version: str,
+    ) -> "_PromptAssets":
         prompt_dir = self.prompt_root / prompt_name / prompt_version
         requested_prompt_path = prompt_dir / "system_prompt.txt"
         requested_schema_path = prompt_dir / "schema.json"
@@ -1053,9 +1147,28 @@ class OCRPipelineOrchestrator:
             )
 
         system_prompt = requested_prompt_path.read_text(encoding="utf-8")
-        schema_text = requested_schema_path.read_text(encoding="utf-8")
+        schema = json.loads(requested_schema_path.read_text(encoding="utf-8"))
+        if not isinstance(schema, dict):
+            raise ValueError("Schema must be a JSON object")
 
-        # Enforce canonical TechSpec Lock: the requested files MUST match the canonical versions.
+        self._enforce_structured_prompt_lock(
+            system_prompt=system_prompt,
+            schema=schema,
+            prompt_version=prompt_version,
+        )
+        return _PromptAssets(
+            system_prompt=system_prompt,
+            schema=schema,
+            response_mode="structured_json",
+        )
+
+    @staticmethod
+    def _enforce_structured_prompt_lock(
+        *,
+        system_prompt: str,
+        schema: dict[str, Any],
+        prompt_version: str,
+    ) -> None:
         canonical_prompt_path = Path("app/prompts/canonical_prompt.txt")
         canonical_schema_path = Path("app/schemas/canonical_schema.json")
 
@@ -1079,18 +1192,10 @@ class OCRPipelineOrchestrator:
         except json.JSONDecodeError as error:
             raise TechspecDriftError(f"Canonical JSON schema invalid: {error}")
 
-        requested_schema_json = json.loads(schema_text)
-        if requested_schema_json != canonical_schema_json:
+        if schema != canonical_schema_json:
             raise TechspecDriftError(
                 f"Requested schema version '{prompt_version}' violates the exact canonical TechSpec lock."
             )
-
-        schema = json.loads(schema_text)
-
-        if not isinstance(schema, dict):
-            raise ValueError("Schema must be a JSON object")
-
-        return system_prompt, schema
 
 
 @dataclass(frozen=True, slots=True)
@@ -1101,6 +1206,13 @@ class _OcrStageInternals:
     t_ocr_total_ms: float
     error_code: str | None
     error_message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _PromptAssets:
+    system_prompt: str
+    schema: dict[str, Any]
+    response_mode: str
 
 
 def _normalize_input_paths(input_files: Sequence[str | Path]) -> list[Path]:
@@ -1158,17 +1270,29 @@ def _write_llm_success_artifacts(
 ) -> None:
     response_raw_path.write_text(llm_result.raw_text, encoding="utf-8")
     response_parsed_path.write_text(
-        json.dumps(llm_result.parsed_json, ensure_ascii=False, indent=2),
+        json.dumps(
+            llm_result.parsed_json or {},
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
 
 
-def _write_validation_artifact(*, path: Path, validation: ValidationResult) -> None:
-    payload = {
-        "valid": validation.valid,
-        "schema_errors": validation.schema_errors,
-        "invariant_errors": validation.invariant_errors,
-    }
+def _write_validation_artifact(
+    *,
+    path: Path,
+    validation: ValidationResult,
+    status: str | None = None,
+    response_mode: str = "structured_json",
+    note: str | None = None,
+) -> None:
+    payload = _validation_manifest_payload(
+        validation=validation,
+        status=status,
+        response_mode=response_mode,
+        note=note,
+    )
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -1180,6 +1304,42 @@ def _extract_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _extract_result_list(
+    *,
+    parsed_json: dict[str, Any] | None,
+    field_name: str,
+) -> list[str]:
+    if not isinstance(parsed_json, dict):
+        return []
+    return _extract_string_list(parsed_json.get(field_name))
+
+
+def _validation_manifest_payload(
+    *,
+    validation: ValidationResult,
+    status: str | None = None,
+    response_mode: str = "structured_json",
+    note: str | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "valid": validation.valid,
+        "schema_errors": validation.schema_errors,
+        "invariant_errors": validation.invariant_errors,
+        "errors": validation.errors,
+        "status": status or ("valid" if validation.valid else "invalid"),
+        "response_mode": response_mode,
+    }
+    if note:
+        payload["note"] = note
+    return payload
+
+
+def _result_response_mode(prompt_assets: _PromptAssets | None) -> str:
+    if prompt_assets is None:
+        return "structured_json"
+    return prompt_assets.response_mode
 
 
 def _build_manifest_inputs(
