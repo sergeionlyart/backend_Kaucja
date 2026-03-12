@@ -38,7 +38,7 @@ def checklist_item_ids(parsed_json: dict[str, Any] | None) -> list[str]:
 
 def render_checklist_details(
     parsed_json: dict[str, Any] | None,
-    item_id: str,
+    item_id: str | None,
 ) -> str:
     checklist = _checklist(parsed_json)
     target = _find_item(checklist=checklist, item_id=item_id)
@@ -97,9 +97,9 @@ def _checklist(parsed_json: dict[str, Any] | None) -> list[dict[str, Any]]:
 
 
 def _find_item(
-    *, checklist: list[dict[str, Any]], item_id: str
+    *, checklist: list[dict[str, Any]], item_id: str | None
 ) -> dict[str, Any] | None:
-    needle = item_id.strip()
+    needle = str(item_id or "").strip()
     if not needle:
         return None
     for item in checklist:

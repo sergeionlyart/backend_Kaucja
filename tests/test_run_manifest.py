@@ -18,6 +18,7 @@ def test_run_manifest_init_and_update(tmp_path: Path) -> None:
         session_id="s-1",
         run_id="r-1",
         inputs={
+            "scenario_id": "scenario_1",
             "provider": "openai",
             "model": "gpt-5.1",
             "prompt_name": "kaucja_gap_analysis",
@@ -39,6 +40,7 @@ def test_run_manifest_init_and_update(tmp_path: Path) -> None:
     assert path.is_file()
 
     initial = read_run_manifest(artifacts_root_path=run_root)
+    assert initial["inputs"]["scenario_id"] == "scenario_1"
     assert initial["session_id"] == "s-1"
     assert initial["run_id"] == "r-1"
     assert initial["stages"]["init"]["status"] == "completed"

@@ -12,6 +12,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _default_scenario2_mongo_uri() -> str:
+    return "mongodb://localhost:27017"
+
+
+def _default_scenario2_mongo_db() -> str:
+    return "legal_rag_runtime"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env."""
 
@@ -114,6 +122,57 @@ class Settings(BaseSettings):
             "LIVE_SMOKE_PROVIDER_TIMEOUT_SECONDS",
         ),
     )
+    scenario2_runner_mode: str = Field(
+        default="stub",
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_RUNNER_MODE",
+            "SCENARIO2_RUNNER_MODE",
+        ),
+    )
+    scenario2_verifier_policy: str = Field(
+        default="informational",
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_VERIFIER_POLICY",
+            "SCENARIO2_VERIFIER_POLICY",
+        ),
+    )
+    scenario2_legal_corpus_backend: str = Field(
+        default="local",
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_LEGAL_CORPUS_BACKEND",
+            "SCENARIO2_LEGAL_CORPUS_BACKEND",
+        ),
+    )
+    scenario2_legal_corpus_local_root: Path = Field(
+        default=Path("artifacts/legal_collection"),
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_LEGAL_CORPUS_LOCAL_ROOT",
+            "SCENARIO2_LEGAL_CORPUS_LOCAL_ROOT",
+        ),
+    )
+    scenario2_legal_corpus_mongo_uri: str = Field(
+        default_factory=_default_scenario2_mongo_uri,
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_LEGAL_CORPUS_MONGO_URI",
+            "SCENARIO2_LEGAL_CORPUS_MONGO_URI",
+            "LEGAL_INGEST_MONGO_URI",
+        ),
+    )
+    scenario2_legal_corpus_mongo_db: str = Field(
+        default_factory=_default_scenario2_mongo_db,
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_LEGAL_CORPUS_MONGO_DB",
+            "SCENARIO2_LEGAL_CORPUS_MONGO_DB",
+            "LEGAL_INGEST_MONGO_DB",
+        ),
+    )
+    scenario2_legal_corpus_mongo_auto_materialize: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "KAUCJA_SCENARIO2_LEGAL_CORPUS_MONGO_AUTO_MATERIALIZE",
+            "SCENARIO2_LEGAL_CORPUS_MONGO_AUTO_MATERIALIZE",
+        ),
+    )
 
     openai_api_key: str | None = Field(
         default=None,
@@ -149,6 +208,10 @@ class Settings(BaseSettings):
     @property
     def resolved_pricing_config_path(self) -> Path:
         return self._resolve_path(self.pricing_config_path)
+
+    @property
+    def resolved_scenario2_legal_corpus_local_root(self) -> Path:
+        return self._resolve_path(self.scenario2_legal_corpus_local_root)
 
     def load_yaml(self, path: Path) -> dict[str, Any]:
         if not path.exists():

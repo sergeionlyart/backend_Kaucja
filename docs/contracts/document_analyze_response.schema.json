@@ -1,0 +1,349 @@
+{
+  "$defs": {
+    "AnalyzedDocument": {
+      "description": "Document model aligned with UI v2 TechSpec.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "categoryId": {
+          "enum": [
+            "lease",
+            "deposit_payment",
+            "handover_protocol",
+            "correspondence"
+          ],
+          "title": "Categoryid",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sizeMb": {
+          "title": "Sizemb",
+          "type": "number"
+        },
+        "status": {
+          "default": "done",
+          "enum": [
+            "done",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "progress": {
+          "default": 100,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Progress",
+          "type": "integer"
+        },
+        "extracted_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Extracted Fields",
+          "type": "array"
+        },
+        "analyzed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Analyzed At"
+        },
+        "client_doc_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Doc Id"
+        }
+      },
+      "required": [
+        "id",
+        "categoryId",
+        "name",
+        "sizeMb"
+      ],
+      "title": "AnalyzedDocument",
+      "type": "object"
+    },
+    "ClarificationQuestion": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "priority": {
+          "default": "medium",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "related_doc_types": {
+          "items": {
+            "enum": [
+              "lease",
+              "deposit_payment",
+              "handover_protocol",
+              "correspondence"
+            ],
+            "type": "string"
+          },
+          "title": "Related Doc Types",
+          "type": "array"
+        },
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Answer"
+        },
+        "status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "answered"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "ClarificationQuestion",
+      "type": "object"
+    },
+    "FieldMeta": {
+      "properties": {
+        "source_type": {
+          "default": "unknown",
+          "enum": [
+            "unknown",
+            "intake",
+            "document",
+            "manual",
+            "lease",
+            "deposit_payment",
+            "handover_protocol",
+            "correspondence"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "source_label": {
+          "default": "brak danych",
+          "title": "Source Label",
+          "type": "string"
+        },
+        "document_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Id"
+        },
+        "document_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Name"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        }
+      },
+      "title": "FieldMeta",
+      "type": "object"
+    },
+    "MissingDoc": {
+      "properties": {
+        "doc_type": {
+          "title": "Doc Type",
+          "type": "string"
+        },
+        "priority": {
+          "default": "medium",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "reason": {
+          "default": "",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_type"
+      ],
+      "title": "MissingDoc",
+      "type": "object"
+    },
+    "SummaryField": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "title": "Value",
+          "type": "string"
+        },
+        "status": {
+          "default": "muted",
+          "enum": [
+            "ok",
+            "warn",
+            "muted"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label"
+      ],
+      "title": "SummaryField",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "analyzed_documents": {
+      "items": {
+        "$ref": "#/$defs/AnalyzedDocument"
+      },
+      "title": "Analyzed Documents",
+      "type": "array"
+    },
+    "summary_fields": {
+      "items": {
+        "$ref": "#/$defs/SummaryField"
+      },
+      "title": "Summary Fields",
+      "type": "array"
+    },
+    "fields_meta": {
+      "additionalProperties": {
+        "$ref": "#/$defs/FieldMeta"
+      },
+      "title": "Fields Meta",
+      "type": "object"
+    },
+    "questions": {
+      "items": {
+        "$ref": "#/$defs/ClarificationQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "missing_docs": {
+      "items": {
+        "$ref": "#/$defs/MissingDoc"
+      },
+      "title": "Missing Docs",
+      "type": "array"
+    },
+    "analysis_run_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Analysis Run Id"
+    },
+    "warnings": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Warnings"
+    }
+  },
+  "required": [
+    "case_id",
+    "analyzed_documents",
+    "summary_fields",
+    "fields_meta",
+    "questions",
+    "missing_docs"
+  ],
+  "title": "DocumentAnalyzeResponse",
+  "type": "object"
+}

@@ -82,6 +82,29 @@
 
 * Автоматическое обновление тарифов провайдеров (в MVP — через конфиг).
 
+### **1.3 Scenario 2 Foundation (Current Iteration Extension)**
+
+В рамках этой итерации вводится отдельный `Scenario 2` как инфраструктурное расширение поверх текущего MVP.
+Сценарий 2 использует общий OCR pipeline и детерминированный контрольный ответ `"Scenario 2 foundation is active..."` вместо запуска реального agentic/legal-corpus этапа.
+В OCR-only режиме Scenario 2 требуется только Mistral для OCR; runtime-проверки OpenAI/Google и agentic/legal-corpus этапы на этой стадии не применяются.
+В Iteration 4 закреплён контрактный скелет для следующего шага: `app/agentic/legal_corpus_contract.py` и
+`app/agentic/scenario2_runner.py` с обязательной резолюцией `prompt_source_path` в существующий файл;
+Stub runner пишет JSON trace (`steps`, `tool_trace`, `diagnostics`) в `llm/scenario2_trace.json` и сохраняет путь в `run.json`.
+В этой же итерации не включается реальный OpenAI tool-calling loop по умолчанию; при необходимости реальный `OpenAIScenario2Runner` подаётся через controlled dependency injection, с фиксированными `legal_corpus_tool` и prompt-инфраструктурой.
+Полный legal_corpus/agentic retrieval будет включён в следующей итерации.
+В Iteration 5 фиксируется детерминированная обработка ошибок для foundation-ветки Scenario 2: любые ошибки после OCR переводят run в `failed`, `stages.finalize.status` становится `failed`, а ошибки трассируются через `SCENARIO2_*` коды.
+В Iteration 8 добавляется controlled bootstrap для `openai_tool_loop`: приложение умеет собирать `OpenAIScenario2Runner` и read-only local `legal_corpus` adapter из настроек, но default режим по-прежнему остаётся `stub`, а production backend не подключается.
+В Iteration 9 local `legal_corpus` остаётся dev-quality retrieval layer, но его ответы должны явно различать поддержанные и неподдержанные retrieval-опции, маркировать raw-text fragment fallback и фиксировать current-snapshot-only provenance semantics вместо молчаливой имитации production backend.
+В Iteration 10 real `Scenario 2` runner больше не должен принимать финальный ответ после retrieval-step без успешного `fetch_fragments`; grounded/un-grounded semantics фиксируются в trace diagnostics для аудита и будущего UI.
+В Iteration 11 runner сохраняет provenance конкретных fetched fragments в trace diagnostics и различает `missing_fragments` и `fragments_fetched`; статус `fragments_bound` не заявляется без отдельной binding-проверки.
+В Iteration 12 пустой или непригодный `fetch_fragments` больше не считается успешным grounding: для перехода в `fragments_fetched` нужен хотя бы один usable fragment со стабильным provenance handle, иначе trace diagnostics показывают `empty_fragments`, а final answer остаётся fail-closed.
+В Iteration 13 failure-path `Scenario 2` real runner должен сохранять partial runtime trail: при падении внутри tool-loop в `scenario2_trace.json` остаются накопленные `steps`, `tool_trace`, `tool_usage_counts`, grounding/citation statuses и флаг repair-turn, а не только `error_code` / `error_message`.
+В Iteration 14 Gradio UI и history load должны показывать Scenario 2 diagnostics из `scenario2_trace.json`: `runner_mode`, `llm_executed`, grounding/citation statuses, fetch flags, repair-turn, tool summary и fetched fragments summary. Для Scenario 1 эти блоки остаются `not applicable`.
+В Iteration 15 compare/history comparison должен быть scenario-aware: для двух `Scenario 2` runs сравниваются grounding/citation diagnostics, tool rounds и fetched fragments provenance, а для mixed `Scenario 1` / `Scenario 2` comparison UI должен честно помечать checklist diff как `not applicable`, сохраняя только meta/metrics comparison.
+В Iteration 16 `Scenario 2` trace и Gradio должны сохранять и показывать citation-ready fetched fragment excerpts: ограниченный `text_excerpt`, `locator`, `locator_precision`, `page_truth_status` и `quote_checksum`. Compare flow для двух `Scenario 2` runs должен уметь сравнивать fetched fragments по stable checksum/source surface без изменения поведения `Scenario 1`.
+В Iteration 17 `Scenario 2` получает deterministic verifier pass без LLM/ML: проверяются обязательные секции ответа по `agent_prompt_V1.1.md`, наличие блока `Источники` и консервативная ссылка на fetched source surface после retrieval. Результат verifier остаётся informational и попадает в trace, Gradio diagnostics и Scenario 2 compare.
+В Iteration 18 deterministic verifier для `Scenario 2` дополнительно проверяет citation discipline по prompt: bracket-format citations `[Документ пользователя: ...]`, `[Норма: ...]`, `[Практика: ...]`, наличие legal citations в аналитических секциях и отдельные counts/status для citation format. Эти diagnostics сохраняются в trace, отображаются в Gradio и сравниваются в Scenario 2 compare.
+
 ---
 
 ## **2\) UX и пользовательские сценарии (Gradio)**
@@ -3132,13 +3155,202 @@ def estimate\_total\_cost(
 
 * gr.Markdown(report\_md)
 
-* gr.Dataframe(df)
+  * gr.Dataframe(df)
 
-* gr.JSON(payload) (сырой JSON)
+  * gr.JSON(payload) (сырой JSON)
 
-* gr.Textbox("\\n".join(missing)) или gr.Dataframe для missing.
+  * gr.Textbox("\\n".join(missing)) или gr.Dataframe для missing.
 
   ---
 
-  
+## Scenario 2 Review Status
 
+Scenario 2 verifier outcomes are also promoted to a run-level `review_status` for observability and triage. This status is separate from `run.status` and is persisted manifest-first:
+
+* `passed` when deterministic verifier status is `passed`
+* `needs_review` when deterministic verifier status is `warning`
+* `not_applicable` for Scenario 1 and Scenario 2 paths where verifier checks do not apply
+
+The history list, Scenario 2 diagnostics UI, and Scenario 2 compare flow should surface this review status without turning verifier warnings into failed runs.
+
+## Scenario 2 Verifier Gate Policy
+
+Scenario 2 also supports a configurable verifier gate policy:
+
+* `informational` (default): verifier warnings remain non-blocking and only affect review/diagnostics
+* `strict`: verifier warnings become gate-relevant through explicit `verifier_gate_status`
+
+This gate is intentionally separate from `run.status`. Even in strict mode, artifacts and diagnostics are still persisted and the run is not automatically rewritten into a failed run; instead, manifest/trace/UI/compare expose the explicit gate outcome for audit and triage.
+
+## Scenario 2 Production Retrieval Backend
+
+Scenario 2 is no longer limited to the local/dev corpus path. The production-capable path now supports a Mongo-first legal corpus backend with the following runtime model:
+
+* Mongo is the source of truth for retrieval.
+* Filesystem paths are used only for provenance and artifact replay hints.
+* The read-only `legal_corpus` tool remains the only tool surface exposed to the model.
+
+### Materialized Retrieval Layer
+
+Scenario 2 production retrieval uses a derived operational layer built on top of the existing `legal_ingest` Mongo collections:
+
+* `retrieval_units`
+* `citation_resolutions`
+* `retrieval_index_runs`
+
+`retrieval_units` provide quoteable fragment-level access across acts and case law with stable identifiers such as:
+
+* `unit_id`
+* `doc_uid`
+* `source_hash`
+* `canonical_doc_uid`
+* `document_kind`
+* `legal_role`
+* `unit_type`
+* `node_id`
+* `title`
+* `title_path`
+* `text`
+* `text_norm`
+* `page_start`
+* `page_end`
+* `locator`
+* `issue_tags`
+* `facts_tags`
+* `related_provisions`
+* `court_level`
+* `judgment_date`
+* `current_status`
+* `operational_status`
+* `is_indexable`
+* `display_citation`
+* `authority_weight`
+* `effective_from`
+* `effective_to`
+* `version_date`
+* `storage_backend`
+* `storage_uri_normalized`
+* `artifact_manifest`
+* `integrity_status`
+
+The index is now rebuilt with a safe build-then-promote strategy: a new generation is materialized into generation-scoped collections, and only a completed build is promoted in `retrieval_index_runs`. Retrieval diagnostics persist index freshness data so Scenario 2 traces can warn when the materialized layer is older than the latest successful ingest, while rebuild failures keep the last completed index readable.
+
+### Version-Aware and Operational Retrieval
+
+Scenario 2 production retrieval now enforces:
+
+* default `current_only` semantics based on `documents.current_source_hash`
+* `as_of_date` selection against version metadata
+* explicit `historical_version_not_found` diagnostics when no matching version exists
+* operational filtering using `operational_status` and `is_indexable`
+
+Broken, alias, traceability-only, and excluded records are not part of default operational retrieval.
+
+### Citation Resolution and Provenance
+
+`expand_related` no longer relies only on raw citation text. It uses the materialized `citation_resolutions` layer to resolve `target_external_id -> target_doc_uid / target_canonical_doc_uid`.
+
+`get_provenance` now returns stable traceability payloads suitable for audit, replay, and UI rendering, including:
+
+* source URLs and normalized URLs
+* `storage_backend`
+* `storage_uri_normalized`
+* `artifact_manifest`
+* `integrity_status`
+* current/historical version metadata
+
+### Separate Case Workspace
+
+User-uploaded case documents are kept separate from the authoritative legal corpus. Scenario 2 production bootstrap now supports a distinct workspace layer with:
+
+* `case_workspaces`
+* `case_documents`
+* `case_facts`
+* `analysis_runs`
+
+This preserves traceability for user case materials without mixing them into the authoritative legal reference collections. The minimal workspace contract now explicitly persists:
+
+* `claim_amount`
+* `currency`
+* `lease_start`
+* `lease_end`
+* `move_out_date`
+* `deposit_return_due_date`
+
+When these values are not yet known at bootstrap time they are stored as explicit `null` fields, not silently omitted. `case_facts` likewise stays truthful: Scenario 2 persists a machine-readable `facts_pending` technical placeholder until extracted case facts actually exist.
+
+Scenario 2 runtime now also propagates real case metadata when the system already knows it:
+
+* API-derived `deposit_amount` is parsed conservatively into `claim_amount` and `currency`
+* API-derived `move_out_date` is persisted into the workspace
+* fields not yet collected by the current API/UI, such as `lease_start`, `lease_end`, and `deposit_return_due_date`, remain explicit `null`
+
+This means the production case workspace is no longer only schema-complete; it now stores real known case-level metadata during Scenario 2 startup without inventing missing values.
+
+The main Gradio path is now also explicitly case-aware for Scenario 2:
+
+* users can enter an explicit `Scenario 2 Case ID`
+* users can directly provide minimal optional case metadata:
+  * `claim_amount`
+  * `currency`
+  * `lease_start`
+  * `lease_end`
+  * `move_out_date`
+  * `deposit_return_due_date`
+* if the Gradio `Scenario 2 Case ID` is left blank, Scenario 2 safely falls back to the current `session_id`
+
+This removes the old hidden dependency on `session_id` alone for the primary Gradio Scenario 2 path, while keeping Scenario 1 unchanged and avoiding any UI redesign.
+
+### Tool-Level Retrieval Audit Trail
+
+Mongo-backed Scenario 2 `legal_corpus` responses now carry deterministic audit payloads for:
+
+* `search`
+* `fetch_fragments`
+* `expand_related`
+* `get_provenance`
+
+Each response includes reproducible request identifiers and request hashes plus runtime audit metadata:
+
+* `request_id`
+* `tool_call_id`
+* `request_hash`
+* `query_hash` for `search`
+* `latency_ms`
+* `returned_refs`
+* `returned_ref_count`
+* `warnings`
+
+These audit fields are preserved in `scenario2_trace.json`, so Scenario 2 replay/audit does not depend on internal server logs.
+
+### Bootstrap and Fallback Semantics
+
+Scenario 2 runtime bootstrap remains controlled by settings:
+
+* default runner mode remains safe/stub-first
+* local legal corpus backend remains available as a dev fallback
+* Mongo backend enables the production-capable retrieval path through normal app/UI/API bootstrap
+
+Scenario 1 behavior remains unchanged.
+
+With the Iteration 22, 23, and 24 hardening above, the remaining P0/P1 gaps from `Tech_spec_agents.md` for case workspace contract, case-metadata propagation, explicit Gradio case binding, tool-level retrieval audit trail, and safe materialized rebuild semantics are closed. Any further work is follow-up hardening or product/UI refinement rather than an unresolved MVP/spec blocker.
+
+Scenario 2 case-workspace reproducibility is now explicit as well: `run.json` persists the effective `case_workspace_id` that runtime actually used, including the safe fallback to `session_id` when the Gradio Scenario 2 Case ID input is left blank. Live Gradio status and history load both read and display that persisted effective id.
+
+Mongo-backed `Scenario 2 legal_corpus.search(...)` now closes the remaining filter-contract gap from `Tech_spec_agents.md`: it supports `issue_tags`, `facts_tags`, `related_provisions`, `judgment_date`, and `status -> current_status` alias semantics in addition to the previously supported metadata filters. `unsupported_filters` is now reserved for truly unsupported keys only, while search diagnostics explicitly expose filter matching rules, alias mappings, and `include_history` mode.
+
+`include_history` is no longer a hidden no-op for the Mongo backend. When the materialized retrieval layer can return multiple source versions, search returns version-distinct results and marks `include_history_status=all_versions`; when a stricter option such as `as_of_date` or explicit `current_only=true` wins, that degraded behavior is surfaced through deterministic ignored/applied filter diagnostics instead of being silently swallowed.
+
+Mongo-backed `legal_corpus.search(...)` also now executes real `return_level` semantics instead of collapsing everything into fragment-only results. `return_level=document` returns document-level candidates with stable machine refs anchored to the best retrieval unit, `return_level=fragment` preserves the existing fragment-oriented baseline, and `return_level=mixed` deterministically returns a mixed-level payload without duplicating the same authority. `effective_return_level`, per-result `result_level`, and search diagnostics now reflect the actual returned mode rather than always reporting `fragment`.
+
+Iteration 28 closes two runtime-compatibility gaps in the production Scenario 2 path. First, second-round OpenAI Responses API payloads now send tool results as plain `function_call_output` items without the unsupported `tool_name` field, so the legal-corpus tool loop remains compatible with current Responses API validation. Second, Gradio checklist-details rendering now treats `item_id=None` and empty parsed state as a safe empty-details condition instead of crashing, which keeps Scenario 2 initial/no-selection states and generic empty callbacks stable without changing Scenario 1 behavior.
+
+Iteration 29 completes the remaining Responses API continuation fix for Scenario 2. Tool-output items now preserve the real OpenAI `call_id` from the preceding tool call instead of preferring the tool-item `id`, and continuation requests pass `previous_response_id` whenever the prior response exposed it. This keeps second-round and later `function_call_output` items correctly threaded to the originating OpenAI response while retaining a local fallback path for fake responses that do not expose `response.id`.
+
+Iteration 30 hardens the same live Responses API path with traceable threading diagnostics and a reproducible smoke path. Scenario 2 now persists sanitized OpenAI continuation metadata in `scenario2_trace.json`, including each round's `previous_response_id`, parsed tool-call ids/call_ids, and hashed/size-only summaries of outgoing `function_call_output` items. This keeps live RCA possible without storing API secrets or full prompt/tool payloads.
+
+The repository now also includes a dedicated manual smoke command for this exact bug: a small Scenario 2 run that uses the normal OCR pipeline plus the real OpenAI Responses API continuation contract against the configured legal-corpus backend. That smoke path is not a CI gate, but it gives a reproducible local verification step for final live-threading compatibility.
+
+Iteration 31 closes the final `fetch_fragments` request-shape gap in the live Scenario 2 path. The OpenAI runner now treats `references` as a compatibility alias for backend-facing `refs` only for `fetch_fragments`, normalizes that request before validation/dispatch, and preserves both the normalized request and the raw model payload in `tool_trace` when aliasing occurs. This keeps the contract honest without widening other tool schemas.
+
+With that alias normalization in place, the same real smoke path now moves beyond the old `fetch_fragments: refs` blocker and completes the Scenario 2 run end-to-end on the live OpenAI threading path. Review/gate semantics remain unchanged: the run can still finish as `completed` while `review_status` / `verifier_gate_status` reflect verifier outcomes independently.

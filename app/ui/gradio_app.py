@@ -2,17 +2,37 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 import gradio as gr
 
+from app.agentic.case_workspace_store import Scenario2CaseMetadata
+from app.agentic.scenario2_runtime_factory import build_scenario2_runtime
+from app.agentic.scenario2_runner import StubScenario2Runner
+from app.agentic.scenario2_verifier import (
+    build_scenario2_review_payload,
+    build_scenario2_verifier_gate_payload,
+    normalize_scenario2_verifier_policy,
+)
 from app.config.settings import Settings, get_settings
 from app.llm_client.gemini_client import GeminiLLMClient
 from app.llm_client.openai_client import OpenAILLMClient
 from app.ocr_client.mistral_ocr import MistralOCRClient
 from app.ocr_client.types import OCROptions
 from app.pipeline.orchestrator import FullPipelineResult, OCRPipelineOrchestrator
+from app.pipeline.scenario_router import (
+    SCENARIO_1_ID,
+    SCENARIO_2_ID,
+    SCENARIO_2_MODEL,
+    SCENARIO_2_PROMPT_SOURCE_PATH,
+    SCENARIO_2_PROVIDER,
+    is_openai_tool_loop_mode,
+    normalize_scenario2_runner_mode,
+    scenario_choices,
+    resolve_scenario_config,
+)
 from app.prompts.manager import PromptManager
 from app.storage.artifact_reader import (
     safe_load_combined_markdown,
@@ -36,6 +56,12 @@ from app.ui.run_comparison import compare_runs as compare_runs_payload
 from app.utils.error_taxonomy import ERROR_FRIENDLY_MESSAGES
 
 PreflightChecker = Callable[[str], str | None]
+_HISTORY_REVIEW_STATUS_CHOICES = [
+    "all",
+    "passed",
+    "needs_review",
+    "not_applicable",
+]
 
 
 def run_full_pipeline(
@@ -47,12 +73,20 @@ def run_full_pipeline(
     provider: str,
     model: str,
     prompt_version: str,
+    scenario_id: str = SCENARIO_1_ID,
     ocr_model: str,
     table_format: str,
     include_image_base64: bool,
     openai_reasoning_effort: str,
     gemini_thinking_level: str,
     preflight_checker: PreflightChecker,
+    scenario2_case_workspace_id: str = "",
+    scenario2_claim_amount: float | int | str | None = None,
+    scenario2_currency: str = "",
+    scenario2_lease_start: str = "",
+    scenario2_lease_end: str = "",
+    scenario2_move_out_date: str = "",
+    scenario2_deposit_return_due_date: str = "",
 ) -> tuple[Any, ...]:
     paths = _normalize_uploaded_files(uploaded_files)
     if not paths:
@@ -61,31 +95,56 @@ def run_full_pipeline(
             session_id=current_session_id.strip(),
         )
 
-    preflight_error = preflight_checker(provider)
+    from app.config.settings import get_settings
+
+    settings_guard = get_settings()
+    scenario = resolve_scenario_config(
+        scenario_id=scenario_id,
+        requested_provider=provider,
+        requested_model=model,
+        requested_prompt_name=prompt_name,
+        requested_prompt_version=prompt_version,
+    )
+
+    effective_provider = scenario.provider
+    effective_model = scenario.model
+    effective_prompt_name = scenario.prompt_name
+    effective_prompt_version = scenario.prompt_version
+
+    preflight_error = _preflight_error_for_selection(
+        orchestrator=orchestrator,
+        settings=settings_guard,
+        scenario_id=scenario.scenario_id,
+        effective_provider=effective_provider,
+        preflight_checker=preflight_checker,
+    )
     if preflight_error is not None:
         return _empty_ui_payload(
             status_message=preflight_error,
             session_id=current_session_id.strip(),
         )
 
-    from app.config.settings import get_settings
-    settings_guard = get_settings()
     llm_providers_guard = settings_guard.providers_config.get("llm_providers", {})
-    provider_config_guard = llm_providers_guard.get(provider, {})
+    provider_config_guard = llm_providers_guard.get(effective_provider, {})
     valid_models_guard = provider_config_guard.get("models", {})
-    if model not in valid_models_guard:
+    if scenario.llm_stage_enabled and effective_model not in valid_models_guard:
         return _empty_ui_payload(
-            status_message=f"Configuration error: Model '{model}' is not supported by provider '{provider}'.",
+            status_message=(
+                "Configuration error: Model "
+                f"'{effective_model}' is not supported by provider "
+                f"'{effective_provider}'."
+            ),
             session_id=current_session_id.strip(),
         )
 
     result = orchestrator.run_full_pipeline(
         input_files=paths,
         session_id=current_session_id.strip() or None,
-        provider=provider,
-        model=model,
-        prompt_name=prompt_name,
-        prompt_version=prompt_version,
+        provider=effective_provider,
+        model=effective_model,
+        prompt_name=effective_prompt_name,
+        prompt_version=effective_prompt_version,
+        scenario_id=scenario.scenario_id,
         ocr_options=OCROptions(
             model=ocr_model,
             table_format=table_format,
@@ -95,6 +154,19 @@ def run_full_pipeline(
             "openai_reasoning_effort": openai_reasoning_effort,
             "gemini_thinking_level": gemini_thinking_level,
         },
+        scenario2_case_workspace_id=_scenario2_case_workspace_id_from_ui(
+            scenario_id=scenario.scenario_id,
+            requested_case_workspace_id=scenario2_case_workspace_id,
+        ),
+        scenario2_case_metadata=_scenario2_case_metadata_from_ui(
+            scenario_id=scenario.scenario_id,
+            claim_amount=scenario2_claim_amount,
+            currency=scenario2_currency,
+            lease_start=scenario2_lease_start,
+            lease_end=scenario2_lease_end,
+            move_out_date=scenario2_move_out_date,
+            deposit_return_due_date=scenario2_deposit_return_due_date,
+        ),
     )
 
     run_status = (
@@ -108,13 +180,33 @@ def run_full_pipeline(
         orchestrator=orchestrator,
         run_id=result.run_id,
     )
-    parsed_json = _safe_parsed_json(
-        raw_text=result.raw_json_text, parsed=result.parsed_json
-    )
+    is_scenario2 = result.scenario_id == SCENARIO_2_ID
+    if is_scenario2:
+        parsed_json = None
+        details_selector = _details_selector_update([])
+        details_text = "Details: not applicable for Scenario 2 foundation run."
+        validation = "Validation: not_applicable (Scenario 2 foundation run)."
+    else:
+        parsed_json = _safe_parsed_json(
+            raw_text=result.raw_json_text, parsed=result.parsed_json
+        )
+        details_selector, details_text = _details_payload(parsed_json=parsed_json)
+        validation = _validation_text(result)
+
+    if is_scenario2:
+        summary_text = result.raw_json_text
+        raw_json = ""
+    else:
+        summary_text = _human_summary(result)
+        raw_json = _raw_json_text(result)
+
     progress = _build_progress_text(
         artifacts_root=artifacts_root,
         run_status=result.run_status,
     )
+    live_manifest = None
+    if is_scenario2 and artifacts_root:
+        live_manifest, _ = safe_load_run_manifest(artifacts_root)
     runtime_log_tail, runtime_log_path = _read_runtime_log(
         artifacts_root=artifacts_root,
         line_count=30,
@@ -123,7 +215,47 @@ def run_full_pipeline(
         error_code=result.error_code,
         error_message=result.error_message,
     )
-    details_selector, details_text = _details_payload(parsed_json=parsed_json)
+    scenario2_runner_mode = _scenario2_runner_mode_for_ui(
+        orchestrator=orchestrator,
+        settings=settings_guard,
+    )
+    scenario2_verifier_policy = _scenario2_verifier_policy_for_ui(
+        orchestrator=orchestrator,
+        settings=settings_guard,
+    )
+    (
+        scenario2_diagnostics,
+        scenario2_fragments,
+        scenario2_review_status,
+        scenario2_verifier_gate_status,
+    ) = _scenario2_ui_payload(
+        scenario_id=result.scenario_id,
+        artifacts_root=artifacts_root,
+        manifest=None,
+        fallback_runner_mode=scenario2_runner_mode,
+        fallback_verifier_policy=scenario2_verifier_policy,
+        fallback_llm_executed=(
+            False if not is_openai_tool_loop_mode(scenario2_runner_mode) else None
+        ),
+        run_status=result.run_status,
+        error_code=result.error_code,
+        error_message=result.error_message,
+    )
+    if is_scenario2:
+        effective_case_workspace_id = _manifest_scenario2_case_workspace_id(
+            manifest=live_manifest
+        ) or (
+            _scenario2_case_workspace_id_from_ui(
+                scenario_id=scenario.scenario_id,
+                requested_case_workspace_id=scenario2_case_workspace_id,
+            )
+            or result.session_id
+        )
+        run_status += (
+            f" case_workspace_id={effective_case_workspace_id}"
+            f" review_status={scenario2_review_status}"
+            f" verifier_gate_status={scenario2_verifier_gate_status}"
+        )
 
     return (
         run_status,
@@ -141,12 +273,116 @@ def run_full_pipeline(
         build_gap_rows(parsed_json),
         details_selector,
         details_text,
-        _human_summary(result),
-        _raw_json_text(result),
-        _validation_text(result),
+        summary_text,
+        raw_json,
+        validation,
         json.dumps(result.metrics, ensure_ascii=False, indent=2),
+        scenario2_diagnostics,
+        scenario2_fragments,
         parsed_json,
     )
+
+
+def _preflight_error_for_selection(
+    *,
+    orchestrator: OCRPipelineOrchestrator,
+    settings: Settings,
+    scenario_id: str,
+    effective_provider: str,
+    preflight_checker: PreflightChecker,
+) -> str | None:
+    providers = _preflight_providers_for_selection(
+        orchestrator=orchestrator,
+        settings=settings,
+        scenario_id=scenario_id,
+        effective_provider=effective_provider,
+    )
+    if scenario_id == SCENARIO_2_ID and is_openai_tool_loop_mode(
+        _scenario2_runner_mode_for_ui(
+            orchestrator=orchestrator,
+            settings=settings,
+        )
+    ):
+        readiness_error = _scenario2_openai_mode_readiness_error(
+            orchestrator=orchestrator,
+        )
+        if readiness_error is not None:
+            return readiness_error
+
+    for provider_name in providers:
+        preflight_error = preflight_checker(provider_name)
+        if preflight_error is not None:
+            return preflight_error
+    return None
+
+
+def _preflight_providers_for_selection(
+    *,
+    orchestrator: OCRPipelineOrchestrator,
+    settings: Settings,
+    scenario_id: str,
+    effective_provider: str,
+) -> list[str]:
+    if scenario_id != SCENARIO_2_ID:
+        return [effective_provider]
+
+    runner_mode = _scenario2_runner_mode_for_ui(
+        orchestrator=orchestrator,
+        settings=settings,
+    )
+    if is_openai_tool_loop_mode(runner_mode):
+        return ["mistral", "openai"]
+    return ["mistral"]
+
+
+def _scenario2_runner_mode_for_ui(
+    *,
+    orchestrator: OCRPipelineOrchestrator,
+    settings: Settings,
+) -> str:
+    configured_mode = getattr(
+        orchestrator,
+        "scenario2_runner_mode",
+        settings.scenario2_runner_mode,
+    )
+    return normalize_scenario2_runner_mode(configured_mode)
+
+
+def _scenario2_verifier_policy_for_ui(
+    *,
+    orchestrator: OCRPipelineOrchestrator,
+    settings: Settings,
+) -> str:
+    configured_policy = getattr(
+        orchestrator,
+        "scenario2_verifier_policy",
+        settings.scenario2_verifier_policy,
+    )
+    return normalize_scenario2_verifier_policy(configured_policy)
+
+
+def _scenario2_openai_mode_readiness_error(
+    *,
+    orchestrator: OCRPipelineOrchestrator,
+) -> str | None:
+    bootstrap_error = str(
+        getattr(orchestrator, "scenario2_bootstrap_error", "") or ""
+    ).strip()
+    if bootstrap_error:
+        return f"Runtime preflight failed: {bootstrap_error}"
+
+    scenario2_runner = getattr(orchestrator, "scenario2_runner", None)
+    if scenario2_runner is None or isinstance(scenario2_runner, StubScenario2Runner):
+        return (
+            "Runtime preflight failed: Scenario 2 openai_tool_loop mode "
+            "requires a real Scenario2 runner injection."
+        )
+    if getattr(orchestrator, "legal_corpus_tool", None) is None:
+        return (
+            "Runtime preflight failed: Scenario 2 openai_tool_loop mode "
+            "requires a legal_corpus_tool adapter."
+        )
+    return None
 
 
 def list_history_rows(
@@ -159,6 +395,7 @@ def list_history_rows(
     date_from: str,
     date_to: str,
     limit: float | int,
+    review_status: str = "all",
 ) -> list[list[str]]:
     runs = repo.list_runs(
         session_id=session_id.strip() or None,
@@ -171,7 +408,22 @@ def list_history_rows(
     )
 
     rows: list[list[str]] = []
+    selected_review_status = _normalize_history_review_status_filter(review_status)
     for run in runs:
+        manifest, _manifest_error = safe_load_run_manifest(run.artifacts_root_path)
+        scenario_id = _manifest_scenario_id(manifest=manifest)
+        row_review_status = _scenario_review_status(
+            scenario_id=scenario_id,
+            manifest=manifest,
+            artifacts_root=run.artifacts_root_path,
+            fallback_llm_executed=_manifest_scenario2_llm_executed(manifest=manifest),
+        )
+        if not _history_review_status_matches(
+            selected_review_status=selected_review_status,
+            row_review_status=row_review_status,
+        ):
+            continue
+
         total_cost = ""
         if isinstance(run.cost_json, dict) and "total_cost_usd" in run.cost_json:
             total_cost = str(run.cost_json["total_cost_usd"])
@@ -181,14 +433,176 @@ def list_history_rows(
                 run.run_id,
                 run.created_at,
                 run.session_id,
+                scenario_id,
                 run.provider,
                 run.model,
                 run.prompt_version,
                 run.status,
+                row_review_status,
                 total_cost,
             ]
         )
     return rows
+
+
+def _scenario_config_mode_updates(
+    *,
+    selected_scenario_id: str,
+    fallback_provider: str,
+    fallback_model: str,
+    fallback_prompt_name: str,
+    fallback_prompt_version: str,
+    scenario1_state: dict[str, Any] | None = None,
+    previous_scenario_id: str = SCENARIO_1_ID,
+) -> tuple[Any, Any, Any, Any, Any, dict[str, str], str]:
+    selected = (selected_scenario_id or SCENARIO_1_ID).strip()
+    previous = (previous_scenario_id or SCENARIO_1_ID).strip()
+    if previous not in {SCENARIO_1_ID, SCENARIO_2_ID}:
+        previous = SCENARIO_1_ID
+
+    state = _normalize_scenario1_state(
+        scenario1_state=scenario1_state,
+        fallback_provider=fallback_provider,
+        fallback_model=fallback_model,
+        fallback_prompt_name=fallback_prompt_name,
+        fallback_prompt_version=fallback_prompt_version,
+    )
+
+    if selected == SCENARIO_2_ID:
+        if previous == SCENARIO_1_ID:
+            state = _normalize_scenario1_state(
+                scenario1_state={
+                    "provider": fallback_provider,
+                    "model": fallback_model,
+                    "prompt_name": fallback_prompt_name,
+                    "prompt_version": fallback_prompt_version,
+                },
+                fallback_provider=fallback_provider,
+                fallback_model=fallback_model,
+                fallback_prompt_name=fallback_prompt_name,
+                fallback_prompt_version=fallback_prompt_version,
+            )
+
+        return (
+            gr.update(value=fallback_provider, interactive=False),
+            gr.update(value=fallback_model, interactive=False),
+            gr.update(value=fallback_prompt_name, interactive=False),
+            gr.update(value=fallback_prompt_version, interactive=False),
+            gr.update(
+                value=(
+                    "Scenario 2 fixed config:\n"
+                    f"provider={SCENARIO_2_PROVIDER}\n"
+                    f"model={SCENARIO_2_MODEL}\n"
+                    f"prompt source: {SCENARIO_2_PROMPT_SOURCE_PATH}"
+                ),
+                visible=True,
+                interactive=False,
+            ),
+            state,
+            selected,
+        )
+
+    return (
+        gr.update(value=state["provider"], interactive=True),
+        gr.update(value=state["model"], interactive=True),
+        gr.update(value=state["prompt_name"], interactive=True),
+        gr.update(value=state["prompt_version"], interactive=True),
+        gr.update(value="", visible=False, interactive=False),
+        state,
+        selected,
+    )
+
+
+def _normalize_scenario1_state(
+    *,
+    scenario1_state: dict[str, Any] | None,
+    fallback_provider: str,
+    fallback_model: str,
+    fallback_prompt_name: str,
+    fallback_prompt_version: str,
+) -> dict[str, str]:
+    if not isinstance(scenario1_state, dict):
+        scenario1_state = {}
+
+    return {
+        "provider": _coalesce_scenario_value(
+            scenario1_state.get("provider"), fallback_provider
+        ),
+        "model": _coalesce_scenario_value(scenario1_state.get("model"), fallback_model),
+        "prompt_name": _coalesce_scenario_value(
+            scenario1_state.get("prompt_name"), fallback_prompt_name
+        ),
+        "prompt_version": _coalesce_scenario_value(
+            scenario1_state.get("prompt_version"), fallback_prompt_version
+        ),
+    }
+
+
+def _coalesce_scenario_value(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    return text if text else fallback
+
+
+def _scenario2_case_block_update(selected_scenario_id: str) -> Any:
+    return gr.update(visible=selected_scenario_id == SCENARIO_2_ID)
+
+
+def _scenario2_case_workspace_id_from_ui(
+    *,
+    scenario_id: str,
+    requested_case_workspace_id: str,
+) -> str | None:
+    if scenario_id != SCENARIO_2_ID:
+        return None
+    text = str(requested_case_workspace_id or "").strip()
+    return text or None
+
+
+def _scenario2_case_metadata_from_ui(
+    *,
+    scenario_id: str,
+    claim_amount: float | int | str | None,
+    currency: str,
+    lease_start: str,
+    lease_end: str,
+    move_out_date: str,
+    deposit_return_due_date: str,
+) -> Scenario2CaseMetadata | None:
+    if scenario_id != SCENARIO_2_ID:
+        return None
+    return Scenario2CaseMetadata(
+        claim_amount=_optional_claim_amount(claim_amount),
+        currency=_optional_text(currency, uppercase=True),
+        lease_start=_optional_text(lease_start),
+        lease_end=_optional_text(lease_end),
+        move_out_date=_optional_text(move_out_date),
+        deposit_return_due_date=_optional_text(deposit_return_due_date),
+    )
+
+
+def _optional_claim_amount(value: float | int | str | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            numeric = float(text.replace(",", "."))
+        except ValueError:
+            return None
+    if math.isnan(numeric):
+        return None
+    return numeric
+
+
+def _optional_text(value: Any, *, uppercase: bool = False) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text.upper() if uppercase else text
 
 
 def refresh_history_for_ui(
@@ -201,6 +615,7 @@ def refresh_history_for_ui(
     date_from: str,
     date_to: str,
     limit: float | int,
+    review_status: str = "all",
 ) -> tuple[list[list[str]], Any, Any]:
     rows = list_history_rows(
         repo=repo,
@@ -211,6 +626,7 @@ def refresh_history_for_ui(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        review_status=review_status,
     )
     run_ids = [str(row[0]) for row in rows if row]
     default_a = run_ids[0] if run_ids else None
@@ -294,6 +710,7 @@ def restore_history_run_bundle(
     date_from: str = "",
     date_to: str = "",
     limit: float | int = 20,
+    review_status: str = "all",
 ) -> tuple[str, str, str, str, list[list[str]], Any, Any, Any]:
     restore_limits = safety_limits or RestoreSafetyLimits()
     rows, compare_a, compare_b = refresh_history_for_ui(
@@ -305,6 +722,7 @@ def restore_history_run_bundle(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        review_status=review_status,
     )
     run_id_update = gr.update()
 
@@ -339,6 +757,7 @@ def restore_history_run_bundle(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        review_status=review_status,
     )
 
     if result.status in {"restored", "verified"}:
@@ -420,6 +839,7 @@ def delete_history_run(
     date_from: str = "",
     date_to: str = "",
     limit: float | int = 20,
+    review_status: str = "all",
 ) -> tuple[str, str, str, list[list[str]], Any, Any, Any, Any]:
     target_run_id = run_id.strip()
     confirmation = confirm_run_id.strip()
@@ -432,6 +852,7 @@ def delete_history_run(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        review_status=review_status,
     )
     clear_run_id_update = gr.update()
     clear_confirm_update = gr.update()
@@ -523,6 +944,7 @@ def delete_history_run(
         date_from=date_from,
         date_to=date_to,
         limit=limit,
+        review_status=review_status,
     )
     clear_run_id_update = gr.update(value="")
     clear_confirm_update = gr.update(value="")
@@ -580,11 +1002,16 @@ def load_history_run(
     run = bundle.run
     artifacts_root = run.artifacts_root_path
     manifest, manifest_error = safe_load_run_manifest(artifacts_root)
-    parsed_json = _load_parsed_json(bundle=bundle, artifacts_root=artifacts_root)
-    raw_json_text = _load_raw_json_text(
-        artifacts_root=artifacts_root,
-        parsed_json=parsed_json,
-    )
+    scenario_id = _manifest_scenario_id(manifest=manifest)
+    raw_json_text = _load_raw_json_text(artifacts_root=artifacts_root, parsed_json=None)
+    if scenario_id == SCENARIO_2_ID:
+        parsed_json = None
+    else:
+        parsed_json = _load_parsed_json(bundle=bundle, artifacts_root=artifacts_root)
+        raw_json_text = _load_raw_json_text(
+            artifacts_root=artifacts_root,
+            parsed_json=parsed_json,
+        )
     validation_text = _load_validation_text(artifacts_root=artifacts_root)
     status_message = (
         f"History loaded. session_id={run.session_id} run_id={run.run_id} "
@@ -607,7 +1034,45 @@ def load_history_run(
         artifacts_root=artifacts_root,
         line_count=30,
     )
-    details_selector, details_text = _details_payload(parsed_json=parsed_json)
+
+    if scenario_id == SCENARIO_2_ID:
+        parsed_json = None
+        details_selector, details_text = (
+            _details_selector_update([]),
+            ("Details: not applicable for Scenario 2 foundation run."),
+        )
+    else:
+        details_selector, details_text = _details_payload(parsed_json=parsed_json)
+
+    if scenario_id == SCENARIO_2_ID:
+        summary = raw_json_text
+        raw_json_text = ""
+    else:
+        summary = _summary_from_payload(parsed_json if parsed_json is not None else {})
+
+    (
+        scenario2_diagnostics,
+        scenario2_fragments,
+        scenario2_review_status,
+        scenario2_verifier_gate_status,
+    ) = _scenario2_ui_payload(
+        scenario_id=scenario_id,
+        artifacts_root=artifacts_root,
+        manifest=manifest,
+        fallback_runner_mode=_manifest_scenario2_runner_mode(manifest=manifest),
+        fallback_verifier_policy=_manifest_scenario2_verifier_policy(manifest=manifest),
+        fallback_llm_executed=_manifest_scenario2_llm_executed(manifest=manifest),
+        run_status=run.status,
+        error_code=run.error_code,
+        error_message=run.error_message,
+    )
+    if scenario_id == SCENARIO_2_ID:
+        case_workspace_id = _manifest_scenario2_case_workspace_id(manifest=manifest)
+        status_message += (
+            (f" case_workspace_id={case_workspace_id}" if case_workspace_id else "")
+            + f" review_status={scenario2_review_status}"
+            + f" verifier_gate_status={scenario2_verifier_gate_status}"
+        )
 
     return (
         status_message,
@@ -625,12 +1090,442 @@ def load_history_run(
         build_gap_rows(parsed_json),
         details_selector,
         details_text,
-        _summary_from_payload(parsed_json),
+        summary,
         raw_json_text,
         validation_text,
         _metrics_text_for_history(run=run, manifest=manifest),
+        scenario2_diagnostics,
+        scenario2_fragments,
         parsed_json,
     )
+
+
+def _scenario2_ui_payload(
+    *,
+    scenario_id: str,
+    artifacts_root: str,
+    manifest: dict[str, Any] | None,
+    fallback_runner_mode: str,
+    fallback_verifier_policy: str,
+    fallback_llm_executed: bool | None,
+    run_status: str,
+    error_code: str | None,
+    error_message: str | None,
+) -> tuple[str, str, str, str]:
+    if scenario_id != SCENARIO_2_ID:
+        return (
+            _scenario2_not_applicable_diagnostics_text(),
+            _scenario2_not_applicable_fragments_text(),
+            "not_applicable",
+            "not_applicable",
+        )
+
+    trace_payload, trace_error = _load_scenario2_trace_payload(
+        artifacts_root=artifacts_root,
+        manifest=manifest,
+    )
+    review_status = _scenario_review_status(
+        scenario_id=scenario_id,
+        manifest=manifest,
+        trace_payload=trace_payload,
+        artifacts_root=artifacts_root,
+        fallback_llm_executed=fallback_llm_executed,
+    )
+    verifier_gate_status = _scenario2_verifier_gate_status(
+        scenario_id=scenario_id,
+        manifest=manifest,
+        trace_payload=trace_payload,
+        artifacts_root=artifacts_root,
+        fallback_llm_executed=fallback_llm_executed,
+        fallback_verifier_policy=fallback_verifier_policy,
+    )
+    if trace_payload is not None:
+        return (
+            _format_scenario2_diagnostics_text(
+                trace_payload=trace_payload,
+                run_status=run_status,
+                fallback_runner_mode=fallback_runner_mode,
+                fallback_verifier_policy=fallback_verifier_policy,
+                fallback_llm_executed=fallback_llm_executed,
+                fallback_error_code=error_code,
+                fallback_error_message=error_message,
+                review_status=review_status,
+                verifier_gate_status=verifier_gate_status,
+            ),
+            _format_scenario2_fragments_text(trace_payload=trace_payload),
+            review_status,
+            verifier_gate_status,
+        )
+
+    return (
+        _format_scenario2_fallback_diagnostics_text(
+            runner_mode=fallback_runner_mode,
+            verifier_policy=fallback_verifier_policy,
+            llm_executed=fallback_llm_executed,
+            run_status=run_status,
+            error_code=error_code,
+            error_message=error_message,
+            trace_error=trace_error,
+            review_status=review_status,
+            verifier_gate_status=verifier_gate_status,
+        ),
+        _format_scenario2_fallback_fragments_text(trace_error=trace_error),
+        review_status,
+        verifier_gate_status,
+    )
+
+
+def _load_scenario2_trace_payload(
+    *,
+    artifacts_root: str,
+    manifest: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not artifacts_root:
+        return None, "artifacts root is not available"
+
+    trace_path = _scenario2_trace_path(
+        artifacts_root=artifacts_root,
+        manifest=manifest,
+    )
+    if trace_path is None:
+        return None, "scenario2 trace path is not configured"
+
+    payload, error = safe_read_json(trace_path)
+    if error is not None:
+        return None, error
+    if not isinstance(payload, dict):
+        return None, "scenario2 trace payload is not a JSON object"
+    return payload, None
+
+
+def _scenario2_trace_path(
+    *,
+    artifacts_root: str,
+    manifest: dict[str, Any] | None,
+) -> Path | None:
+    if isinstance(manifest, dict):
+        artifacts = manifest.get("artifacts")
+        if isinstance(artifacts, dict):
+            llm_artifacts = artifacts.get("llm")
+            if isinstance(llm_artifacts, dict):
+                trace_path = llm_artifacts.get("trace_path")
+                if isinstance(trace_path, str) and trace_path.strip():
+                    return Path(trace_path)
+    return Path(artifacts_root) / "llm" / "scenario2_trace.json"
+
+
+def _format_scenario2_diagnostics_text(
+    *,
+    trace_payload: dict[str, Any],
+    run_status: str,
+    fallback_runner_mode: str,
+    fallback_verifier_policy: str,
+    fallback_llm_executed: bool | None,
+    fallback_error_code: str | None,
+    fallback_error_message: str | None,
+    review_status: str,
+    verifier_gate_status: str,
+) -> str:
+    diagnostics = _trace_diagnostics(trace_payload=trace_payload)
+    tool_trace = trace_payload.get("tool_trace")
+    stage = _string_value(diagnostics.get("stage"))
+    error_code = _string_value(diagnostics.get("error_code")) or fallback_error_code
+    error_message = (
+        _string_value(diagnostics.get("error_message")) or fallback_error_message
+    )
+
+    lines = [
+        f"review_status: {review_status or 'not_applicable'}",
+        f"runner_mode: {_string_value(trace_payload.get('runner_mode')) or fallback_runner_mode or 'unknown'}",
+        (
+            "verifier_policy: "
+            f"{_string_value(diagnostics.get('verifier_policy')) or fallback_verifier_policy or 'informational'}"
+        ),
+        f"verifier_gate_status: {verifier_gate_status or 'not_applicable'}",
+        f"llm_executed: {_bool_text(trace_payload.get('llm_executed', fallback_llm_executed))}",
+        f"run_status: {run_status or 'unknown'}",
+        f"fragment_grounding_status: {_string_value(diagnostics.get('fragment_grounding_status')) or 'none'}",
+        f"citation_binding_status: {_string_value(diagnostics.get('citation_binding_status')) or 'none'}",
+        f"verifier_status: {_string_value(diagnostics.get('verifier_status')) or 'none'}",
+        (
+            "citation_format_status: "
+            f"{_string_value(diagnostics.get('citation_format_status')) or 'none'}"
+        ),
+        f"fetch_fragments_called: {_bool_text(diagnostics.get('fetch_fragments_called'))}",
+        (
+            "fetch_fragments_returned_usable_fragments: "
+            f"{_bool_text(diagnostics.get('fetch_fragments_returned_usable_fragments'))}"
+        ),
+        f"repair_turn_used: {_bool_text(diagnostics.get('repair_turn_used'))}",
+        (
+            "legal_citation_count: "
+            f"{_string_value(diagnostics.get('legal_citation_count')) or '0'}"
+        ),
+        (
+            "user_doc_citation_count: "
+            f"{_string_value(diagnostics.get('user_doc_citation_count')) or '0'}"
+        ),
+        (
+            "citations_in_analysis_sections: "
+            f"{_bool_text(diagnostics.get('citations_in_analysis_sections'))}"
+        ),
+        (
+            "sources_section_present: "
+            f"{_bool_text(diagnostics.get('sources_section_present'))}"
+        ),
+        (
+            "fetched_sources_referenced: "
+            f"{_bool_text(diagnostics.get('fetched_sources_referenced'))}"
+        ),
+        (
+            "tool_round_count: "
+            f"{_string_value(trace_payload.get('tool_round_count')) or _string_value(diagnostics.get('tool_round_count')) or '0'}"
+        ),
+    ]
+    if stage:
+        lines.append(f"stage: {stage}")
+    if error_code:
+        lines.append(f"error_code: {error_code}")
+    if error_message:
+        lines.append(f"error_message: {error_message}")
+
+    lines.append("missing_sections:")
+    lines.extend(_bullet_list(_string_list(diagnostics.get("missing_sections"))))
+    lines.append("verifier_warnings:")
+    lines.extend(_bullet_list(_string_list(diagnostics.get("verifier_warnings"))))
+    lines.append("malformed_citation_warnings:")
+    lines.extend(
+        _bullet_list(_string_list(diagnostics.get("malformed_citation_warnings")))
+    )
+    lines.append("tool_trace_summary:")
+    lines.extend(_tool_trace_summary_lines(tool_trace=tool_trace))
+    return "\n".join(lines)
+
+
+def _format_scenario2_fragments_text(*, trace_payload: dict[str, Any]) -> str:
+    diagnostics = _trace_diagnostics(trace_payload=trace_payload)
+    ledger = _scenario2_fragment_ledger(diagnostics=diagnostics)
+    citations = _string_list(diagnostics.get("fetched_fragment_citations"))
+    doc_uids = _string_list(diagnostics.get("fetched_fragment_doc_uids"))
+    source_hashes = _string_list(diagnostics.get("fetched_fragment_source_hashes"))
+    quote_checksums = _string_list(diagnostics.get("fetched_fragment_quote_checksums"))
+    return "\n".join(
+        [
+            "fetched_fragment_ledger:",
+            *_scenario2_fragment_ledger_lines(ledger=ledger),
+            "",
+            "fetched_fragment_citations:",
+            *_bullet_list(citations),
+            "",
+            "fetched_fragment_doc_uids:",
+            *_bullet_list(doc_uids),
+            "",
+            "fetched_fragment_source_hashes:",
+            *_bullet_list(source_hashes),
+            "",
+            "fetched_fragment_quote_checksums:",
+            *_bullet_list(quote_checksums),
+        ]
+    )
+
+
+def _format_scenario2_fallback_diagnostics_text(
+    *,
+    runner_mode: str,
+    verifier_policy: str,
+    llm_executed: bool | None,
+    run_status: str,
+    error_code: str | None,
+    error_message: str | None,
+    trace_error: str | None,
+    review_status: str,
+    verifier_gate_status: str,
+) -> str:
+    stub_mode = normalize_scenario2_runner_mode(runner_mode) != "openai_tool_loop"
+    lines = [
+        f"review_status: {review_status or 'not_applicable'}",
+        f"runner_mode: {runner_mode or 'unknown'}",
+        f"verifier_policy: {verifier_policy or 'informational'}",
+        f"verifier_gate_status: {verifier_gate_status or 'not_applicable'}",
+        f"llm_executed: {_bool_text(llm_executed)}",
+        f"run_status: {run_status or 'unknown'}",
+        (
+            "fragment_grounding_status: "
+            f"{'not_applicable' if stub_mode else 'unavailable'}"
+        ),
+        (
+            "citation_binding_status: "
+            f"{'not_applicable' if stub_mode else 'unavailable'}"
+        ),
+        (f"verifier_status: {'not_applicable' if stub_mode else 'unavailable'}"),
+        (f"citation_format_status: {'not_applicable' if stub_mode else 'unavailable'}"),
+        f"fetch_fragments_called: {_bool_text(False if stub_mode else None)}",
+        (
+            "fetch_fragments_returned_usable_fragments: "
+            f"{_bool_text(False if stub_mode else None)}"
+        ),
+        f"repair_turn_used: {_bool_text(False if stub_mode else None)}",
+        f"legal_citation_count: {'0' if stub_mode else 'unavailable'}",
+        f"user_doc_citation_count: {'0' if stub_mode else 'unavailable'}",
+        (f"citations_in_analysis_sections: {_bool_text(False if stub_mode else None)}"),
+        f"sources_section_present: {_bool_text(None if not stub_mode else None)}",
+        f"fetched_sources_referenced: {_bool_text(None if not stub_mode else None)}",
+        f"tool_round_count: {'0' if stub_mode else 'unavailable'}",
+    ]
+    if error_code:
+        lines.append(f"error_code: {error_code}")
+    if error_message:
+        lines.append(f"error_message: {error_message}")
+    if trace_error:
+        lines.append(f"trace_status: unavailable ({trace_error})")
+    lines.append("missing_sections:")
+    lines.append("- none")
+    lines.append("verifier_warnings:")
+    lines.append("- none")
+    lines.append("malformed_citation_warnings:")
+    lines.append("- none")
+    lines.append("tool_trace_summary:")
+    lines.append("- none")
+    return "\n".join(lines)
+
+
+def _format_scenario2_fallback_fragments_text(*, trace_error: str | None) -> str:
+    lines = [
+        "fetched_fragment_ledger:",
+        "- none",
+        "",
+        "fetched_fragment_citations:",
+        "- none",
+        "",
+        "fetched_fragment_doc_uids:",
+        "- none",
+        "",
+        "fetched_fragment_source_hashes:",
+        "- none",
+        "",
+        "fetched_fragment_quote_checksums:",
+        "- none",
+    ]
+    if trace_error:
+        lines.extend(["", f"trace_status: unavailable ({trace_error})"])
+    return "\n".join(lines)
+
+
+def _scenario2_not_applicable_diagnostics_text() -> str:
+    return (
+        "Scenario 2 diagnostics: not applicable for Scenario 1.\n"
+        "review_status: not_applicable\n"
+        "verifier_policy: informational\n"
+        "verifier_gate_status: not_applicable"
+    )
+
+
+def _scenario2_not_applicable_fragments_text() -> str:
+    return "Scenario 2 fetched fragments: not applicable for Scenario 1."
+
+
+def _trace_diagnostics(*, trace_payload: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = trace_payload.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        return diagnostics
+    return {}
+
+
+def _tool_trace_summary_lines(*, tool_trace: Any) -> list[str]:
+    if not isinstance(tool_trace, list) or not tool_trace:
+        return ["- none"]
+
+    lines: list[str] = []
+    for item in tool_trace:
+        if not isinstance(item, dict):
+            continue
+        tool = _string_value(item.get("tool")) or "unknown"
+        status = _string_value(item.get("status")) or "unknown"
+        lines.append(f"- {tool}: {status}")
+    return lines or ["- none"]
+
+
+def _scenario2_fragment_ledger(*, diagnostics: dict[str, Any]) -> list[dict[str, Any]]:
+    ledger = diagnostics.get("fetched_fragment_ledger")
+    if not isinstance(ledger, list):
+        return []
+    return [item for item in ledger if isinstance(item, dict)]
+
+
+def _scenario2_fragment_ledger_lines(*, ledger: list[dict[str, Any]]) -> list[str]:
+    if not ledger:
+        return ["- none"]
+
+    lines: list[str] = []
+    for index, entry in enumerate(ledger, start=1):
+        lines.append(f"- fragment_{index}:")
+        lines.append(
+            f"  display_citation: {_string_value(entry.get('display_citation')) or 'none'}"
+        )
+        lines.append(
+            f"  text_excerpt: {_compact_text(_string_value(entry.get('text_excerpt'))) or 'none'}"
+        )
+        lines.append(f"  locator: {_scenario2_locator_text(entry.get('locator'))}")
+        lines.append(
+            "  locator_precision: "
+            f"{_string_value(entry.get('locator_precision')) or 'none'}"
+        )
+        lines.append(
+            "  page_truth_status: "
+            f"{_string_value(entry.get('page_truth_status')) or 'none'}"
+        )
+        lines.append(
+            f"  quote_checksum: {_string_value(entry.get('quote_checksum')) or 'none'}"
+        )
+        lines.append(f"  doc_uid: {_string_value(entry.get('doc_uid')) or 'none'}")
+        lines.append(
+            f"  source_hash: {_string_value(entry.get('source_hash')) or 'none'}"
+        )
+    return lines
+
+
+def _scenario2_locator_text(value: Any) -> str:
+    if isinstance(value, dict) and value:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return "none"
+
+
+def _compact_text(value: str | None) -> str:
+    if not value:
+        return ""
+    return " ".join(value.split())
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = _string_value(item)
+        if text:
+            items.append(text)
+    return items
+
+
+def _bullet_list(items: list[str]) -> list[str]:
+    if not items:
+        return ["- none"]
+    return [f"- {item}" for item in items]
+
+
+def _string_value(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return text
+
+
+def _bool_text(value: Any) -> str:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return "unknown"
 
 
 def load_prompt_for_ui(
@@ -736,13 +1631,18 @@ def save_prompt_as_new_version_for_ui(
 
 def render_details_from_state(
     parsed_json_state: dict[str, Any] | None,
-    selected_item_id: str,
+    selected_item_id: str | None,
 ) -> str:
+    if not isinstance(parsed_json_state, dict):
+        return "No details available for selected item."
+    if not str(selected_item_id or "").strip():
+        return "No details available for selected item."
     return render_checklist_details(parsed_json_state, selected_item_id)
 
 
 def on_provider_change_ui(selected_provider: str) -> Any:
     from app.config.settings import get_settings
+
     settings = get_settings()
     choices = _build_model_choices(settings, selected_provider)
     llm_providers = settings.providers_config.get("llm_providers", {})
@@ -797,22 +1697,34 @@ def build_app(
         initial_system_prompt = ""
         initial_schema_text = "{}"
 
-    full_orchestrator = orchestrator or OCRPipelineOrchestrator(
-        repo=storage_repo,
-        artifacts_manager=storage_repo.artifacts_manager,
-        ocr_client=MistralOCRClient(api_key=settings.mistral_api_key),
-        llm_clients={
-            "openai": OpenAILLMClient(
-                api_key=settings.openai_api_key,
-                pricing_config=settings.pricing_config,
+    if orchestrator is None:
+        scenario2_runtime = build_scenario2_runtime(settings=settings)
+        full_orchestrator = OCRPipelineOrchestrator(
+            repo=storage_repo,
+            artifacts_manager=storage_repo.artifacts_manager,
+            ocr_client=MistralOCRClient(api_key=settings.mistral_api_key),
+            llm_clients={
+                "openai": OpenAILLMClient(
+                    api_key=settings.openai_api_key,
+                    pricing_config=settings.pricing_config,
+                ),
+                "google": GeminiLLMClient(
+                    api_key=settings.google_api_key,
+                    pricing_config=settings.pricing_config,
+                ),
+            },
+            prompt_root=settings.project_root / "app" / "prompts",
+            scenario2_runner=scenario2_runtime.runner,
+            legal_corpus_tool=scenario2_runtime.legal_corpus_tool,
+            scenario2_case_workspace_store=getattr(
+                scenario2_runtime, "case_workspace_store", None
             ),
-            "google": GeminiLLMClient(
-                api_key=settings.google_api_key,
-                pricing_config=settings.pricing_config,
-            ),
-        },
-        prompt_root=settings.project_root / "app" / "prompts",
-    )
+            scenario2_runner_mode=settings.scenario2_runner_mode,
+            scenario2_verifier_policy=settings.scenario2_verifier_policy,
+            scenario2_bootstrap_error=scenario2_runtime.bootstrap_error,
+        )
+    else:
+        full_orchestrator = orchestrator
 
     runtime_preflight = preflight_checker or _make_preflight_checker(settings)
     provider_choices = _build_provider_choices(settings)
@@ -825,10 +1737,12 @@ def build_app(
 
     model_choices = _build_model_choices(settings, provider=default_provider)
     ocr_model_choices = _build_ocr_model_choices(settings)
-    
-    provider_config = settings.providers_config.get("llm_providers", {}).get(default_provider, {})
+
+    provider_config = settings.providers_config.get("llm_providers", {}).get(
+        default_provider, {}
+    )
     explicit_default = provider_config.get("default_model")
-    
+
     if explicit_default and explicit_default in model_choices:
         default_model = str(explicit_default)
     else:
@@ -854,6 +1768,8 @@ def build_app(
 
         session_state = gr.State(value="")
         parsed_json_state = gr.State(value={})
+        scenario1_state = gr.State(value={})
+        previous_scenario_id_state = gr.State(value=SCENARIO_1_ID)
 
         with gr.Row():
             documents = gr.File(
@@ -863,6 +1779,11 @@ def build_app(
             )
 
         with gr.Row():
+            scenario = gr.Radio(
+                label="Scenario",
+                choices=scenario_choices(),
+                value=SCENARIO_1_ID,
+            )
             provider = gr.Dropdown(
                 label="Provider",
                 choices=provider_choices,
@@ -883,6 +1804,53 @@ def build_app(
                 choices=prompt_versions or [default_prompt_version],
                 value=default_prompt_version,
             )
+            scenario_config_summary = gr.Textbox(
+                label="Scenario 2 fixed config",
+                value="",
+                visible=False,
+                interactive=False,
+            )
+
+        with gr.Group(visible=False) as scenario2_case_group:
+            gr.Markdown("### Scenario 2 Case Workspace")
+            with gr.Row():
+                scenario2_case_workspace_id = gr.Textbox(
+                    label="Scenario 2 Case ID",
+                    value="",
+                    elem_id="scenario2_case_workspace_id",
+                )
+                scenario2_claim_amount = gr.Number(
+                    label="Claim Amount",
+                    value=None,
+                    precision=2,
+                    elem_id="scenario2_claim_amount",
+                )
+                scenario2_currency = gr.Textbox(
+                    label="Currency",
+                    value="",
+                    elem_id="scenario2_currency",
+                )
+            with gr.Row():
+                scenario2_lease_start = gr.Textbox(
+                    label="Lease Start",
+                    value="",
+                    elem_id="scenario2_lease_start",
+                )
+                scenario2_lease_end = gr.Textbox(
+                    label="Lease End",
+                    value="",
+                    elem_id="scenario2_lease_end",
+                )
+                scenario2_move_out_date = gr.Textbox(
+                    label="Move Out Date",
+                    value="",
+                    elem_id="scenario2_move_out_date",
+                )
+                scenario2_deposit_return_due_date = gr.Textbox(
+                    label="Deposit Return Due Date",
+                    value="",
+                    elem_id="scenario2_deposit_return_due_date",
+                )
 
         with gr.Row():
             ocr_model = gr.Dropdown(
@@ -1001,7 +1969,7 @@ def build_app(
             )
 
         summary_box = gr.Textbox(
-            label="Summary (critical gaps + next questions)",
+            label="Model Response / Summary",
             lines=8,
             interactive=False,
             elem_id="summary_box",
@@ -1024,6 +1992,19 @@ def build_app(
             interactive=False,
             elem_id="metrics_box",
         )
+        with gr.Row():
+            scenario2_diagnostics_box = gr.Textbox(
+                label="Scenario 2 Diagnostics",
+                lines=12,
+                interactive=False,
+                elem_id="scenario2_diagnostics_box",
+            )
+            scenario2_fragments_box = gr.Textbox(
+                label="Scenario 2 Fetched Fragments",
+                lines=12,
+                interactive=False,
+                elem_id="scenario2_fragments_box",
+            )
 
         gr.Markdown("## Prompt Management")
         prompt_status_box = gr.Textbox(label="Prompt Status", interactive=False)
@@ -1085,6 +2066,12 @@ def build_app(
                 precision=0,
                 elem_id="history_limit_filter",
             )
+            history_review_status = gr.Dropdown(
+                label="Filter: review_status",
+                choices=_HISTORY_REVIEW_STATUS_CHOICES,
+                value="all",
+                elem_id="history_review_status_filter",
+            )
             history_refresh_button = gr.Button(
                 "Refresh History",
                 elem_id="history_refresh_button",
@@ -1095,13 +2082,26 @@ def build_app(
                 "run_id",
                 "created_at",
                 "session_id",
+                "scenario_id",
                 "provider",
                 "model",
                 "prompt_version",
                 "status",
+                "review_status",
                 "total_cost_usd",
             ],
-            datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
+            datatype=[
+                "str",
+                "str",
+                "str",
+                "str",
+                "str",
+                "str",
+                "str",
+                "str",
+                "str",
+                "str",
+            ],
             interactive=False,
             wrap=True,
             label="Runs",
@@ -1284,22 +2284,13 @@ def build_app(
         )
 
         analyze_button.click(
-            fn=lambda current_session_id,
-            uploaded,
-            selected_provider,
-            selected_model,
-            selected_prompt_name,
-            selected_prompt_version,
-            selected_ocr_model,
-            selected_table_format,
-            selected_include_images,
-            selected_reasoning,
-            selected_thinking: (
+            fn=lambda current_session_id, uploaded, selected_scenario_id, selected_provider, selected_model, selected_prompt_name, selected_prompt_version, selected_case_workspace_id, selected_claim_amount, selected_currency, selected_lease_start, selected_lease_end, selected_move_out_date, selected_deposit_return_due_date, selected_ocr_model, selected_table_format, selected_include_images, selected_reasoning, selected_thinking: (
                 run_full_pipeline(
                     orchestrator=full_orchestrator,
                     prompt_name=selected_prompt_name,
                     current_session_id=current_session_id,
                     uploaded_files=uploaded,
+                    scenario_id=selected_scenario_id,
                     provider=selected_provider,
                     model=selected_model,
                     prompt_version=selected_prompt_version,
@@ -1308,16 +2299,31 @@ def build_app(
                     include_image_base64=selected_include_images,
                     openai_reasoning_effort=selected_reasoning,
                     gemini_thinking_level=selected_thinking,
+                    scenario2_case_workspace_id=selected_case_workspace_id,
+                    scenario2_claim_amount=selected_claim_amount,
+                    scenario2_currency=selected_currency,
+                    scenario2_lease_start=selected_lease_start,
+                    scenario2_lease_end=selected_lease_end,
+                    scenario2_move_out_date=selected_move_out_date,
+                    scenario2_deposit_return_due_date=selected_deposit_return_due_date,
                     preflight_checker=runtime_preflight,
                 )
             ),
             inputs=[
                 session_state,
                 documents,
+                scenario,
                 provider,
                 model,
                 prompt_name,
                 prompt_version,
+                scenario2_case_workspace_id,
+                scenario2_claim_amount,
+                scenario2_currency,
+                scenario2_lease_start,
+                scenario2_lease_end,
+                scenario2_move_out_date,
+                scenario2_deposit_return_due_date,
                 ocr_model,
                 table_format,
                 include_image_base64,
@@ -1344,8 +2350,50 @@ def build_app(
                 raw_json_box,
                 validation_box,
                 metrics_box,
+                scenario2_diagnostics_box,
+                scenario2_fragments_box,
                 parsed_json_state,
             ],
+        )
+
+        scenario.change(
+            fn=lambda selected_scenario_id, selected_provider, selected_model, selected_prompt_name, selected_prompt_version, saved_state, previous_scenario: (
+                _scenario_config_mode_updates(
+                    selected_scenario_id=selected_scenario_id,
+                    fallback_provider=selected_provider,
+                    fallback_model=selected_model,
+                    fallback_prompt_name=selected_prompt_name,
+                    fallback_prompt_version=selected_prompt_version,
+                    scenario1_state=saved_state,
+                    previous_scenario_id=previous_scenario,
+                )
+            ),
+            inputs=[
+                scenario,
+                provider,
+                model,
+                prompt_name,
+                prompt_version,
+                scenario1_state,
+                previous_scenario_id_state,
+            ],
+            outputs=[
+                provider,
+                model,
+                prompt_name,
+                prompt_version,
+                scenario_config_summary,
+                scenario1_state,
+                previous_scenario_id_state,
+            ],
+            api_name=False,
+        )
+
+        scenario.change(
+            fn=_scenario2_case_block_update,
+            inputs=[scenario],
+            outputs=[scenario2_case_group],
+            api_name=False,
         )
 
         provider.change(
@@ -1362,13 +2410,7 @@ def build_app(
         )
 
         history_refresh_button.click(
-            fn=lambda session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: (
+            fn=lambda session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit, selected_review_status: (
                 refresh_history_for_ui(
                     repo=storage_repo,
                     session_id=session_filter,
@@ -1378,6 +2420,7 @@ def build_app(
                     date_from=date_from_filter,
                     date_to=date_to_filter,
                     limit=result_limit,
+                    review_status=selected_review_status,
                 )
             ),
             inputs=[
@@ -1388,6 +2431,7 @@ def build_app(
                 history_date_from,
                 history_date_to,
                 history_limit,
+                history_review_status,
             ],
             outputs=[history_table, compare_run_id_a, compare_run_id_b],
         )
@@ -1418,6 +2462,8 @@ def build_app(
                 raw_json_box,
                 validation_box,
                 metrics_box,
+                scenario2_diagnostics_box,
+                scenario2_fragments_box,
                 parsed_json_state,
             ],
         )
@@ -1433,17 +2479,7 @@ def build_app(
         )
 
         restore_button.click(
-            fn=lambda selected_zip_file,
-            overwrite_existing_flag,
-            verify_only_flag,
-            require_signature_flag,
-            session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: (
+            fn=lambda selected_zip_file, overwrite_existing_flag, verify_only_flag, require_signature_flag, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit, selected_review_status: (
                 restore_history_run_bundle(
                     repo=storage_repo,
                     zip_file_path=selected_zip_file,
@@ -1459,6 +2495,7 @@ def build_app(
                     date_from=date_from_filter,
                     date_to=date_to_filter,
                     limit=result_limit,
+                    review_status=selected_review_status,
                 )
             ),
             inputs=[
@@ -1473,6 +2510,7 @@ def build_app(
                 history_date_from,
                 history_date_to,
                 history_limit,
+                history_review_status,
             ],
             outputs=[
                 restore_status_box,
@@ -1487,16 +2525,7 @@ def build_app(
         )
 
         delete_history_button.click(
-            fn=lambda selected_run_id,
-            confirmed_run_id,
-            create_backup_before_delete,
-            session_filter,
-            provider_filter,
-            model_filter,
-            prompt_filter,
-            date_from_filter,
-            date_to_filter,
-            result_limit: (
+            fn=lambda selected_run_id, confirmed_run_id, create_backup_before_delete, session_filter, provider_filter, model_filter, prompt_filter, date_from_filter, date_to_filter, result_limit, selected_review_status: (
                 delete_history_run(
                     repo=storage_repo,
                     run_id=selected_run_id,
@@ -1510,6 +2539,7 @@ def build_app(
                     date_from=date_from_filter,
                     date_to=date_to_filter,
                     limit=result_limit,
+                    review_status=selected_review_status,
                 )
             ),
             inputs=[
@@ -1523,6 +2553,7 @@ def build_app(
                 history_date_from,
                 history_date_to,
                 history_limit,
+                history_review_status,
             ],
             outputs=[
                 delete_status_box,
@@ -1581,12 +2612,7 @@ def build_app(
         )
 
         save_prompt_button.click(
-            fn=lambda selected_prompt_name,
-            selected_prompt_version,
-            edited_prompt,
-            current_schema,
-            author,
-            note: (
+            fn=lambda selected_prompt_name, selected_prompt_version, edited_prompt, current_schema, author, note: (
                 save_prompt_as_new_version_for_ui(
                     prompt_manager=prompt_manager,
                     prompt_name=selected_prompt_name,
@@ -1636,6 +2662,8 @@ def _empty_ui_payload(
         "",
         "",
         "",
+        _scenario2_not_applicable_diagnostics_text(),
+        _scenario2_not_applicable_fragments_text(),
         {},
     )
 
@@ -1810,18 +2838,38 @@ def _load_validation_text(*, artifacts_root: str) -> str:
     if payload is None:
         return "Validation artifact unavailable."
 
+    status = str(payload.get("status") or "").strip().lower()
+    if status:
+        status_errors = _validation_error_lines(payload)
+        if status_errors:
+            lines = [f"Validation: {status}"]
+            lines.extend(f"- {error_text}" for error_text in status_errors)
+            return "\n".join(lines)
+
+        if status == "not_applicable":
+            return "Validation: not_applicable"
+        if status == "skipped":
+            return "Validation: skipped"
+        if status in {"completed", "valid"}:
+            return "Validation: valid"
+        if status in {"invalid", "failed"}:
+            return "Validation: invalid"
+
+    if status:
+        return f"Validation: {status}"
+
     valid = bool(payload.get("valid"))
     if valid:
         return "Validation: valid"
 
-    schema_errors = _to_string_list(payload.get("schema_errors"))
-    invariant_errors = _to_string_list(payload.get("invariant_errors"))
-    combined_errors = schema_errors + invariant_errors
+    schema_errors = _validation_error_lines(payload)
+    if not schema_errors:
+        schema_errors = _to_string_list(payload.get("errors"))
     lines = ["Validation: invalid"]
-    if not combined_errors:
+    if not schema_errors:
         lines.append("- (no details)")
     else:
-        lines.extend(f"- {error_text}" for error_text in combined_errors)
+        lines.extend(f"- {error_text}" for error_text in schema_errors)
     return "\n".join(lines)
 
 
@@ -1844,6 +2892,212 @@ def _metrics_text_for_history(*, run: Any, manifest: dict[str, Any] | None) -> s
                 "cost": manifest_metrics.get("cost", metrics["cost"]),
             }
     return json.dumps(metrics, ensure_ascii=False, indent=2)
+
+
+def _manifest_scenario_id(*, manifest: dict[str, Any] | None) -> str:
+    if not isinstance(manifest, dict):
+        return SCENARIO_1_ID
+
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, dict):
+        return SCENARIO_1_ID
+
+    scenario_id = inputs.get("scenario_id")
+    if isinstance(scenario_id, str):
+        return scenario_id
+
+    return SCENARIO_1_ID
+
+
+def _manifest_scenario2_runner_mode(*, manifest: dict[str, Any] | None) -> str:
+    if not isinstance(manifest, dict):
+        return normalize_scenario2_runner_mode("stub")
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return normalize_scenario2_runner_mode("stub")
+
+    llm_artifacts = artifacts.get("llm")
+    if not isinstance(llm_artifacts, dict):
+        return normalize_scenario2_runner_mode("stub")
+
+    configured = llm_artifacts.get("runner_mode")
+    return normalize_scenario2_runner_mode(configured)
+
+
+def _manifest_scenario2_case_workspace_id(*, manifest: dict[str, Any] | None) -> str:
+    if not isinstance(manifest, dict):
+        return ""
+    inputs = manifest.get("inputs")
+    if not isinstance(inputs, dict):
+        return ""
+    return str(inputs.get("case_workspace_id") or "").strip()
+
+
+def _manifest_scenario2_llm_executed(
+    *,
+    manifest: dict[str, Any] | None,
+) -> bool | None:
+    if not isinstance(manifest, dict):
+        return None
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict):
+        return None
+
+    llm_artifacts = artifacts.get("llm")
+    if not isinstance(llm_artifacts, dict):
+        return None
+
+    llm_executed = llm_artifacts.get("llm_executed")
+    if isinstance(llm_executed, bool):
+        return llm_executed
+    return None
+
+
+def _manifest_scenario2_verifier_policy(*, manifest: dict[str, Any] | None) -> str:
+    if not isinstance(manifest, dict):
+        return normalize_scenario2_verifier_policy("informational")
+    return normalize_scenario2_verifier_policy(manifest.get("verifier_policy"))
+
+
+def _scenario_review_status(
+    *,
+    scenario_id: str,
+    manifest: dict[str, Any] | None,
+    artifacts_root: str,
+    trace_payload: dict[str, Any] | None = None,
+    fallback_llm_executed: bool | None = None,
+) -> str:
+    if scenario_id != SCENARIO_2_ID:
+        return "not_applicable"
+
+    review_payload = _manifest_review_payload(manifest=manifest)
+    review_status = _string_value(review_payload.get("status"))
+    if review_status:
+        return review_status
+
+    effective_trace_payload = trace_payload
+    if effective_trace_payload is None:
+        effective_trace_payload, _ = _load_scenario2_trace_payload(
+            artifacts_root=artifacts_root,
+            manifest=manifest,
+        )
+
+    diagnostics = (
+        _trace_diagnostics(trace_payload=effective_trace_payload)
+        if effective_trace_payload is not None
+        else {}
+    )
+    derived = build_scenario2_review_payload(
+        verifier_status=_string_value(diagnostics.get("verifier_status")),
+        verifier_warnings=_string_list(diagnostics.get("verifier_warnings")),
+    )
+    derived_status = _string_value(derived.get("status"))
+    if derived_status:
+        return derived_status
+
+    if fallback_llm_executed is False:
+        return "not_applicable"
+    return "not_applicable"
+
+
+def _scenario2_verifier_gate_status(
+    *,
+    scenario_id: str,
+    manifest: dict[str, Any] | None,
+    artifacts_root: str,
+    trace_payload: dict[str, Any] | None = None,
+    fallback_llm_executed: bool | None = None,
+    fallback_verifier_policy: str = "informational",
+) -> str:
+    if scenario_id != SCENARIO_2_ID:
+        return "not_applicable"
+
+    direct = _manifest_verifier_gate_payload(manifest=manifest)
+    gate_status = _string_value(direct.get("status"))
+    if gate_status:
+        return gate_status
+
+    effective_trace_payload = trace_payload
+    if effective_trace_payload is None:
+        effective_trace_payload, _ = _load_scenario2_trace_payload(
+            artifacts_root=artifacts_root,
+            manifest=manifest,
+        )
+
+    diagnostics = (
+        _trace_diagnostics(trace_payload=effective_trace_payload)
+        if effective_trace_payload is not None
+        else {}
+    )
+    derived = build_scenario2_verifier_gate_payload(
+        verifier_policy=(
+            _string_value(diagnostics.get("verifier_policy"))
+            or _manifest_scenario2_verifier_policy(manifest=manifest)
+            or fallback_verifier_policy
+        ),
+        verifier_status=_string_value(diagnostics.get("verifier_status")),
+        llm_executed=fallback_llm_executed,
+        verifier_warnings=_string_list(diagnostics.get("verifier_warnings")),
+    )
+    return _string_value(derived.get("status")) or "not_applicable"
+
+
+def _manifest_review_payload(*, manifest: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        return {}
+
+    review = manifest.get("review")
+    if isinstance(review, dict):
+        return review
+
+    review_status = _string_value(manifest.get("review_status"))
+    if review_status:
+        return {"status": review_status}
+    return {}
+
+
+def _manifest_verifier_gate_payload(
+    *,
+    manifest: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        return {}
+
+    verifier_gate = manifest.get("verifier_gate")
+    if isinstance(verifier_gate, dict):
+        return verifier_gate
+
+    verifier_gate_status = _string_value(manifest.get("verifier_gate_status"))
+    if verifier_gate_status:
+        return {"status": verifier_gate_status}
+    return {}
+
+
+def _normalize_history_review_status_filter(value: str) -> str:
+    normalized = str(value or "all").strip()
+    if normalized in _HISTORY_REVIEW_STATUS_CHOICES:
+        return normalized
+    return "all"
+
+
+def _history_review_status_matches(
+    *,
+    selected_review_status: str,
+    row_review_status: str,
+) -> bool:
+    if selected_review_status == "all":
+        return True
+    return row_review_status == selected_review_status
+
+
+def _validation_error_lines(payload: dict[str, Any]) -> list[str]:
+    schema_errors = _to_string_list(payload.get("schema_errors"))
+    invariant_errors = _to_string_list(payload.get("invariant_errors"))
+    errors = _to_string_list(payload.get("errors"))
+    combined = schema_errors + invariant_errors + errors
+    return [error_text for error_text in combined if error_text]
 
 
 def _details_payload(parsed_json: dict[str, Any] | None) -> tuple[Any, str]:
@@ -1942,6 +3196,14 @@ def _build_progress_text(
 def _validation_stage_status(validation: Any) -> str:
     if not isinstance(validation, dict):
         return "pending"
+    status = str(validation.get("status") or "").strip().lower()
+    if status in {"not_applicable", "skipped"}:
+        return status
+    if status in {"invalid", "failed"}:
+        return "failed"
+    if status in {"completed", "valid"}:
+        return "completed"
+
     valid = validation.get("valid")
     if valid is True:
         return "completed"
@@ -2058,6 +3320,12 @@ def _comparison_status_text(diff: dict[str, Any]) -> str:
 
 
 def _comparison_summary_text(diff: dict[str, Any]) -> str:
+    scenario_mode = _comparison_mode_text(diff)
+    if scenario_mode == "scenario2_pair":
+        return _scenario2_comparison_summary_text(diff)
+    if scenario_mode == "mixed":
+        return _mixed_scenario_comparison_summary_text(diff)
+
     counts = (
         diff.get("summary_counts")
         if isinstance(diff.get("summary_counts"), dict)
@@ -2091,6 +3359,9 @@ def _comparison_summary_text(diff: dict[str, Any]) -> str:
 
 
 def _comparison_checklist_rows(diff: dict[str, Any]) -> list[list[str]]:
+    if _comparison_mode_text(diff) != "scenario1_pair":
+        return []
+
     payload = diff.get("checklist_diff")
     if not isinstance(payload, list):
         return []
@@ -2115,6 +3386,12 @@ def _comparison_checklist_rows(diff: dict[str, Any]) -> list[list[str]]:
 
 
 def _comparison_gaps_text(diff: dict[str, Any]) -> str:
+    scenario_mode = _comparison_mode_text(diff)
+    if scenario_mode == "scenario2_pair":
+        return _scenario2_comparison_gaps_text(diff)
+    if scenario_mode == "mixed":
+        return _mixed_scenario_comparison_gaps_text(diff)
+
     critical_diff = (
         diff.get("critical_gaps_diff")
         if isinstance(diff.get("critical_gaps_diff"), dict)
@@ -2172,6 +3449,301 @@ def _comparison_metrics_text(diff: dict[str, Any]) -> str:
         lines.append(f"- {key}: A={value_a} B={value_b} delta={delta}")
 
     return "\n".join(lines)
+
+
+def _comparison_mode_text(diff: dict[str, Any]) -> str:
+    scenario_comparison = (
+        diff.get("scenario_comparison")
+        if isinstance(diff.get("scenario_comparison"), dict)
+        else {}
+    )
+    return str(scenario_comparison.get("mode") or "scenario1_pair")
+
+
+def _scenario2_comparison_summary_text(diff: dict[str, Any]) -> str:
+    scenario2_diff = (
+        diff.get("scenario2_diff")
+        if isinstance(diff.get("scenario2_diff"), dict)
+        else {}
+    )
+    metadata = diff.get("metadata") if isinstance(diff.get("metadata"), dict) else {}
+    warnings = _to_string_list(diff.get("warnings"))
+
+    lines = [
+        "Scenario 2 diagnostics comparison",
+        _scalar_comparison_line(
+            label="verifier_policy",
+            payload=scenario2_diff.get("verifier_policy"),
+        ),
+        _scalar_comparison_line(
+            label="verifier_gate_status",
+            payload=scenario2_diff.get("verifier_gate_status"),
+        ),
+        _scalar_comparison_line(
+            label="review_status",
+            payload=scenario2_diff.get("review_status"),
+        ),
+        _scalar_comparison_line(
+            label="runner_mode",
+            payload=scenario2_diff.get("runner_mode"),
+        ),
+        _scalar_comparison_line(
+            label="llm_executed",
+            payload=scenario2_diff.get("llm_executed"),
+        ),
+        _scalar_comparison_line(
+            label="fragment_grounding_status",
+            payload=scenario2_diff.get("fragment_grounding_status"),
+        ),
+        _scalar_comparison_line(
+            label="citation_binding_status",
+            payload=scenario2_diff.get("citation_binding_status"),
+        ),
+        _scalar_comparison_line(
+            label="verifier_status",
+            payload=scenario2_diff.get("verifier_status"),
+        ),
+        _scalar_comparison_line(
+            label="citation_format_status",
+            payload=scenario2_diff.get("citation_format_status"),
+        ),
+        _scalar_comparison_line(
+            label="fetch_fragments_called",
+            payload=scenario2_diff.get("fetch_fragments_called"),
+        ),
+        _scalar_comparison_line(
+            label="fetch_fragments_returned_usable_fragments",
+            payload=scenario2_diff.get("fetch_fragments_returned_usable_fragments"),
+        ),
+        _scalar_comparison_line(
+            label="repair_turn_used",
+            payload=scenario2_diff.get("repair_turn_used"),
+        ),
+        _scalar_comparison_line(
+            label="sources_section_present",
+            payload=scenario2_diff.get("sources_section_present"),
+        ),
+        _scalar_comparison_line(
+            label="fetched_sources_referenced",
+            payload=scenario2_diff.get("fetched_sources_referenced"),
+        ),
+        _scalar_comparison_line(
+            label="legal_citation_count",
+            payload=scenario2_diff.get("legal_citation_count"),
+        ),
+        _scalar_comparison_line(
+            label="user_doc_citation_count",
+            payload=scenario2_diff.get("user_doc_citation_count"),
+        ),
+        _scalar_comparison_line(
+            label="citations_in_analysis_sections",
+            payload=scenario2_diff.get("citations_in_analysis_sections"),
+        ),
+        _tool_round_comparison_line(scenario2_diff.get("tool_round_count")),
+        _setwise_comparison_summary_line(
+            label="missing_sections",
+            payload=scenario2_diff.get("missing_sections"),
+        ),
+        _setwise_comparison_summary_line(
+            label="fetched_fragment_citations",
+            payload=scenario2_diff.get("fetched_fragment_citations"),
+        ),
+        _setwise_comparison_summary_line(
+            label="fetched_fragment_doc_uids",
+            payload=scenario2_diff.get("fetched_fragment_doc_uids"),
+        ),
+        _setwise_comparison_summary_line(
+            label="fetched_fragment_source_hashes",
+            payload=scenario2_diff.get("fetched_fragment_source_hashes"),
+        ),
+        _setwise_comparison_summary_line(
+            label="fetched_fragment_quote_checksums",
+            payload=scenario2_diff.get("fetched_fragment_quote_checksums"),
+        ),
+        (
+            f"provider_changed={bool(metadata.get('provider_changed'))}, "
+            f"model_changed={bool(metadata.get('model_changed'))}, "
+            f"prompt_version_changed={bool(metadata.get('prompt_version_changed'))}"
+        ),
+    ]
+    if warnings:
+        lines.append("")
+        lines.append("warnings:")
+        lines.extend(f"- {warning}" for warning in warnings)
+    return "\n".join(lines)
+
+
+def _mixed_scenario_comparison_summary_text(diff: dict[str, Any]) -> str:
+    scenario_comparison = (
+        diff.get("scenario_comparison")
+        if isinstance(diff.get("scenario_comparison"), dict)
+        else {}
+    )
+    metadata = diff.get("metadata") if isinstance(diff.get("metadata"), dict) else {}
+    warnings = _to_string_list(diff.get("warnings"))
+    run_a = diff.get("run_a") if isinstance(diff.get("run_a"), dict) else {}
+    run_b = diff.get("run_b") if isinstance(diff.get("run_b"), dict) else {}
+    lines = [
+        "Mixed scenario comparison",
+        (
+            "Structured checklist diff is not applicable across "
+            "Scenario 1 and Scenario 2."
+        ),
+        (
+            f"run_a={scenario_comparison.get('scenario_id_a') or SCENARIO_1_ID}, "
+            f"run_b={scenario_comparison.get('scenario_id_b') or SCENARIO_1_ID}"
+        ),
+        (
+            f"review_status_a={run_a.get('review_status') or 'not_applicable'}, "
+            f"review_status_b={run_b.get('review_status') or 'not_applicable'}"
+        ),
+        (
+            f"provider_changed={bool(metadata.get('provider_changed'))}, "
+            f"model_changed={bool(metadata.get('model_changed'))}, "
+            f"prompt_version_changed={bool(metadata.get('prompt_version_changed'))}"
+        ),
+    ]
+    if warnings:
+        lines.append("")
+        lines.append("warnings:")
+        lines.extend(f"- {warning}" for warning in warnings)
+    return "\n".join(lines)
+
+
+def _scenario2_comparison_gaps_text(diff: dict[str, Any]) -> str:
+    scenario2_diff = (
+        diff.get("scenario2_diff")
+        if isinstance(diff.get("scenario2_diff"), dict)
+        else {}
+    )
+    lines = [
+        "scenario2_diagnostics:",
+        _scalar_comparison_line(
+            label="verifier_policy",
+            payload=scenario2_diff.get("verifier_policy"),
+        ),
+        _scalar_comparison_line(
+            label="verifier_gate_status",
+            payload=scenario2_diff.get("verifier_gate_status"),
+        ),
+        _scalar_comparison_line(
+            label="review_status",
+            payload=scenario2_diff.get("review_status"),
+        ),
+        _scalar_comparison_line(
+            label="fragment_grounding_status",
+            payload=scenario2_diff.get("fragment_grounding_status"),
+        ),
+        _scalar_comparison_line(
+            label="citation_binding_status",
+            payload=scenario2_diff.get("citation_binding_status"),
+        ),
+        _scalar_comparison_line(
+            label="verifier_status",
+            payload=scenario2_diff.get("verifier_status"),
+        ),
+        _scalar_comparison_line(
+            label="citation_format_status",
+            payload=scenario2_diff.get("citation_format_status"),
+        ),
+        _scalar_comparison_line(
+            label="sources_section_present",
+            payload=scenario2_diff.get("sources_section_present"),
+        ),
+        _scalar_comparison_line(
+            label="fetched_sources_referenced",
+            payload=scenario2_diff.get("fetched_sources_referenced"),
+        ),
+        _scalar_comparison_line(
+            label="legal_citation_count",
+            payload=scenario2_diff.get("legal_citation_count"),
+        ),
+        _scalar_comparison_line(
+            label="user_doc_citation_count",
+            payload=scenario2_diff.get("user_doc_citation_count"),
+        ),
+        _scalar_comparison_line(
+            label="citations_in_analysis_sections",
+            payload=scenario2_diff.get("citations_in_analysis_sections"),
+        ),
+        _tool_round_comparison_line(scenario2_diff.get("tool_round_count")),
+        "",
+        "missing_sections:",
+        *_comparison_list_lines(scenario2_diff.get("missing_sections") or {}),
+        "",
+        "fetched_fragment_citations:",
+        *_comparison_list_lines(scenario2_diff.get("fetched_fragment_citations") or {}),
+        "",
+        "fetched_fragment_doc_uids:",
+        *_comparison_list_lines(scenario2_diff.get("fetched_fragment_doc_uids") or {}),
+        "",
+        "fetched_fragment_source_hashes:",
+        *_comparison_list_lines(
+            scenario2_diff.get("fetched_fragment_source_hashes") or {}
+        ),
+        "",
+        "fetched_fragment_quote_checksums:",
+        *_comparison_list_lines(
+            scenario2_diff.get("fetched_fragment_quote_checksums") or {}
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def _mixed_scenario_comparison_gaps_text(diff: dict[str, Any]) -> str:
+    scenario_comparison = (
+        diff.get("scenario_comparison")
+        if isinstance(diff.get("scenario_comparison"), dict)
+        else {}
+    )
+    return "\n".join(
+        [
+            "mixed_scenario_comparison:",
+            (
+                f"- run_a scenario={scenario_comparison.get('scenario_id_a') or SCENARIO_1_ID}"
+            ),
+            (
+                f"- run_b scenario={scenario_comparison.get('scenario_id_b') or SCENARIO_1_ID}"
+            ),
+            (
+                "- checklist / critical gaps diff is intentionally suppressed "
+                "for mixed Scenario 1 vs Scenario 2 comparison"
+            ),
+        ]
+    )
+
+
+def _scalar_comparison_line(*, label: str, payload: Any) -> str:
+    value_a = ""
+    value_b = ""
+    changed = False
+    if isinstance(payload, dict):
+        value_a = str(payload.get("value_a"))
+        value_b = str(payload.get("value_b"))
+        changed = bool(payload.get("changed"))
+    return f"{label}: A={value_a} B={value_b} changed={changed}"
+
+
+def _tool_round_comparison_line(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return "tool_round_count: A=0 B=0 delta=0 changed=False"
+    return (
+        "tool_round_count: "
+        f"A={payload.get('value_a')} "
+        f"B={payload.get('value_b')} "
+        f"delta={payload.get('delta_b_minus_a')} "
+        f"changed={bool(payload.get('changed'))}"
+    )
+
+
+def _setwise_comparison_summary_line(*, label: str, payload: Any) -> str:
+    normalized = payload if isinstance(payload, dict) else {}
+    only_in_a = _to_string_list(normalized.get("only_in_a"))
+    only_in_b = _to_string_list(normalized.get("only_in_b"))
+    common = _to_string_list(normalized.get("common"))
+    return (
+        f"{label}: added={len(only_in_b)} removed={len(only_in_a)} common={len(common)}"
+    )
 
 
 def _run_startup_checks(settings: Settings) -> None:

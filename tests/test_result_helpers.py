@@ -72,3 +72,11 @@ def test_render_checklist_details_includes_findings_and_requests() -> None:
     assert "ask: Upload bank transfer confirmation" in details
     assert "examples:" in details
     assert "findings:" in details
+
+
+def test_render_checklist_details_handles_none_item_id() -> None:
+    payload = _parsed_payload()
+
+    details = render_checklist_details(payload, None)
+
+    assert details == "No details available for selected item."

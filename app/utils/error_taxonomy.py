@@ -25,6 +25,9 @@ ErrorCode = Literal[
     "LIVE_SMOKE_SDK_NOT_INSTALLED",
     "TXT_PDF_CONVERSION_ERROR",
     "TECHSPEC_DRIFT",
+    "SCENARIO2_CONFIG_ERROR",
+    "SCENARIO2_RUNTIME_ERROR",
+    "SCENARIO2_TRACE_PERSIST_ERROR",
 ]
 
 ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
@@ -57,6 +60,15 @@ ERROR_FRIENDLY_MESSAGES: dict[ErrorCode, str] = {
     ),
     "TXT_PDF_CONVERSION_ERROR": "A .txt file failed to safely convert into a compatible .pdf payload for the OCR service.",
     "TECHSPEC_DRIFT": "Pipeline execution blocked: requested configuration drifted from the Canonical TechSpec. Contact administrator.",
+    "SCENARIO2_CONFIG_ERROR": (
+        "Scenario 2 configuration is invalid or incomplete."
+    ),
+    "SCENARIO2_RUNTIME_ERROR": (
+        "Scenario 2 foundation run failed during runtime execution."
+    ),
+    "SCENARIO2_TRACE_PERSIST_ERROR": (
+        "Scenario 2 trace artifact could not be persisted."
+    ),
 }
 
 

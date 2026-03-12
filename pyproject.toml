@@ -14,6 +14,7 @@ dependencies = [
     "jsonschema>=4.23.0",
     "mistralai>=1.2.0",
     "openai>=1.99.0",
+    "pymongo>=4.11.0",
     "pydantic-settings>=2.2.1",
     "pymupdf>=1.24.0",
     "PyYAML>=6.0.1",
@@ -27,7 +28,10 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "legal_ingest*"]
+
+[tool.setuptools.package-data]
+legal_ingest = ["data/*.json"]
 
 [tool.ruff]
 line-length = 88

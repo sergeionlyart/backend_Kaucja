@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.agentic.case_workspace_store import Scenario2CaseMetadata
 from .models import (
     AnalyzedDocument,
     ClarificationQuestion,
@@ -185,7 +186,12 @@ def save_upload(case_id: str, filename: str, content: bytes) -> dict[str, Any]:
         if entry.get("sha256") == content_hash:
             existing = Path(entry["saved_path"])
             if existing.is_file():
-                logger.info("Dedup (catalog): %s matches %s in case %s", filename, existing.name, case_id)
+                logger.info(
+                    "Dedup (catalog): %s matches %s in case %s",
+                    filename,
+                    existing.name,
+                    case_id,
+                )
                 return {
                     "saved_path": existing,
                     "sha256": content_hash,
@@ -198,7 +204,12 @@ def save_upload(case_id: str, filename: str, content: bytes) -> dict[str, Any]:
         if existing.is_file():
             existing_hash = hashlib.sha256(existing.read_bytes()).hexdigest()
             if existing_hash == content_hash:
-                logger.info("Dedup (scan): %s matches %s in case %s", filename, existing.name, case_id)
+                logger.info(
+                    "Dedup (scan): %s matches %s in case %s",
+                    filename,
+                    existing.name,
+                    case_id,
+                )
                 return {
                     "saved_path": existing,
                     "sha256": content_hash,
@@ -286,7 +297,11 @@ def _load_documents_catalog(case_id: str) -> list[dict[str, Any]]:
     state = _load_case(case_id)
     if state and "stored_files" in state:
         legacy = state["stored_files"]
-        logger.info("Migrating %d stored_files to documents.json for case %s", len(legacy), case_id)
+        logger.info(
+            "Migrating %d stored_files to documents.json for case %s",
+            len(legacy),
+            case_id,
+        )
         _save_documents_catalog(case_id, legacy)
         return legacy
 
@@ -298,7 +313,9 @@ def _save_documents_catalog(case_id: str, catalog: list[dict[str, Any]]) -> None
     cat_path = _documents_catalog_path(case_id)
     cat_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = cat_path.with_suffix(".tmp")
-    tmp_path.write_text(json.dumps(catalog, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_path.write_text(
+        json.dumps(catalog, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     tmp_path.replace(cat_path)
 
 
@@ -315,6 +332,7 @@ def _deduplicate_catalog(catalog: list[dict[str, Any]]) -> list[dict[str, Any]]:
             seen.add(key)
             result.append(entry)
     return result
+
 
 def _persist_files_info(
     case_id: str,
@@ -372,14 +390,18 @@ def list_stored_documents(case_id: str) -> list[dict[str, Any]]:
         try:
             resolved = Path(entry["saved_path"]).resolve()
         except (TypeError, ValueError):
-            logger.warning("Invalid saved_path in case %s: %s", case_id, entry.get("saved_path"))
+            logger.warning(
+                "Invalid saved_path in case %s: %s", case_id, entry.get("saved_path")
+            )
             continue
         try:
             resolved.relative_to(safe_root)
         except ValueError:
             logger.warning(
                 "Path containment blocked in case %s: %s not under %s",
-                case_id, resolved, safe_root,
+                case_id,
+                resolved,
+                safe_root,
             )
             continue
         if resolved.is_file():
@@ -468,6 +490,51 @@ def parse_intake(
         "summary_fields": summary_fields,
         "fields_meta": fields_meta,
     }
+
+
+def _parse_claim_amount_summary(value: str) -> tuple[float | None, str | None]:
+    raw = value.strip()
+    if not raw:
+        return None, None
+    match = re.fullmatch(r"(\d+(?:[.,]\d{1,2})?)\s*([A-Za-z]{3})", raw)
+    if match is None:
+        return None, None
+    amount_raw, currency = match.groups()
+    try:
+        amount = float(amount_raw.replace(",", "."))
+    except ValueError:
+        return None, None
+    return amount, currency.upper()
+
+
+def _summary_field_value(
+    summary_fields: list[SummaryField],
+    field_id: str,
+) -> str | None:
+    for field in summary_fields:
+        if field.id == field_id:
+            value = field.value.strip()
+            return value or None
+    return None
+
+
+def build_scenario2_case_metadata(
+    *,
+    intake_text: str | None,
+    locale: str | None,
+) -> Scenario2CaseMetadata:
+    if not intake_text or not intake_text.strip():
+        return Scenario2CaseMetadata()
+    parsed = parse_intake(intake_text, locale)
+    summary_fields: list[SummaryField] = parsed["summary_fields"]
+    deposit_amount = _summary_field_value(summary_fields, "deposit_amount") or ""
+    move_out_date = _summary_field_value(summary_fields, "move_out_date")
+    claim_amount, currency = _parse_claim_amount_summary(deposit_amount)
+    return Scenario2CaseMetadata(
+        claim_amount=claim_amount,
+        currency=currency,
+        move_out_date=move_out_date,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -754,7 +821,10 @@ def handle_documents_analyze_real(
 
     Imports are done lazily to avoid import-time deps on heavy modules.
     """
+    from app.agentic.scenario2_runtime_factory import build_scenario2_runtime
     from app.config.settings import Settings
+    from app.llm_client.gemini_client import GeminiLLMClient
+    from app.llm_client.openai_client import OpenAILLMClient
     from app.pipeline.orchestrator import OCRPipelineOrchestrator
     from app.storage.artifacts import ArtifactsManager
     from app.storage.repo import StorageRepo
@@ -767,15 +837,50 @@ def handle_documents_analyze_real(
         raise
 
     settings = Settings()
-    repo = StorageRepo(db_path=str(settings.db_path))
-    artifacts = ArtifactsManager(root=settings.storage_root)
+    case_state = _load_case(case_id)
+    effective_intake_text = intake_text or (
+        str(case_state.get("intake_text") or "") if case_state else None
+    )
+    scenario2_case_metadata = build_scenario2_case_metadata(
+        intake_text=effective_intake_text,
+        locale=locale,
+    )
+    # Backward-compatible settings resolution for real pipeline mode.
+    # Current Settings exposes resolved_sqlite_path/resolved_data_dir and
+    # mistral_api_key (with OCR_API_KEY alias).
+    db_path = getattr(settings, "db_path", None) or settings.resolved_sqlite_path
+    data_root = getattr(settings, "storage_root", None) or settings.resolved_data_dir
+    ocr_api_key = getattr(settings, "ocr_api_key", None) or settings.mistral_api_key
 
-    ocr_client = MistralOCRClient(api_key=settings.ocr_api_key)
+    repo = StorageRepo(db_path=str(db_path))
+    artifacts = ArtifactsManager(data_dir=data_root)
+
+    ocr_client = MistralOCRClient(api_key=ocr_api_key)
+    scenario2_runtime = build_scenario2_runtime(settings=settings)
 
     orchestrator = OCRPipelineOrchestrator(
         repo=repo,
         artifacts_manager=artifacts,
         ocr_client=ocr_client,
+        llm_clients={
+            "openai": OpenAILLMClient(
+                api_key=settings.openai_api_key,
+                pricing_config=settings.pricing_config,
+            ),
+            "google": GeminiLLMClient(
+                api_key=settings.google_api_key,
+                pricing_config=settings.pricing_config,
+            ),
+        },
+        prompt_root=settings.project_root / "app" / "prompts",
+        scenario2_runner=scenario2_runtime.runner,
+        legal_corpus_tool=scenario2_runtime.legal_corpus_tool,
+        scenario2_case_workspace_store=getattr(
+            scenario2_runtime, "case_workspace_store", None
+        ),
+        scenario2_runner_mode=settings.scenario2_runner_mode,
+        scenario2_verifier_policy=settings.scenario2_verifier_policy,
+        scenario2_bootstrap_error=scenario2_runtime.bootstrap_error,
     )
 
     result = orchestrator.run_full_pipeline(
@@ -786,6 +891,7 @@ def handle_documents_analyze_real(
         prompt_name=settings.default_prompt_name,
         prompt_version=settings.default_prompt_version,
         ocr_options=OCROptions(),
+        scenario2_case_metadata=scenario2_case_metadata,
     )
 
     # Classify known pipeline errors for caller
@@ -991,14 +1097,20 @@ def handle_reanalyze(
     files_info: list[dict[str, Any]] = []
     saved_paths: list[Path] = []
     for entry in stored:
-        size_mb = round(entry.get("size_bytes", 0) / (1024 * 1024), 2) if entry.get("size_bytes") else entry.get("size_mb", 0)
-        files_info.append({
-            "doc_id": entry["doc_id"],
-            "category_id": entry.get("categoryId") or entry.get("category_id", ""),
-            "name": entry.get("original_name") or entry.get("name", ""),
-            "size_mb": size_mb,
-            "client_doc_id": entry.get("client_doc_id"),
-        })
+        size_mb = (
+            round(entry.get("size_bytes", 0) / (1024 * 1024), 2)
+            if entry.get("size_bytes")
+            else entry.get("size_mb", 0)
+        )
+        files_info.append(
+            {
+                "doc_id": entry["doc_id"],
+                "category_id": entry.get("categoryId") or entry.get("category_id", ""),
+                "name": entry.get("original_name") or entry.get("name", ""),
+                "size_mb": size_mb,
+                "client_doc_id": entry.get("client_doc_id"),
+            }
+        )
         saved_paths.append(Path(entry["saved_path"]))
 
     # Load intake_text from case state (if available)

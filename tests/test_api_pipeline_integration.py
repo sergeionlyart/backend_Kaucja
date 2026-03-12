@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
+from app.agentic.case_workspace_store import Scenario2CaseMetadata
 
 
 @dataclass
@@ -75,12 +76,20 @@ def _make_pdf(size: int = 200) -> bytes:
     return b"%PDF-1.4 " + b"x" * size
 
 
-def _post_analyze(client: TestClient, case_id: str = "KJ-2026-TEST") -> Any:
+def _post_analyze(
+    client: TestClient,
+    case_id: str = "KJ-2026-TEST",
+    *,
+    intake_text: str | None = None,
+) -> Any:
     """Helper: POST analyze with a single PDF."""
     pdf = _make_pdf()
+    data = {"case_id": case_id, "files_category": ["lease"]}
+    if intake_text is not None:
+        data["intake_text"] = intake_text
     return client.post(
         "/api/v2/case/documents/analyze",
-        data={"case_id": case_id, "files_category": ["lease"]},
+        data=data,
         files=[("files", ("umowa.pdf", io.BytesIO(pdf), "application/pdf"))],
     )
 
@@ -104,6 +113,10 @@ def _make_settings_mock() -> MagicMock:
     mock.default_prompt_version = "v001"
     mock.default_provider = "openai"
     mock.default_model = "gpt-5.1"
+    mock.scenario2_runner_mode = "stub"
+    mock.scenario2_verifier_policy = "informational"
+    mock.scenario2_legal_corpus_backend = "local"
+    mock.scenario2_legal_corpus_local_root = "artifacts/legal_collection"
     mock.db_path = "data/test.db"
     mock.storage_root = "data"
     mock.ocr_api_key = "test-key"
@@ -114,6 +127,7 @@ def _run_with_orchestrator_result(
     client: TestClient,
     fake_result: FakeFullPipelineResult,
     case_id: str = "KJ-2026-TEST",
+    intake_text: str | None = None,
     settings_overrides: dict[str, Any] | None = None,
 ) -> tuple[Any, MagicMock]:
     """Run analyze endpoint with a mocked orchestrator returning fake_result.
@@ -139,9 +153,34 @@ def _run_with_orchestrator_result(
         patch(_REAL_PIPELINE_PATCHES["ocr_client"]),
         patch(_REAL_PIPELINE_PATCHES["ocr_options"]),
     ):
-        resp = _post_analyze(client, case_id)
+        resp = _post_analyze(client, case_id, intake_text=intake_text)
 
     return resp, mock_orch_instance
+
+
+def test_real_pipeline_passes_case_metadata_to_orchestrator_when_known(
+    client: TestClient,
+) -> None:
+    fake_result = FakeFullPipelineResult(parsed_json=FIXTURE_PARSED)
+    intake_text = "Kaucja 1200 PLN, wyprowadzka 2026-01-15."
+    resp, mock_orch = _run_with_orchestrator_result(
+        client,
+        fake_result,
+        "KJ-2026-META",
+        intake_text=intake_text,
+    )
+
+    assert resp.status_code == 200
+    call_kwargs = mock_orch.run_full_pipeline.call_args
+    assert call_kwargs is not None
+    case_metadata = call_kwargs.kwargs["scenario2_case_metadata"]
+    assert isinstance(case_metadata, Scenario2CaseMetadata)
+    assert case_metadata.claim_amount == 1200.0
+    assert case_metadata.currency == "PLN"
+    assert case_metadata.move_out_date == "2026-01-15"
+    assert case_metadata.lease_start is None
+    assert case_metadata.lease_end is None
+    assert case_metadata.deposit_return_due_date is None
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +257,68 @@ def test_real_pipeline_passes_settings_prompt_to_orchestrator(
     assert call_kwargs is not None
     assert call_kwargs.kwargs["prompt_name"] == "custom_prompt_test"
     assert call_kwargs.kwargs["prompt_version"] == "v042"
+
+
+def test_real_pipeline_passes_scenario2_runner_mode_to_orchestrator(
+    client: TestClient,
+) -> None:
+    fake_result = FakeFullPipelineResult(parsed_json=FIXTURE_PARSED)
+    mock_orch_instance = MagicMock()
+    mock_orch_instance.run_full_pipeline.return_value = fake_result
+    mock_settings = _make_settings_mock()
+    mock_settings.scenario2_runner_mode = "openai_tool_loop"
+    mock_settings.scenario2_verifier_policy = "strict"
+    runtime_runner = object()
+    runtime_tool = object()
+    runtime_case_workspace_store = object()
+    runtime = type(
+        "Runtime",
+        (),
+        {
+            "runner": runtime_runner,
+            "legal_corpus_tool": runtime_tool,
+            "case_workspace_store": runtime_case_workspace_store,
+            "bootstrap_error": "local corpus missing",
+        },
+    )()
+
+    with (
+        patch("app.api.service.PIPELINE_STUB", False),
+        patch(_REAL_PIPELINE_PATCHES["settings"], return_value=mock_settings),
+        patch(
+            _REAL_PIPELINE_PATCHES["orchestrator"],
+            return_value=mock_orch_instance,
+        ) as orchestrator_ctor,
+        patch(_REAL_PIPELINE_PATCHES["repo"]),
+        patch(_REAL_PIPELINE_PATCHES["artifacts"]),
+        patch(_REAL_PIPELINE_PATCHES["ocr_client"]),
+        patch(_REAL_PIPELINE_PATCHES["ocr_options"]),
+        patch("app.llm_client.openai_client.OpenAILLMClient"),
+        patch("app.llm_client.gemini_client.GeminiLLMClient"),
+        patch(
+            "app.agentic.scenario2_runtime_factory.build_scenario2_runtime",
+            return_value=runtime,
+        ),
+    ):
+        resp = _post_analyze(client, "KJ-2026-RUNNER-MODE")
+
+    assert resp.status_code == 200
+    assert orchestrator_ctor.call_args is not None
+    assert (
+        orchestrator_ctor.call_args.kwargs["scenario2_runner_mode"]
+        == "openai_tool_loop"
+    )
+    assert orchestrator_ctor.call_args.kwargs["scenario2_verifier_policy"] == "strict"
+    assert orchestrator_ctor.call_args.kwargs["scenario2_runner"] is runtime_runner
+    assert orchestrator_ctor.call_args.kwargs["legal_corpus_tool"] is runtime_tool
+    assert (
+        orchestrator_ctor.call_args.kwargs["scenario2_case_workspace_store"]
+        is runtime_case_workspace_store
+    )
+    assert (
+        orchestrator_ctor.call_args.kwargs["scenario2_bootstrap_error"]
+        == "local corpus missing"
+    )
 
 
 # ---------------------------------------------------------------------------

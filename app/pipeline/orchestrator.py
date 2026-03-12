@@ -10,10 +10,38 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence
 
+from app.agentic.case_workspace_store import Scenario2CaseMetadata
+from app.agentic.legal_corpus_contract import LegalCorpusTool
+from app.agentic.scenario2_verifier import (
+    build_scenario2_review_payload,
+    build_scenario2_verifier_gate_payload,
+    normalize_scenario2_verifier_policy,
+)
 from app.llm_client.base import LLMClient, LLMResult
+from app.agentic.scenario2_runner import (
+    Scenario2RunConfig,
+    Scenario2RunResult,
+    Scenario2Runner,
+    Scenario2RunnerError,
+    StubScenario2Runner,
+)
 from app.ocr_client.types import OCROptions, OCRResult
 from app.pipeline.pack_documents import load_and_pack_documents
 from app.pipeline.validate_output import ValidationResult, validate_output
+from app.pipeline.scenario_router import (
+    SCENARIO_1_ID,
+    SCENARIO_2_ID,
+    SCENARIO2_CONFIG_ERROR,
+    SCENARIO_2_VALIDATION_MESSAGE,
+    SCENARIO_2_VALIDATION_STATUS,
+    SCENARIO2_RUNTIME_ERROR,
+    SCENARIO2_RUNNER_MODE_STUB,
+    SCENARIO2_TRACE_PERSIST_ERROR,
+    is_openai_tool_loop_mode,
+    normalize_scenario2_runner_mode,
+    resolve_scenario_prompt_source_path,
+    resolve_scenario_config,
+)
 from app.storage.artifacts import ArtifactsManager, DocumentArtifacts, RunArtifacts
 from app.storage.models import OCRStatus
 from app.storage.repo import StorageRepo
@@ -73,6 +101,7 @@ class FullPipelineResult:
     metrics: dict[str, Any]
     error_code: str | None
     error_message: str | None
+    scenario_id: str = SCENARIO_1_ID
 
 
 _OCR_MAX_RETRIES = 1
@@ -90,6 +119,12 @@ class OCRPipelineOrchestrator:
         ocr_client: OCRClientProtocol,
         llm_clients: dict[str, LLMClient] | None = None,
         prompt_root: Path | None = None,
+        scenario2_runner: Scenario2Runner | None = None,
+        legal_corpus_tool: LegalCorpusTool | None = None,
+        scenario2_case_workspace_store: Any | None = None,
+        scenario2_runner_mode: str = SCENARIO2_RUNNER_MODE_STUB,
+        scenario2_verifier_policy: str = "informational",
+        scenario2_bootstrap_error: str | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         self.repo = repo
@@ -97,6 +132,16 @@ class OCRPipelineOrchestrator:
         self.ocr_client = ocr_client
         self.llm_clients = llm_clients or {}
         self.prompt_root = prompt_root or Path("app/prompts")
+        self.scenario2_runner = scenario2_runner or StubScenario2Runner()
+        self.legal_corpus_tool = legal_corpus_tool
+        self.scenario2_case_workspace_store = scenario2_case_workspace_store
+        self.scenario2_runner_mode = normalize_scenario2_runner_mode(
+            runner_mode=scenario2_runner_mode
+        )
+        self.scenario2_verifier_policy = normalize_scenario2_verifier_policy(
+            scenario2_verifier_policy
+        )
+        self.scenario2_bootstrap_error = scenario2_bootstrap_error
         self.sleep_fn = sleep_fn
 
     def run_ocr_stage(
@@ -140,6 +185,8 @@ class OCRPipelineOrchestrator:
                 schema_version=prompt_version,
                 ocr_options=ocr_options,
                 llm_params={},
+                scenario_id=SCENARIO_1_ID,
+                prompt_source_path=None,
             ),
             artifacts={
                 "root": str(run_artifacts.artifacts_root_path.resolve()),
@@ -249,7 +296,10 @@ class OCRPipelineOrchestrator:
         prompt_name: str,
         prompt_version: str,
         ocr_options: OCROptions,
+        scenario_id: str | None = None,
         llm_params: dict[str, Any] | None = None,
+        scenario2_case_metadata: Scenario2CaseMetadata | None = None,
+        scenario2_case_workspace_id: str | None = None,
     ) -> FullPipelineResult:
         paths = _normalize_input_paths(input_files)
         if not paths:
@@ -257,14 +307,25 @@ class OCRPipelineOrchestrator:
 
         started_at = time.perf_counter()
         llm_runtime_params = llm_params or {}
+        scenario = resolve_scenario_config(
+            scenario_id=scenario_id or SCENARIO_1_ID,
+            requested_provider=provider,
+            requested_model=model,
+            requested_prompt_name=prompt_name,
+            requested_prompt_version=prompt_version,
+        )
+        effective_provider = scenario.provider
+        effective_model = scenario.model
+        effective_prompt_name = scenario.prompt_name
+        effective_prompt_version = scenario.prompt_version
         session = self.repo.create_session(session_id=session_id or None)
         run = self.repo.create_run(
             session_id=session.session_id,
-            provider=provider,
-            model=model,
-            prompt_name=prompt_name,
-            prompt_version=prompt_version,
-            schema_version=prompt_version,
+            provider=effective_provider,
+            model=effective_model,
+            prompt_name=effective_prompt_name,
+            prompt_version=effective_prompt_version,
+            schema_version=effective_prompt_version,
             status="running",
             openai_reasoning_effort=_to_optional_param(
                 llm_runtime_params.get("openai_reasoning_effort")
@@ -280,18 +341,27 @@ class OCRPipelineOrchestrator:
         llm_artifacts = self.artifacts_manager.create_llm_artifacts(
             artifacts_root_path=run.artifacts_root_path
         )
+        effective_scenario2_case_workspace_id = None
+        if scenario.scenario_id == SCENARIO_2_ID:
+            requested_case_workspace_id = str(scenario2_case_workspace_id or "").strip()
+            effective_scenario2_case_workspace_id = (
+                requested_case_workspace_id or session.session_id
+            )
         init_run_manifest(
             artifacts_root_path=run.artifacts_root_path,
             session_id=session.session_id,
             run_id=run.run_id,
             inputs=_build_manifest_inputs(
-                provider=provider,
-                model=model,
-                prompt_name=prompt_name,
-                prompt_version=prompt_version,
-                schema_version=prompt_version,
+                provider=effective_provider,
+                model=effective_model,
+                prompt_name=effective_prompt_name,
+                prompt_version=effective_prompt_version,
+                schema_version=effective_prompt_version,
                 ocr_options=ocr_options,
                 llm_params=llm_runtime_params,
+                scenario_id=scenario.scenario_id,
+                prompt_source_path=scenario.prompt_source_path,
+                scenario2_case_workspace_id=effective_scenario2_case_workspace_id,
             ),
             artifacts={
                 "root": str(run_artifacts.artifacts_root_path.resolve()),
@@ -308,6 +378,18 @@ class OCRPipelineOrchestrator:
             },
             status="running",
         )
+        if effective_scenario2_case_workspace_id is not None:
+            _safe_record_scenario2_case_workspace_start(
+                store=self.scenario2_case_workspace_store,
+                case_id=effective_scenario2_case_workspace_id,
+                session_id=session.session_id,
+                run_id=run.run_id,
+                scenario_id=scenario.scenario_id,
+                input_paths=paths,
+                case_metadata=scenario2_case_metadata,
+                artifacts_root_path=str(run.artifacts_root_path),
+                run_log_path=run_artifacts.run_log_path,
+            )
 
         _append_run_log(
             run_artifacts.run_log_path, f"Run started with {len(paths)} files"
@@ -398,6 +480,24 @@ class OCRPipelineOrchestrator:
                 run_artifacts.run_log_path,
                 f"Run failed after OCR stage: {error_code} ({error_message})",
             )
+            if effective_scenario2_case_workspace_id is not None:
+                _safe_record_scenario2_analysis_run(
+                    store=self.scenario2_case_workspace_store,
+                    case_id=effective_scenario2_case_workspace_id,
+                    session_id=session.session_id,
+                    run_id=run.run_id,
+                    scenario_id=scenario.scenario_id,
+                    status="failed",
+                    review_status="not_applicable",
+                    verifier_gate_status="not_applicable",
+                    diagnostics={
+                        "stage": "ocr",
+                        "error_code": error_code,
+                        "error_message": error_message,
+                    },
+                    artifacts_root_path=str(run.artifacts_root_path),
+                    run_log_path=run_artifacts.run_log_path,
+                )
 
             return FullPipelineResult(
                 session_id=session.session_id,
@@ -413,6 +513,638 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_message,
+                scenario_id=scenario.scenario_id,
+            )
+
+        if not scenario.llm_stage_enabled:
+            scenario2_trace_path = llm_artifacts.llm_dir / "scenario2_trace.json"
+            scenario2_runner_mode = self.scenario2_runner_mode
+            scenario2_llm_executed = is_openai_tool_loop_mode(
+                runner_mode=scenario2_runner_mode
+            )
+            scenario2_runner = (
+                self.scenario2_runner
+                if scenario2_llm_executed
+                else StubScenario2Runner()
+            )
+            scenario2_llm_start_required = scenario2_llm_executed
+
+            def _scenario2_artifacts_payload(
+                *,
+                llm_executed: bool,
+                trace_path: str | None = None,
+            ) -> dict[str, Any]:
+                payload: dict[str, Any] = {
+                    "runner_mode": scenario2_runner_mode,
+                    "llm_executed": llm_executed,
+                }
+                if trace_path is not None:
+                    payload["trace_path"] = trace_path
+                return payload
+
+            def build_failure_trace_payload(
+                *,
+                failure_stage: str,
+                failure_error_code: str,
+                failure_error_message: str,
+                run_result: Scenario2RunResult | None,
+                llm_executed: bool,
+            ) -> dict[str, Any]:
+                steps: list[str] = []
+                tool_trace: list[dict[str, Any]] = []
+                diagnostics: dict[str, Any] = {}
+                final_text = ""
+                if run_result is not None:
+                    steps.extend(run_result.steps)
+                    tool_trace.extend(run_result.tool_trace)
+                    diagnostics.update(run_result.diagnostics)
+                    final_text = run_result.final_text
+
+                if not steps:
+                    steps = [f"scenario2_{failure_stage}_failed"]
+                else:
+                    steps.append(f"scenario2_{failure_stage}_failed")
+
+                diagnostics = dict(diagnostics)
+                diagnostics.update(
+                    {
+                        "stage": failure_stage,
+                        "error_code": failure_error_code,
+                        "error_message": failure_error_message,
+                    }
+                )
+                diagnostics = _scenario2_diagnostics_with_verifier_gate(
+                    diagnostics=diagnostics,
+                    verifier_policy=self.scenario2_verifier_policy,
+                    llm_executed=llm_executed,
+                )
+                return {
+                    "response_mode": "plain_text",
+                    "final_text": final_text,
+                    "steps": steps,
+                    "tool_trace": tool_trace,
+                    "diagnostics": diagnostics,
+                    "runner_mode": scenario2_runner_mode,
+                    "llm_executed": llm_executed,
+                    "model": run_result.model if run_result else None,
+                    "tool_round_count": run_result.tool_round_count
+                    if run_result
+                    else 0,
+                }
+
+            def build_success_trace_payload(
+                *,
+                run_result: Scenario2RunResult,
+                llm_executed: bool,
+            ) -> dict[str, Any]:
+                diagnostics = _scenario2_diagnostics_with_verifier_gate(
+                    diagnostics=run_result.diagnostics,
+                    verifier_policy=self.scenario2_verifier_policy,
+                    llm_executed=llm_executed,
+                )
+                return {
+                    "response_mode": run_result.response_mode,
+                    "final_text": run_result.final_text,
+                    "steps": list(run_result.steps),
+                    "tool_trace": list(run_result.tool_trace),
+                    "diagnostics": diagnostics,
+                    "runner_mode": scenario2_runner_mode,
+                    "llm_executed": llm_executed,
+                    "model": run_result.model,
+                    "tool_round_count": run_result.tool_round_count,
+                }
+
+            def handle_scenario2_failure(
+                *,
+                scenario2_error_code: str,
+                scenario2_error_message: str,
+                runner_mode: str,
+                llm_stage_status: str,
+                llm_executed: bool,
+                run_result: Scenario2RunResult | None = None,
+                failure_stage: str = "runtime",
+            ) -> FullPipelineResult:
+                failure_payload = build_failure_trace_payload(
+                    failure_stage=failure_stage,
+                    failure_error_code=scenario2_error_code,
+                    failure_error_message=scenario2_error_message,
+                    run_result=run_result,
+                    llm_executed=llm_executed,
+                )
+                trace_persisted = False
+                try:
+                    _write_scenario2_trace_artifact(
+                        path=scenario2_trace_path,
+                        trace_payload=failure_payload,
+                    )
+                    trace_persisted = True
+                except Exception as error:  # noqa: BLE001
+                    trace_error = build_error_details(error)
+                    _safe_append_run_log(
+                        run_artifacts.run_log_path,
+                        (
+                            "Scenario2 trace write failed: "
+                            f"{scenario2_error_code} ({trace_error})"
+                        ),
+                    )
+                    scenario2_error_code = SCENARIO2_TRACE_PERSIST_ERROR
+                    scenario2_error_message = (
+                        f"{scenario2_error_message} "
+                        f"(trace persistence failed: {trace_error})"
+                    )
+                    failure_payload["diagnostics"]["error_code"] = scenario2_error_code
+                    failure_payload["diagnostics"]["error_message"] = (
+                        scenario2_error_message
+                    )
+                    failure_payload["steps"] = failure_payload["steps"] + [
+                        "scenario2_trace_persist_failed"
+                    ]
+
+                metrics = {
+                    "timings": {
+                        "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+                        "t_total_ms": _elapsed_ms(started_at),
+                    },
+                    "usage": {},
+                    "usage_normalized": {},
+                    "cost": {},
+                }
+                metrics_persist_error = _safe_update_run_metrics(
+                    repo=self.repo,
+                    run_id=run.run_id,
+                    timings_json=metrics["timings"],
+                    usage_json=metrics["usage"],
+                    usage_normalized_json=metrics["usage_normalized"],
+                    cost_json=metrics["cost"],
+                    run_log_path=run_artifacts.run_log_path,
+                )
+                status_persist_error = _safe_update_run_status(
+                    repo=self.repo,
+                    run_id=run.run_id,
+                    status="failed",
+                    error_code=scenario2_error_code,
+                    error_message=scenario2_error_message,
+                    run_log_path=run_artifacts.run_log_path,
+                )
+                scenario2_error_code, scenario2_error_message = (
+                    _merge_persistence_error(
+                        error_code=scenario2_error_code,
+                        error_message=scenario2_error_message,
+                        persistence_errors=[
+                            metrics_persist_error,
+                            status_persist_error,
+                        ],
+                    )
+                )
+                manifest_updates: dict[str, Any] = {
+                    "status": "failed",
+                    "stages": {
+                        "llm": {"status": llm_stage_status, "updated_at": _utc_now()},
+                        "finalize": {
+                            "status": "failed",
+                            "updated_at": _utc_now(),
+                        },
+                    },
+                    "metrics": metrics,
+                    "validation": {
+                        "status": "failed",
+                        "errors": [scenario2_error_message],
+                    },
+                    "error_code": scenario2_error_code,
+                    "error_message": scenario2_error_message,
+                }
+                manifest_updates.update(
+                    _scenario2_review_manifest_updates(
+                        diagnostics=failure_payload.get("diagnostics"),
+                    )
+                )
+                manifest_updates.update(
+                    _scenario2_verifier_gate_manifest_updates(
+                        diagnostics=failure_payload.get("diagnostics"),
+                        verifier_policy=self.scenario2_verifier_policy,
+                        llm_executed=llm_executed,
+                    )
+                )
+                artifacts_update = _scenario2_artifacts_payload(
+                    llm_executed=llm_executed,
+                )
+                if trace_persisted:
+                    artifacts_update["trace_path"] = str(scenario2_trace_path.resolve())
+                manifest_updates["artifacts"] = {
+                    "llm": artifacts_update,
+                }
+                manifest_persist_error = _safe_update_manifest(
+                    artifacts_root_path=run.artifacts_root_path,
+                    run_log_path=run_artifacts.run_log_path,
+                    updates=manifest_updates,
+                )
+                if manifest_persist_error is not None:
+                    scenario2_error_code, scenario2_error_message = (
+                        _merge_persistence_error(
+                            error_code=scenario2_error_code,
+                            error_message=scenario2_error_message,
+                            persistence_errors=[manifest_persist_error],
+                        )
+                    )
+                _safe_append_run_log(
+                    run_artifacts.run_log_path,
+                    (
+                        f"Scenario2 failed ({scenario2_error_code}): "
+                        f"{scenario2_error_message}"
+                    ),
+                )
+                failure_write_errors: list[str] = []
+                if failure_payload["final_text"]:
+                    write_error = _safe_write_text_file(
+                        path=llm_artifacts.response_raw_path,
+                        payload=failure_payload["final_text"],
+                        label="scenario2_response_raw",
+                        run_log_path=run_artifacts.run_log_path,
+                    )
+                    if write_error is not None:
+                        failure_write_errors.append(write_error)
+                validation_write_error = _safe_write_text_file(
+                    path=llm_artifacts.validation_path,
+                    payload=json.dumps(
+                        {
+                            "status": "failed",
+                            "errors": [scenario2_error_message],
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                    label="scenario2_validation",
+                    run_log_path=run_artifacts.run_log_path,
+                )
+                if validation_write_error is not None:
+                    failure_write_errors.append(validation_write_error)
+
+                if failure_write_errors:
+                    failures = "; ".join(failure_write_errors)
+                    scenario2_error_message = (
+                        f"{scenario2_error_message} "
+                        f"(artifact persistence warning: {failures})"
+                    )
+                if effective_scenario2_case_workspace_id is not None:
+                    diagnostics_dict = (
+                        failure_payload.get("diagnostics")
+                        if isinstance(failure_payload.get("diagnostics"), dict)
+                        else {}
+                    )
+                    review_payload = build_scenario2_review_payload(
+                        verifier_status=str(
+                            diagnostics_dict.get("verifier_status") or ""
+                        ),
+                        verifier_warnings=_extract_string_list(
+                            diagnostics_dict.get("verifier_warnings")
+                        ),
+                    )
+                    verifier_gate_payload = build_scenario2_verifier_gate_payload(
+                        verifier_policy=self.scenario2_verifier_policy,
+                        verifier_status=str(
+                            diagnostics_dict.get("verifier_status") or ""
+                        ),
+                        llm_executed=llm_executed,
+                        verifier_warnings=_extract_string_list(
+                            diagnostics_dict.get("verifier_warnings")
+                        ),
+                    )
+                    _safe_record_scenario2_analysis_run(
+                        store=self.scenario2_case_workspace_store,
+                        case_id=effective_scenario2_case_workspace_id,
+                        session_id=session.session_id,
+                        run_id=run.run_id,
+                        scenario_id=scenario.scenario_id,
+                        status="failed",
+                        review_status=str(review_payload["status"]),
+                        verifier_gate_status=str(verifier_gate_payload["status"]),
+                        diagnostics=failure_payload.get("diagnostics"),
+                        artifacts_root_path=str(run.artifacts_root_path),
+                        run_log_path=run_artifacts.run_log_path,
+                    )
+
+                return FullPipelineResult(
+                    session_id=session.session_id,
+                    run_id=run.run_id,
+                    run_status="failed",
+                    documents=ocr_stage.documents,
+                    critical_gaps_summary=[],
+                    next_questions_to_user=[],
+                    raw_json_text=scenario2_error_message,
+                    parsed_json=None,
+                    validation_valid=False,
+                    validation_errors=[scenario2_error_message],
+                    metrics=metrics,
+                    error_code=scenario2_error_code,
+                    error_message=scenario2_error_message,
+                    scenario_id=scenario.scenario_id,
+                )
+
+            try:
+                packed_documents = load_and_pack_documents(
+                    documents=[
+                        (doc.doc_id, Path(doc.combined_markdown_path))
+                        for doc in ocr_stage.documents
+                    ]
+                )
+            except Exception as error:  # noqa: BLE001
+                return handle_scenario2_failure(
+                    scenario2_error_code=SCENARIO2_RUNTIME_ERROR,
+                    scenario2_error_message=str(error),
+                    runner_mode=scenario2_runner_mode,
+                    llm_stage_status="skipped",
+                    llm_executed=False,
+                    failure_stage="pack_documents",
+                )
+
+            runner_result: Scenario2RunResult | None = None
+            runner_started = False
+            try:
+                if scenario2_llm_start_required and self.scenario2_bootstrap_error:
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_CONFIG_ERROR,
+                        scenario2_error_message=self.scenario2_bootstrap_error,
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="skipped",
+                        llm_executed=False,
+                        failure_stage="runner_bootstrap",
+                    )
+                if scenario2_llm_start_required and isinstance(
+                    scenario2_runner, StubScenario2Runner
+                ):
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_RUNTIME_ERROR,
+                        scenario2_error_message=(
+                            "Scenario2 openai_tool_loop mode requires a real "
+                            "Scenario2 runner injection."
+                        ),
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="skipped",
+                        llm_executed=False,
+                        failure_stage="runner_config",
+                    )
+                if scenario2_llm_start_required and self.legal_corpus_tool is None:
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_RUNTIME_ERROR,
+                        scenario2_error_message=(
+                            "Legal corpus tool adapter is not configured"
+                        ),
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="skipped",
+                        llm_executed=False,
+                        failure_stage="runner_config",
+                    )
+                try:
+                    resolved_prompt_path = resolve_scenario_prompt_source_path(
+                        prompt_source_path=scenario.prompt_source_path,
+                        prompt_root=self.prompt_root,
+                    )
+                except Exception as error:  # noqa: BLE001
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_CONFIG_ERROR,
+                        scenario2_error_message=str(error),
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="skipped",
+                        llm_executed=False,
+                        failure_stage="prompt_resolution",
+                    )
+
+                runner_config = Scenario2RunConfig(
+                    provider=effective_provider,
+                    model=effective_model,
+                    prompt_name=effective_prompt_name,
+                    prompt_version=effective_prompt_version,
+                    prompt_source_path=resolved_prompt_path,
+                    placeholder_text=scenario.scenario_placeholder or "",
+                )
+
+                try:
+                    runner_started = True
+                    runner_result = scenario2_runner.run(
+                        packed_documents=packed_documents,
+                        config=runner_config,
+                        system_prompt_path=resolved_prompt_path,
+                        legal_corpus_tool=self.legal_corpus_tool,
+                    )
+                except Scenario2RunnerError as error:
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_RUNTIME_ERROR,
+                        scenario2_error_message=str(error),
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="failed",
+                        llm_executed=runner_started,
+                        failure_stage="runner",
+                        run_result=error.to_run_result(),
+                    )
+                except Exception as error:  # noqa: BLE001
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_RUNTIME_ERROR,
+                        scenario2_error_message=str(error),
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="failed",
+                        llm_executed=runner_started,
+                        failure_stage="runner",
+                        run_result=None,
+                    )
+
+                final_text = (
+                    runner_result.final_text or scenario.scenario_placeholder or ""
+                )
+                try:
+                    _write_scenario2_trace_artifact(
+                        path=scenario2_trace_path,
+                        trace_payload=build_success_trace_payload(
+                            run_result=runner_result,
+                            llm_executed=scenario2_llm_executed,
+                        ),
+                    )
+                except Exception as error:  # noqa: BLE001
+                    return handle_scenario2_failure(
+                        scenario2_error_code=SCENARIO2_TRACE_PERSIST_ERROR,
+                        scenario2_error_message=str(error),
+                        runner_mode=scenario2_runner_mode,
+                        llm_stage_status="failed",
+                        llm_executed=runner_started,
+                        run_result=runner_result,
+                        failure_stage="trace_persistence",
+                    )
+
+                metrics = {
+                    "timings": {
+                        "t_ocr_total_ms": ocr_stage.t_ocr_total_ms,
+                        "t_total_ms": _elapsed_ms(started_at),
+                    },
+                    "usage": {},
+                    "usage_normalized": {},
+                    "cost": {},
+                }
+                metrics_persist_error = _safe_update_run_metrics(
+                    repo=self.repo,
+                    run_id=run.run_id,
+                    timings_json=metrics["timings"],
+                    usage_json=metrics["usage"],
+                    usage_normalized_json=metrics["usage_normalized"],
+                    cost_json=metrics["cost"],
+                    run_log_path=run_artifacts.run_log_path,
+                )
+                status_persist_error = _safe_update_run_status(
+                    repo=self.repo,
+                    run_id=run.run_id,
+                    status="completed",
+                    error_code=None,
+                    error_message=None,
+                    run_log_path=run_artifacts.run_log_path,
+                )
+                _safe_update_manifest(
+                    artifacts_root_path=run.artifacts_root_path,
+                    run_log_path=run_artifacts.run_log_path,
+                    updates={
+                        "status": "completed",
+                        "stages": {
+                            "llm": {
+                                "status": (
+                                    "completed" if scenario2_llm_executed else "skipped"
+                                ),
+                                "updated_at": _utc_now(),
+                            },
+                            "finalize": {
+                                "status": "completed",
+                                "updated_at": _utc_now(),
+                            },
+                        },
+                        "metrics": metrics,
+                        "validation": {
+                            "status": SCENARIO_2_VALIDATION_STATUS,
+                            "errors": [SCENARIO_2_VALIDATION_MESSAGE],
+                        },
+                        **_scenario2_review_manifest_updates(
+                            diagnostics=runner_result.diagnostics,
+                        ),
+                        **_scenario2_verifier_gate_manifest_updates(
+                            diagnostics=runner_result.diagnostics,
+                            verifier_policy=self.scenario2_verifier_policy,
+                            llm_executed=scenario2_llm_executed,
+                        ),
+                        "artifacts": {
+                            "llm": {
+                                "trace_path": str(scenario2_trace_path.resolve()),
+                                "runner_mode": scenario2_runner_mode,
+                                "llm_executed": scenario2_llm_executed,
+                            }
+                        },
+                        "error_code": None,
+                        "error_message": None,
+                    },
+                )
+                _append_run_log(
+                    run_artifacts.run_log_path,
+                    (
+                        "Scenario 2 OpenAI runner completed."
+                        if scenario2_llm_executed
+                        else "Scenario 2 stub path completed."
+                    ),
+                )
+            except Exception as error:  # noqa: BLE001
+                return handle_scenario2_failure(
+                    scenario2_error_code=SCENARIO2_RUNTIME_ERROR,
+                    scenario2_error_message=str(error),
+                    runner_mode=scenario2_runner_mode,
+                    llm_stage_status="failed" if runner_started else "skipped",
+                    llm_executed=runner_started,
+                    run_result=runner_result,
+                    failure_stage="runtime",
+                )
+
+            if final_text:
+                response_raw_write_error = _safe_write_text_file(
+                    path=llm_artifacts.response_raw_path,
+                    payload=final_text,
+                    label="scenario2_response_raw",
+                    run_log_path=run_artifacts.run_log_path,
+                )
+            else:
+                response_raw_write_error = None
+
+            response_validation_error = _safe_write_text_file(
+                path=llm_artifacts.validation_path,
+                payload=json.dumps(
+                    {
+                        "status": SCENARIO_2_VALIDATION_STATUS,
+                        "errors": [SCENARIO_2_VALIDATION_MESSAGE],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                label="scenario2_validation",
+                run_log_path=run_artifacts.run_log_path,
+            )
+            final_error_code = None
+            final_error_message = None
+            persistence_errors: list[str | None] = [
+                metrics_persist_error,
+                status_persist_error,
+                response_raw_write_error,
+                response_validation_error,
+            ]
+            if any(item is not None for item in persistence_errors):
+                final_error_code, final_error_message = _merge_persistence_error(
+                    error_code="STORAGE_ERROR",
+                    error_message="",
+                    persistence_errors=persistence_errors,
+                )
+                _append_run_log(
+                    run_artifacts.run_log_path,
+                    f"Run completed with storage warnings: {final_error_message}",
+                )
+            if effective_scenario2_case_workspace_id is not None:
+                diagnostics_dict = (
+                    runner_result.diagnostics
+                    if isinstance(runner_result.diagnostics, dict)
+                    else {}
+                )
+                review_payload = build_scenario2_review_payload(
+                    verifier_status=str(diagnostics_dict.get("verifier_status") or ""),
+                    verifier_warnings=_extract_string_list(
+                        diagnostics_dict.get("verifier_warnings")
+                    ),
+                )
+                verifier_gate_payload = build_scenario2_verifier_gate_payload(
+                    verifier_policy=self.scenario2_verifier_policy,
+                    verifier_status=str(diagnostics_dict.get("verifier_status") or ""),
+                    llm_executed=scenario2_llm_executed,
+                    verifier_warnings=_extract_string_list(
+                        diagnostics_dict.get("verifier_warnings")
+                    ),
+                )
+                _safe_record_scenario2_analysis_run(
+                    store=self.scenario2_case_workspace_store,
+                    case_id=effective_scenario2_case_workspace_id,
+                    session_id=session.session_id,
+                    run_id=run.run_id,
+                    scenario_id=scenario.scenario_id,
+                    status="completed",
+                    review_status=str(review_payload["status"]),
+                    verifier_gate_status=str(verifier_gate_payload["status"]),
+                    diagnostics=runner_result.diagnostics,
+                    artifacts_root_path=str(run.artifacts_root_path),
+                    run_log_path=run_artifacts.run_log_path,
+                )
+
+            return FullPipelineResult(
+                session_id=session.session_id,
+                run_id=run.run_id,
+                run_status="completed",
+                documents=ocr_stage.documents,
+                critical_gaps_summary=[],
+                next_questions_to_user=[],
+                raw_json_text=final_text,
+                parsed_json=None,
+                validation_valid=True,
+                validation_errors=[],
+                metrics=metrics,
+                error_code=final_error_code,
+                error_message=final_error_message,
+                scenario_id=scenario.scenario_id,
             )
 
         try:
@@ -423,8 +1155,8 @@ class OCRPipelineOrchestrator:
                 },
             )
             system_prompt, schema = self._load_prompt_assets(
-                prompt_name=prompt_name,
-                prompt_version=prompt_version,
+                prompt_name=effective_prompt_name,
+                prompt_version=effective_prompt_version,
             )
             packed_documents = load_and_pack_documents(ocr_stage.packed_documents)
             context_char_limit = int(
@@ -444,18 +1176,18 @@ class OCRPipelineOrchestrator:
                 user_content=packed_documents,
             )
 
-            llm_client = self._resolve_llm_client(provider)
+            llm_client = self._resolve_llm_client(effective_provider)
             llm_result = run_with_retry(
                 operation=lambda: llm_client.generate_json(
                     system_prompt=system_prompt,
                     user_content=packed_documents,
                     json_schema=schema,
-                    model=model,
+                    model=effective_model,
                     params=llm_runtime_params,
                     run_meta={
                         "session_id": session.session_id,
                         "run_id": run.run_id,
-                        "schema_name": f"{prompt_name}_{prompt_version}",
+                        "schema_name": f"{effective_prompt_name}_{effective_prompt_version}",
                     },
                 ),
                 should_retry=is_retryable_llm_exception,
@@ -570,6 +1302,7 @@ class OCRPipelineOrchestrator:
                     metrics=metrics,
                     error_code="LLM_SCHEMA_INVALID",
                     error_message=error_message,
+                    scenario_id=scenario.scenario_id,
                 )
 
             self.repo.update_run_status(run_id=run.run_id, status="completed")
@@ -604,6 +1337,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=None,
                 error_message=None,
+                scenario_id=scenario.scenario_id,
             )
 
         except ContextTooLargeError as error:
@@ -705,6 +1439,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_message,
+                scenario_id=scenario.scenario_id,
             )
 
         except json.JSONDecodeError as error:
@@ -802,6 +1537,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_message,
+                scenario_id=scenario.scenario_id,
             )
 
         except Exception as error:  # noqa: BLE001
@@ -885,6 +1621,7 @@ class OCRPipelineOrchestrator:
                 metrics=metrics,
                 error_code=error_code,
                 error_message=error_details,
+                scenario_id=scenario.scenario_id,
             )
 
     def _run_ocr_documents(
@@ -1172,6 +1909,55 @@ def _write_validation_artifact(*, path: Path, validation: ValidationResult) -> N
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _safe_write_text_file(
+    *,
+    path: Path,
+    payload: str,
+    label: str,
+    run_log_path: Path,
+) -> str | None:
+    try:
+        path.write_text(payload, encoding="utf-8")
+        return None
+    except Exception as error:  # noqa: BLE001
+        details = build_error_details(error)
+        _safe_append_run_log(
+            run_log_path,
+            f"Scenario 2 artifact write failed ({label}): {details}",
+        )
+        return details
+
+
+def _write_scenario2_trace_artifact(
+    *,
+    path: Path,
+    runner_result: Scenario2RunResult | None = None,
+    trace_payload: dict[str, Any] | None = None,
+) -> None:
+    payload = trace_payload
+    if payload is None:
+        if runner_result is None:
+            raise ValueError("No scenario2 trace payload provided.")
+        payload = {
+            "response_mode": runner_result.response_mode,
+            "final_text": runner_result.final_text,
+            "steps": runner_result.steps,
+            "tool_trace": runner_result.tool_trace,
+            "diagnostics": runner_result.diagnostics,
+            "model": runner_result.model,
+            "tool_round_count": runner_result.tool_round_count,
+        }
+
+    path.write_text(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _elapsed_ms(started_at: float) -> float:
     return (time.perf_counter() - started_at) * 1000
 
@@ -1180,6 +1966,150 @@ def _extract_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _scenario2_review_manifest_updates(*, diagnostics: Any) -> dict[str, Any]:
+    diagnostics_dict = diagnostics if isinstance(diagnostics, dict) else {}
+    review_payload = build_scenario2_review_payload(
+        verifier_status=str(diagnostics_dict.get("verifier_status") or ""),
+        verifier_warnings=_extract_string_list(
+            diagnostics_dict.get("verifier_warnings")
+        ),
+    )
+    return {
+        "review_status": review_payload["status"],
+        "review": review_payload,
+    }
+
+
+def _scenario2_diagnostics_with_verifier_gate(
+    *,
+    diagnostics: Any,
+    verifier_policy: str,
+    llm_executed: bool,
+) -> dict[str, Any]:
+    diagnostics_dict = dict(diagnostics) if isinstance(diagnostics, dict) else {}
+    gate_payload = build_scenario2_verifier_gate_payload(
+        verifier_policy=verifier_policy,
+        verifier_status=str(diagnostics_dict.get("verifier_status") or ""),
+        llm_executed=llm_executed,
+        verifier_warnings=_extract_string_list(
+            diagnostics_dict.get("verifier_warnings")
+        ),
+    )
+    diagnostics_dict.update(
+        {
+            "verifier_policy": gate_payload["policy"],
+            "verifier_gate_status": gate_payload["status"],
+            "verifier_gate_summary": gate_payload["summary"],
+            "verifier_gate_warning_count": gate_payload["warnings_count"],
+            "verifier_gate_blocking": gate_payload["blocking"],
+        }
+    )
+    return diagnostics_dict
+
+
+def _scenario2_verifier_gate_manifest_updates(
+    *,
+    diagnostics: Any,
+    verifier_policy: str,
+    llm_executed: bool,
+) -> dict[str, Any]:
+    diagnostics_dict = diagnostics if isinstance(diagnostics, dict) else {}
+    gate_payload = build_scenario2_verifier_gate_payload(
+        verifier_policy=verifier_policy,
+        verifier_status=str(diagnostics_dict.get("verifier_status") or ""),
+        llm_executed=llm_executed,
+        verifier_warnings=_extract_string_list(
+            diagnostics_dict.get("verifier_warnings")
+        ),
+    )
+    return {
+        "verifier_policy": gate_payload["policy"],
+        "verifier_gate_status": gate_payload["status"],
+        "verifier_gate": gate_payload,
+    }
+
+
+def _safe_record_scenario2_case_workspace_start(
+    *,
+    store: Any,
+    case_id: str,
+    session_id: str,
+    run_id: str,
+    scenario_id: str,
+    input_paths: Sequence[Path],
+    case_metadata: Scenario2CaseMetadata | None,
+    artifacts_root_path: str,
+    run_log_path: Path,
+) -> None:
+    if store is None:
+        return
+    try:
+        effective_case_metadata = case_metadata or Scenario2CaseMetadata()
+        store.ensure_workspace(
+            case_id=case_id,
+            **effective_case_metadata.to_workspace_fields(),
+        )
+        store.register_case_documents(case_id=case_id, input_paths=input_paths)
+        store.ensure_case_facts_slot(case_id=case_id)
+        store.record_analysis_run(
+            case_id=case_id,
+            run_id=run_id,
+            session_id=session_id,
+            scenario_id=scenario_id,
+            status="running",
+            review_status="not_applicable",
+            verifier_gate_status="not_applicable",
+            artifacts_root_path=artifacts_root_path,
+            diagnostics={"stage": "bootstrap"},
+        )
+    except Exception as error:  # noqa: BLE001
+        _safe_append_run_log(
+            run_log_path,
+            (
+                "Scenario 2 case workspace persistence warning: "
+                f"{build_error_details(error)}"
+            ),
+        )
+
+
+def _safe_record_scenario2_analysis_run(
+    *,
+    store: Any,
+    case_id: str,
+    session_id: str,
+    run_id: str,
+    scenario_id: str,
+    status: str,
+    review_status: str,
+    verifier_gate_status: str,
+    diagnostics: dict[str, Any] | None,
+    artifacts_root_path: str,
+    run_log_path: Path,
+) -> None:
+    if store is None:
+        return
+    try:
+        store.record_analysis_run(
+            case_id=case_id,
+            run_id=run_id,
+            session_id=session_id,
+            scenario_id=scenario_id,
+            status=status,
+            review_status=review_status,
+            verifier_gate_status=verifier_gate_status,
+            artifacts_root_path=artifacts_root_path,
+            diagnostics=diagnostics,
+        )
+    except Exception as error:  # noqa: BLE001
+        _safe_append_run_log(
+            run_log_path,
+            (
+                "Scenario 2 case workspace persistence warning: "
+                f"{build_error_details(error)}"
+            ),
+        )
 
 
 def _build_manifest_inputs(
@@ -1191,13 +2121,19 @@ def _build_manifest_inputs(
     schema_version: str,
     ocr_options: OCROptions,
     llm_params: dict[str, Any],
+    scenario_id: str,
+    prompt_source_path: str | None = None,
+    scenario2_case_workspace_id: str | None = None,
 ) -> dict[str, Any]:
     return {
+        "scenario_id": scenario_id,
+        "case_workspace_id": scenario2_case_workspace_id,
         "provider": provider,
         "model": model,
         "prompt_name": prompt_name,
         "prompt_version": prompt_version,
         "schema_version": schema_version,
+        "prompt_source_path": prompt_source_path,
         "ocr_params": {
             "model": ocr_options.model,
             "table_format": ocr_options.table_format,
