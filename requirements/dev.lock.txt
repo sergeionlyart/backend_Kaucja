@@ -75,6 +75,7 @@ pytest==9.0.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
 python-multipart==0.0.22
+pymongo==4.11.2
 pytz==2025.2
 referencing==0.37.0
 requests==2.32.5
