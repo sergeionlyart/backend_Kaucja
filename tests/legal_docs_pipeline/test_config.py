@@ -23,6 +23,17 @@ def test_example_pipeline_config_loads_and_resolves_paths() -> None:
     assert config.model.request_timeout_seconds == 120
 
 
+def test_probe_pipeline_config_loads_with_diagnostic_overrides() -> None:
+    config = load_pipeline_config(PROJECT_ROOT / "config/pipeline.llm_probe.yaml")
+
+    assert config.input.root_path == (PROJECT_ROOT / "docs/legal/cas_law_v2_2_md").resolve()
+    assert config.prompts.prompt_dir == (PROJECT_ROOT / "prompts/kaucja").resolve()
+    assert config.mongo.collection == "documents_cas_law_v2_2_llm_probe_v1"
+    assert config.model.model_id == "gpt-5.4"
+    assert config.model.request_timeout_seconds == 600
+    assert config.pipeline.retry_model_calls == 0
+
+
 def test_translation_budget_rejects_values_below_explicit_minimum(tmp_path: Path) -> None:
     with pytest.raises(ValidationError):
         PipelineConfig.model_validate(

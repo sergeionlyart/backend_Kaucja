@@ -667,11 +667,13 @@ class AnnotationPipeline:
                 stage="annotate_original",
                 error_code=error.code,
                 error_message=error.message,
+                error_details=error.details,
                 mode=mode,
                 llm_updates=_build_failed_llm_updates(
                     request=analysis_request,
                     error_code=error.code,
                     error_message=error.message,
+                    error_details=error.details,
                 ),
                 annotation_status="failed",
             )
@@ -682,6 +684,7 @@ class AnnotationPipeline:
                 stage="annotate_original",
                 error_code=error.code,
                 error_message=error.message,
+                error_details=error.details,
             )
             return "failed"
         except ValidationError as error:
@@ -825,11 +828,13 @@ class AnnotationPipeline:
                 doc_id=doc_id,
                 error_code=error.code,
                 error_message=error.message,
+                error_details=error.details,
                 mode=mode,
                 llm_updates=_build_failed_llm_updates(
                     request=translation_request,
                     error_code=error.code,
                     error_message=error.message,
+                    error_details=error.details,
                 ),
             )
             _log_failure(
@@ -839,6 +844,7 @@ class AnnotationPipeline:
                 stage="annotate_ru",
                 error_code=error.code,
                 error_message=error.message,
+                error_details=error.details,
             )
             return "partial"
         except ValidationError as error:
@@ -1342,12 +1348,58 @@ class AnnotationPipeline:
         logger: JsonlPipelineLogger | None,
     ) -> StructuredLlmResponse:
         attempts = self.config.pipeline.retry_model_calls + 1
+        timeout_seconds = self.config.model.request_timeout_seconds
         for attempt in range(1, attempts + 1):
+            if logger is not None:
+                _log(
+                    logger,
+                    run_id=run_id,
+                    doc_id=doc_id,
+                    stage=request.stage,
+                    event="llm_request_started",
+                    level="info",
+                    message=(
+                        f"Starting LLM request for {request.stage} "
+                        f"(attempt {attempt}/{attempts})."
+                    ),
+                    details=_build_llm_log_details(
+                        request=request,
+                        doc_id=doc_id,
+                        attempt=attempt,
+                        max_attempts=attempts,
+                        timeout_seconds=timeout_seconds,
+                    ),
+                )
             try:
-                return self._llm().run(request)
+                response = self._llm().run(request)
             except LlmCallError as error:
+                transient = error.code in _TRANSIENT_LLM_ERROR_CODES
+                if logger is not None:
+                    _log(
+                        logger,
+                        run_id=run_id,
+                        doc_id=doc_id,
+                        stage=request.stage,
+                        event="llm_request_failed",
+                        level="warning"
+                        if transient and attempt < attempts
+                        else "error",
+                        message=(
+                            f"LLM request for {request.stage} failed on "
+                            f"attempt {attempt}/{attempts}."
+                        ),
+                        error={"code": error.code, "message": error.message},
+                        details=_build_llm_log_details(
+                            request=request,
+                            doc_id=doc_id,
+                            attempt=attempt,
+                            max_attempts=attempts,
+                            timeout_seconds=timeout_seconds,
+                            error_details=error.details,
+                        ),
+                    )
                 if (
-                    error.code not in _TRANSIENT_LLM_ERROR_CODES
+                    not transient
                     or attempt >= attempts
                 ):
                     raise
@@ -1364,9 +1416,38 @@ class AnnotationPipeline:
                             f"(attempt {attempt + 1}/{attempts})."
                         ),
                         error={"code": error.code, "message": error.message},
-                        details={"attempt": attempt + 1, "max_attempts": attempts},
+                        details=_build_llm_log_details(
+                            request=request,
+                            doc_id=doc_id,
+                            attempt=attempt + 1,
+                            max_attempts=attempts,
+                            timeout_seconds=timeout_seconds,
+                        ),
                     )
                 sleep(_retry_backoff_seconds(attempt))
+                continue
+            if logger is not None:
+                _log(
+                    logger,
+                    run_id=run_id,
+                    doc_id=doc_id,
+                    stage=request.stage,
+                    event="llm_request_completed",
+                    level="info",
+                    message=(
+                        f"LLM request for {request.stage} completed on "
+                        f"attempt {attempt}/{attempts}."
+                    ),
+                    details=_build_llm_log_details(
+                        request=request,
+                        doc_id=doc_id,
+                        attempt=attempt,
+                        max_attempts=attempts,
+                        timeout_seconds=timeout_seconds,
+                        response=response,
+                    ),
+                )
+            return response
         raise RuntimeError("LLM retry loop exited unexpectedly.")
 
 
@@ -1411,8 +1492,9 @@ def _build_failed_llm_updates(
     request: StructuredLlmRequest,
     error_code: str,
     error_message: str,
+    error_details: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "provider": request.provider,
         "api": request.api,
         "model_id": request.model_id,
@@ -1430,6 +1512,69 @@ def _build_failed_llm_updates(
         "status": "failed",
         "error": {"code": error_code, "message": error_message},
     }
+    if error_details:
+        if "response_id" in error_details:
+            payload["response_id"] = error_details["response_id"]
+        if "status" in error_details:
+            payload["status"] = error_details["status"]
+        if "usage" in error_details:
+            payload["usage"] = error_details["usage"]
+        if "incomplete_details" in error_details:
+            payload["incomplete_details"] = error_details["incomplete_details"]
+        payload["error"] = {
+            "code": error_code,
+            "message": error_message,
+            "details": error_details,
+        }
+    return payload
+
+
+def _build_llm_log_details(
+    *,
+    request: StructuredLlmRequest,
+    doc_id: str,
+    attempt: int,
+    max_attempts: int,
+    timeout_seconds: int,
+    response: StructuredLlmResponse | None = None,
+    error_details: dict[str, Any] | None = None,
+) -> dict[str, object]:
+    details: dict[str, object] = {
+        "stage": request.stage,
+        "doc_id": doc_id,
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "timeout_seconds": timeout_seconds,
+        "model_id": request.model_id,
+        "reasoning_effort": request.reasoning_effort,
+        "max_output_tokens": request.max_output_tokens,
+        "request_hash": request.request_hash,
+    }
+    if error_details:
+        if "response_id" in error_details:
+            details["response_id"] = error_details["response_id"]
+        if "status" in error_details:
+            details["status"] = error_details["status"]
+        usage = error_details.get("usage")
+        if isinstance(usage, dict):
+            details["usage.input_tokens"] = usage.get("input_tokens")
+            details["usage.output_tokens"] = usage.get("output_tokens")
+            details["usage.reasoning_tokens"] = usage.get("reasoning_tokens")
+        incomplete_details = error_details.get("incomplete_details")
+        if isinstance(incomplete_details, dict):
+            details["incomplete_details.reason"] = incomplete_details.get("reason")
+    if response is None:
+        return details
+    details.update(
+        {
+            "response_id": response.response_id,
+            "duration_ms": response.duration_ms,
+            "usage.input_tokens": response.usage.input_tokens,
+            "usage.output_tokens": response.usage.output_tokens,
+            "usage.reasoning_tokens": response.usage.reasoning_tokens,
+        }
+    )
+    return details
 
 
 def _log(
@@ -1466,6 +1611,7 @@ def _log_failure(
     stage: str,
     error_code: str,
     error_message: str,
+    error_details: dict[str, Any] | None = None,
 ) -> None:
     _log(
         logger,
@@ -1476,6 +1622,7 @@ def _log_failure(
         level="error",
         message=error_message,
         error={"code": error_code, "message": error_message},
+        details=error_details,
     )
 
 

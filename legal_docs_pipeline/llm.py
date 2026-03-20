@@ -18,10 +18,17 @@ TextFormatT = TypeVar("TextFormatT", bound=BaseModel)
 
 
 class LlmCallError(RuntimeError):
-    def __init__(self, *, code: str, message: str) -> None:
+    def __init__(
+        self,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.details = details
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +131,7 @@ class OpenAIResponsesAnnotationLlmClient:
             raise LlmCallError(
                 code="llm_incomplete",
                 message="Responses API returned an incomplete result.",
+                details=_build_incomplete_error_details(response),
             )
 
         parsed_payload = getattr(response, "output_parsed", None)
@@ -161,6 +169,23 @@ def _serialize_input_payload(input_payload: dict[str, Any]) -> str:
         sort_keys=True,
         indent=2,
     )
+
+
+def _build_incomplete_error_details(response: Any) -> dict[str, Any]:
+    usage = _extract_usage(getattr(response, "usage", None))
+    incomplete_details = getattr(response, "incomplete_details", None)
+    return {
+        "response_id": str(getattr(response, "id", "")),
+        "status": str(getattr(response, "status", "")),
+        "usage": {
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "reasoning_tokens": usage.reasoning_tokens,
+        },
+        "incomplete_details": {
+            "reason": getattr(incomplete_details, "reason", None),
+        },
+    }
 
 
 def _extract_usage(usage: Any) -> StructuredLlmUsage:
