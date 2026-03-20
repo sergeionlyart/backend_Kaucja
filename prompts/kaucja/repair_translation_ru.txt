@@ -1,0 +1,8 @@
+Исправь structured JSON результата translation stage.
+
+На вход ты получаешь:
+- `validation_errors`
+- `candidate_output`
+
+Верни только исправленный valid JSON с единственным верхнеуровневым ключом `annotation_ru`.
+Не добавляй semantic block, не меняй смысл документа и не придумывай новые факты.

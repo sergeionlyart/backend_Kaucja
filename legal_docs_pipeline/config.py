@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .constants import (
     DEDUPE_VERSION,
+    DEFAULT_MAX_FILE_SIZE_BYTES,
     DEFAULT_INPUT_GLOB,
     DEFAULT_PROMPT_PACK_ID,
     DEFAULT_PROMPT_PACK_VERSION,
@@ -26,6 +27,7 @@ class InputConfig(BaseModel):
     root_path: Path
     glob: str = Field(default=DEFAULT_INPUT_GLOB, min_length=1)
     ignore_hidden: bool = True
+    max_file_size_bytes: int = Field(default=DEFAULT_MAX_FILE_SIZE_BYTES, ge=1)
 
 
 class MongoConfig(BaseModel):

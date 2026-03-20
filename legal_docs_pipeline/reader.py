@@ -7,9 +7,9 @@ import hashlib
 import html
 import re
 
+from .constants import DEFAULT_MAX_FILE_SIZE_BYTES
 from .scanner import DiscoveredDocument
 
-MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024
 _HTML_TAG_PATTERNS = (
     re.compile(r"<br\s*/?>", re.IGNORECASE),
     re.compile(r"</?div[^>]*>", re.IGNORECASE),
@@ -51,7 +51,11 @@ class ReadDocumentError(ValueError):
 
 
 class MarkdownReader:
-    def __init__(self, *, max_file_size_bytes: int = MAX_FILE_SIZE_BYTES) -> None:
+    def __init__(
+        self,
+        *,
+        max_file_size_bytes: int = DEFAULT_MAX_FILE_SIZE_BYTES,
+    ) -> None:
         self._max_file_size_bytes = max_file_size_bytes
 
     def read(self, document: DiscoveredDocument) -> ReadDocumentResult:

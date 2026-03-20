@@ -118,7 +118,6 @@ class FallbackClassificationOutput(BaseModel):
 class TranslationAnnotationOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    semantic: SemanticAnnotation
     annotation_ru: RussianLanguageAnnotation
 
 
@@ -163,8 +162,6 @@ def validate_analysis_business_rules(
 
 def validate_translation_business_rules(
     output: TranslationAnnotationOutput,
-    *,
-    expected_semantic: SemanticAnnotation,
 ) -> list[str]:
     errors: list[str] = []
     if output.annotation_ru.language_code != "ru":
@@ -175,8 +172,4 @@ def validate_translation_business_rules(
         errors.append("annotation_ru.read_first must be non-empty.")
     if not output.annotation_ru.limitations:
         errors.append("annotation_ru.limitations must be non-empty.")
-    if output.semantic.model_dump(mode="json") != expected_semantic.model_dump(
-        mode="json"
-    ):
-        errors.append("translation semantic block must match analysis semantic block.")
     return errors

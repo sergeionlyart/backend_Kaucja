@@ -5,6 +5,7 @@ from pathlib import Path, PurePosixPath
 
 from pymongo.errors import AutoReconnect
 
+from legal_docs_pipeline.canonicalize import CanonicalTextResult
 from legal_docs_pipeline.constants import PromptProfile
 from legal_docs_pipeline.language import LanguageDetectionResult
 from legal_docs_pipeline.llm import (
@@ -38,13 +39,12 @@ def test_repository_parse_stage_does_not_set_last_success_at(tmp_path: Path) -> 
     repository.apply_parse_result(
         doc_id="doc.md",
         parse_result=_build_parse_result(),
-        language_result=_build_language_result(),
     )
 
     stored = repository.get_document("doc.md")
 
     assert stored is not None
-    assert stored["processing"]["status"] == "pending_classification"
+    assert stored["processing"]["status"] == "pending_canonicalize"
     assert stored["processing"]["last_success_at"] is None
 
 
@@ -66,6 +66,10 @@ def test_repository_marks_non_target_as_terminal_success(tmp_path: Path) -> None
     repository.apply_parse_result(
         doc_id="README.md",
         parse_result=_build_parse_result(title="Corpus README"),
+    )
+    repository.apply_canonical_result(
+        doc_id="README.md",
+        canonical_result=_build_canonical_result(),
         language_result=LanguageDetectionResult(
             language_code="en",
             confidence=0.9,
@@ -82,7 +86,7 @@ def test_repository_marks_non_target_as_terminal_success(tmp_path: Path) -> None
             annotatable=False,
             classifier_method="rule_based",
             confidence=0.99,
-            router_version="1.0.0",
+            router_version="2.0.0",
             signals={"matched_rules": ["file_name:corpus_readme"]},
             skip_reason="service_readme",
         ),
@@ -195,14 +199,45 @@ def test_repository_translation_failure_keeps_partial_progress(tmp_path: Path) -
     )
 
 
+def test_repository_does_not_store_inline_source_blobs(tmp_path: Path) -> None:
+    repository = _build_repository()
+    discovered = _build_discovered(tmp_path=tmp_path, file_name="doc.md", sha256="sha-v1")
+
+    repository.upsert_discovered(
+        discovered=discovered,
+        input_root=tmp_path,
+        run_id="run-1",
+        mode="new",
+    )
+    repository.apply_read_result(doc_id="doc.md", read_result=_build_read_result())
+    repository.apply_parse_result(
+        doc_id="doc.md",
+        parse_result=_build_parse_result(),
+    )
+    repository.apply_canonical_result(
+        doc_id="doc.md",
+        canonical_result=_build_canonical_result(),
+        language_result=_build_language_result(),
+    )
+
+    stored = repository.get_document("doc.md")
+
+    assert stored is not None
+    assert "raw_markdown" not in stored["source"]
+    assert "normalized_text" not in stored["source"]
+    assert "normalized_text_sha256" not in stored["source"]
+    assert "content_markdown" not in stored["source"]
+    assert stored["source"]["canonical_text_sha256"] == "canonical-sha"
+
+
 def test_repository_retries_transient_mongo_write_failures(tmp_path: Path) -> None:
     collection = FlakyMongoCollection(failures_before_success=1)
     repository = MongoDocumentRepository(
         collection=collection,
-        schema_version="1.0.0",
-        pipeline_version="1.0.0",
-        dedup_version="1.0.0",
-        router_version="1.0.0",
+        schema_version="2.0.0",
+        pipeline_version="2.0.0",
+        dedup_version="2.0.0",
+        router_version="2.0.0",
         history_tail_size=10,
         retry_mongo_writes=1,
     )
@@ -224,10 +259,10 @@ def test_repository_ensure_indexes_does_not_request_unique_id_index() -> None:
     collection = FakeMongoCollection()
     repository = MongoDocumentRepository(
         collection=collection,
-        schema_version="1.0.0",
-        pipeline_version="1.0.0",
-        dedup_version="1.0.0",
-        router_version="1.0.0",
+        schema_version="2.0.0",
+        pipeline_version="2.0.0",
+        dedup_version="2.0.0",
+        router_version="2.0.0",
         history_tail_size=10,
     )
 
@@ -256,6 +291,10 @@ def _persist_partial_annotation(
     repository.apply_parse_result(
         doc_id="doc.md",
         parse_result=_build_parse_result(),
+    )
+    repository.apply_canonical_result(
+        doc_id="doc.md",
+        canonical_result=_build_canonical_result(),
         language_result=_build_language_result(),
     )
     repository.apply_classification_result(
@@ -282,10 +321,10 @@ def _build_repository() -> MongoDocumentRepository:
     collection = FakeMongoCollection()
     repository = MongoDocumentRepository(
         collection=collection,
-        schema_version="1.0.0",
-        pipeline_version="1.0.0",
-        dedup_version="1.0.0",
-        router_version="1.0.0",
+        schema_version="2.0.0",
+        pipeline_version="2.0.0",
+        dedup_version="2.0.0",
+        router_version="2.0.0",
         history_tail_size=10,
         retry_mongo_writes=2,
     )
@@ -373,7 +412,7 @@ def _build_classification_result() -> ClassificationResult:
         annotatable=True,
         classifier_method="rule_based",
         confidence=0.95,
-        router_version="1.0.0",
+        router_version="2.0.0",
         signals={"matched_rules": ["judicial_decision"]},
         skip_reason=None,
     )
@@ -408,7 +447,6 @@ def _build_analysis_output() -> AnalysisAnnotationOutput:
 def _build_translation_output() -> TranslationAnnotationOutput:
     return TranslationAnnotationOutput.model_validate(
         {
-            "semantic": _build_analysis_output().semantic.model_dump(mode="json"),
             "annotation_ru": {
                 "language_code": "ru",
                 "document_type_label": "решение суда",
@@ -421,6 +459,18 @@ def _build_translation_output() -> TranslationAnnotationOutput:
                 "tags": ["кауция", "решение"],
             },
         }
+    )
+
+
+def _build_canonical_result() -> CanonicalTextResult:
+    return CanonicalTextResult(
+        canonical_text="WYROK\nSygn. akt I C 1/20",
+        canonical_text_sha256="canonical-sha",
+        text_preview="WYROK\nSygn. akt I C 1/20",
+        text_stats_raw=TextStats(chars=10, lines=2, words=1),
+        text_stats_canonical=TextStats(chars=24, lines=2, words=6),
+        strategy="plain_markdown",
+        sections=(),
     )
 
 

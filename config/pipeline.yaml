@@ -2,11 +2,12 @@ input:
   root_path: "../docs/legal/cas_law_v2_2_md"
   glob: "**/*.md"
   ignore_hidden: true
+  max_file_size_bytes: 67108864
 
 mongo:
   uri: "mongodb://localhost:27017"
   database: "kaucja_legal_corpus"
-  collection: "documents"
+  collection: "documents_cas_law_v2_2_prod_v2"
 
 model:
   provider: "openai"
@@ -18,19 +19,19 @@ model:
   store: false
   analysis_max_output_tokens: 32000
   translation_ru_max_output_tokens: 24000
-  request_timeout_seconds: 120
+  request_timeout_seconds: 600
 
 prompts:
   prompt_pack_id: "kaucja-prompt-pack"
-  prompt_pack_version: "2026-03-16"
+  prompt_pack_version: "2026-03-20"
   prompt_dir: "../prompts/kaucja"
 
 pipeline:
-  schema_version: "1.0.0"
-  pipeline_version: "1.0.0"
+  schema_version: "2.0.0"
+  pipeline_version: "2.0.0"
   workers: 1
-  dedup_version: "1.0.0"
-  router_version: "1.0.0"
+  dedup_version: "2.0.0"
+  router_version: "2.0.0"
   history_tail_size: 10
   retry_model_calls: 2
   retry_mongo_writes: 2

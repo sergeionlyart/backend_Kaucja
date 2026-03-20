@@ -120,40 +120,9 @@ def test_analysis_business_validation_checks_source_language() -> None:
     ]
 
 
-def test_translation_business_validation_checks_ru_and_semantic_consistency() -> None:
-    analysis_payload = AnalysisAnnotationOutput.model_validate(
-        {
-            "semantic": {
-                "document_type_code": "pl_statute",
-                "authority_level": "primary",
-                "relevance": "core",
-                "usually_supports": "depends",
-                "topic_codes": ["deposit_legal_basis"],
-                "use_for_tasks_codes": ["claim"],
-            },
-            "annotation_original": {
-                "language_code": "pl",
-                "document_type_label": "ustawa",
-                "summary": "Określa podstawę prawną kaucji.",
-                "practical_value": ["Pozwala ustalić punkt wyjścia dla roszczenia."],
-                "best_use_scenarios": ["Pozew o zwrot kaucji."],
-                "use_for_tasks_labels": ["pozew"],
-                "read_first": ["Art. 6."],
-                "limitations": ["Wymaga uzupełnienia orzecznictwem."],
-                "tags": ["kaucja", "ustawa"],
-            },
-        }
-    )
+def test_translation_business_validation_checks_ru_language() -> None:
     translation_payload = TranslationAnnotationOutput.model_validate(
         {
-            "semantic": {
-                "document_type_code": "eu_directive",
-                "authority_level": "primary",
-                "relevance": "core",
-                "usually_supports": "depends",
-                "topic_codes": ["deposit_legal_basis"],
-                "use_for_tasks_codes": ["claim"],
-            },
             "annotation_ru": {
                 "language_code": "ru",
                 "document_type_label": "закон",
@@ -168,14 +137,9 @@ def test_translation_business_validation_checks_ru_and_semantic_consistency() ->
         }
     )
 
-    errors = validate_translation_business_rules(
-        translation_payload,
-        expected_semantic=analysis_payload.semantic,
-    )
+    errors = validate_translation_business_rules(translation_payload)
 
-    assert errors == [
-        "translation semantic block must match analysis semantic block."
-    ]
+    assert errors == []
 
 
 def test_fallback_classifier_contract_accepts_canonical_fields() -> None:

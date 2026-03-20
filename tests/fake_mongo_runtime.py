@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -17,10 +18,53 @@ def _project_row(
     projection: dict[str, int] | None,
 ) -> dict[str, Any]:
     if projection is None:
-        return dict(row)
+        return copy.deepcopy(row)
     if any(value == 1 for value in projection.values()):
-        return {key: value for key, value in row.items() if projection.get(key, 0) == 1}
-    return {key: value for key, value in row.items() if projection.get(key, 1) != 0}
+        projected: dict[str, Any] = {}
+        for key, include in projection.items():
+            if include != 1:
+                continue
+            value = _get_path(row, key)
+            if value is not None:
+                _set_path(projected, key, copy.deepcopy(value))
+        return projected
+    projected = copy.deepcopy(row)
+    for key, include in projection.items():
+        if include == 0:
+            _unset_path(projected, key)
+    return projected
+
+
+def _get_path(row: dict[str, Any], path: str) -> Any:
+    current: Any = row
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _set_path(row: dict[str, Any], path: str, value: Any) -> None:
+    current = row
+    parts = path.split(".")
+    for part in parts[:-1]:
+        nested = current.get(part)
+        if not isinstance(nested, dict):
+            nested = {}
+            current[part] = nested
+        current = nested
+    current[parts[-1]] = value
+
+
+def _unset_path(row: dict[str, Any], path: str) -> None:
+    current = row
+    parts = path.split(".")
+    for part in parts[:-1]:
+        nested = current.get(part)
+        if not isinstance(nested, dict):
+            return
+        current = nested
+    current.pop(parts[-1], None)
 
 
 class FakeMongoCollection:
@@ -72,18 +116,22 @@ class FakeMongoCollection:
         for index, row in enumerate(self.rows):
             if not _matches(row, query):
                 continue
-            updated = dict(row)
+            updated = copy.deepcopy(row)
             for key, value in update.get("$set", {}).items():
-                updated[key] = value
+                _set_path(updated, key, copy.deepcopy(value))
+            for key in update.get("$unset", {}):
+                _unset_path(updated, key)
             self.rows[index] = updated
             return
         if not upsert:
             return
-        inserted = dict(query)
+        inserted = copy.deepcopy(query)
         for key, value in update.get("$setOnInsert", {}).items():
-            inserted[key] = value
+            _set_path(inserted, key, copy.deepcopy(value))
         for key, value in update.get("$set", {}).items():
-            inserted[key] = value
+            _set_path(inserted, key, copy.deepcopy(value))
+        for key in update.get("$unset", {}):
+            _unset_path(inserted, key)
         self.rows.append(inserted)
 
     def create_index(self, keys: list[tuple[str, int]], **kwargs: Any) -> None:
