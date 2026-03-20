@@ -129,19 +129,52 @@ def test_repository_translation_failure_keeps_partial_progress(tmp_path: Path) -
 
     repository.mark_translation_partial(
         doc_id="doc.md",
-        error_code="translation_validation_error",
-        error_message="Translation semantic block diverged.",
+        error_code="llm_incomplete",
+        error_message="Responses API returned an incomplete result.",
+        error_details={
+            "response_id": "resp_incomplete_1",
+            "status": "incomplete",
+            "usage": {
+                "input_tokens": 321,
+                "output_tokens": 12000,
+                "reasoning_tokens": 800,
+            },
+            "incomplete_details": {
+                "reason": "max_output_tokens",
+            },
+        },
         mode="rerun",
         llm_updates={
             "prompt_profile": "translate_to_ru",
-            "status": "failed",
+            "response_id": "resp_incomplete_1",
+            "status": "incomplete",
+            "usage": {
+                "input_tokens": 321,
+                "output_tokens": 12000,
+                "reasoning_tokens": 800,
+            },
+            "incomplete_details": {
+                "reason": "max_output_tokens",
+            },
             "error": {
-                "code": "translation_validation_error",
-                "message": "Translation semantic block diverged.",
+                "code": "llm_incomplete",
+                "message": "Responses API returned an incomplete result.",
+                "details": {
+                    "response_id": "resp_incomplete_1",
+                    "status": "incomplete",
+                    "usage": {
+                        "input_tokens": 321,
+                        "output_tokens": 12000,
+                        "reasoning_tokens": 800,
+                    },
+                    "incomplete_details": {
+                        "reason": "max_output_tokens",
+                    },
+                },
             },
         },
-        validation_errors=["translation semantic block must match analysis semantic block."],
-        manual_review_required=True,
+        validation_errors=None,
+        manual_review_required=False,
     )
 
     stored = repository.get_document("doc.md")
@@ -151,8 +184,15 @@ def test_repository_translation_failure_keeps_partial_progress(tmp_path: Path) -
     assert stored["annotation"]["original"]["summary"] == "Dokument porządkuje linię orzeczniczą."
     assert stored["processing"]["status"] == "partial"
     assert stored["processing"]["current_stage"] == "annotate_ru"
-    assert stored["annotation"]["qa"]["manual_review_required"] is True
-    assert stored["llm"]["translation_ru"]["status"] == "failed"
+    assert stored["annotation"]["qa"]["manual_review_required"] is False
+    assert stored["llm"]["translation_ru"]["status"] == "incomplete"
+    assert stored["llm"]["translation_ru"]["response_id"] == "resp_incomplete_1"
+    assert stored["llm"]["translation_ru"]["incomplete_details"]["reason"] == (
+        "max_output_tokens"
+    )
+    assert stored["processing"]["error"]["details"]["incomplete_details"]["reason"] == (
+        "max_output_tokens"
+    )
 
 
 def test_repository_retries_transient_mongo_write_failures(tmp_path: Path) -> None:

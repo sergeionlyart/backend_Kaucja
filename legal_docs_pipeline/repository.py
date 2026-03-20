@@ -557,6 +557,7 @@ class MongoDocumentRepository:
         doc_id: str,
         error_code: str,
         error_message: str,
+        error_details: dict[str, Any] | None = None,
         mode: str,
         llm_updates: dict[str, Any] | None = None,
         validation_errors: list[str] | None = None,
@@ -575,7 +576,11 @@ class MongoDocumentRepository:
             annotation["qa"]["validation_errors"] = validation_errors
         annotation["qa"]["manual_review_required"] = manual_review_required
 
-        error_payload = {"code": error_code, "message": error_message}
+        error_payload = _build_error_payload(
+            error_code=error_code,
+            error_message=error_message,
+            error_details=error_details,
+        )
         processing = document["processing"]
         processing["current_stage"] = _ANNOTATE_RU_STAGE
         processing["status"] = "partial"
@@ -618,6 +623,7 @@ class MongoDocumentRepository:
         stage: str,
         error_code: str,
         error_message: str,
+        error_details: dict[str, Any] | None = None,
         mode: str,
         warnings: tuple[str, ...] = (),
         source_updates: dict[str, Any] | None = None,
@@ -651,7 +657,11 @@ class MongoDocumentRepository:
                 validation_errors
             )
 
-        error_payload = {"code": error_code, "message": error_message}
+        error_payload = _build_error_payload(
+            error_code=error_code,
+            error_message=error_message,
+            error_details=error_details,
+        )
         processing = document["processing"]
         processing["current_stage"] = stage
         processing["status"] = "failed"
@@ -704,6 +714,21 @@ class MongoDocumentRepository:
                 if attempt >= attempts:
                     raise
                 sleep(_retry_backoff_seconds(attempt))
+
+
+def _build_error_payload(
+    *,
+    error_code: str,
+    error_message: str,
+    error_details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "code": error_code,
+        "message": error_message,
+    }
+    if error_details:
+        payload["details"] = error_details
+    return payload
 
 
 def _new_document_skeleton(

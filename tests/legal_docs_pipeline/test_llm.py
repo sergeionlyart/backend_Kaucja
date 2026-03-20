@@ -79,6 +79,26 @@ class SlowResponsesService:
         return FakeParsedResponse()
 
 
+class FakeIncompleteResponse:
+    def __init__(self, *, reason: str) -> None:
+        self.id = "resp_incomplete_123"
+        self.status = "incomplete"
+        self.completed_at = datetime(2026, 3, 16, 12, 1, 0, tzinfo=timezone.utc)
+        self.output_parsed = None
+        self.output: list[Any] = []
+        self.error = None
+        self.usage = FakeUsage()
+        self.incomplete_details = type("IncompleteDetails", (), {"reason": reason})()
+
+
+class IncompleteResponsesService:
+    def __init__(self, *, reason: str) -> None:
+        self._reason = reason
+
+    def parse(self, **kwargs: Any) -> FakeIncompleteResponse:
+        return FakeIncompleteResponse(reason=self._reason)
+
+
 def test_openai_responses_client_uses_spec_compatible_request() -> None:
     service = FakeResponsesService()
     client = OpenAIResponsesAnnotationLlmClient(responses_service=service)
@@ -127,7 +147,11 @@ def test_openai_responses_client_uses_spec_compatible_request() -> None:
     assert "top_logprobs" not in call
 
 
-def test_openai_responses_client_uses_configured_timeout(monkeypatch) -> None:
+@pytest.mark.parametrize("timeout_seconds", [77, 600])
+def test_openai_responses_client_uses_configured_timeout(
+    monkeypatch,
+    timeout_seconds: int,
+) -> None:
     service = FakeResponsesService()
     captured: dict[str, Any] = {}
 
@@ -136,7 +160,7 @@ def test_openai_responses_client_uses_configured_timeout(monkeypatch) -> None:
         return FakeOpenAIClient(timeout=timeout, service=service)
 
     monkeypatch.setattr("legal_docs_pipeline.llm.OpenAI", fake_openai)
-    client = OpenAIResponsesAnnotationLlmClient(timeout_seconds=77)
+    client = OpenAIResponsesAnnotationLlmClient(timeout_seconds=timeout_seconds)
 
     client.run(
         StructuredLlmRequest(
@@ -167,7 +191,7 @@ def test_openai_responses_client_uses_configured_timeout(monkeypatch) -> None:
         )
     )
 
-    assert captured["timeout"] == 77
+    assert captured["timeout"] == timeout_seconds
     assert service.calls
 
 
@@ -208,3 +232,47 @@ def test_openai_responses_client_interrupts_hanging_request() -> None:
         )
 
     assert error.value.code == "llm_timeout"
+
+
+@pytest.mark.parametrize("reason", ["max_output_tokens", "content_filter"])
+def test_openai_responses_client_preserves_incomplete_details(reason: str) -> None:
+    client = OpenAIResponsesAnnotationLlmClient(
+        responses_service=IncompleteResponsesService(reason=reason)
+    )
+
+    with pytest.raises(LlmCallError) as error:
+        client.run(
+            StructuredLlmRequest(
+                stage="annotate_ru",
+                system_prompt="system prompt",
+                input_payload={"doc_id": "doc.md"},
+                output_schema={"type": "object"},
+                output_model=AnalysisAnnotationOutput,
+                metadata={
+                    "run_id": "run-1",
+                    "doc_id": "doc.md",
+                    "prompt_pack_version": "2026-03-16",
+                    "prompt_profile": "translate_to_ru",
+                },
+                provider="openai",
+                api="responses",
+                model_id="gpt-5.4",
+                reasoning_effort="xhigh",
+                text_verbosity="low",
+                truncation="disabled",
+                store=False,
+                max_output_tokens=24000,
+                prompt_pack_id="kaucja-prompt-pack",
+                prompt_pack_version="2026-03-16",
+                prompt_profile="translate_to_ru",
+                prompt_hash="prompt-hash",
+                request_hash="request-hash",
+            )
+        )
+
+    assert error.value.code == "llm_incomplete"
+    assert error.value.details is not None
+    assert error.value.details["response_id"] == "resp_incomplete_123"
+    assert error.value.details["status"] == "incomplete"
+    assert error.value.details["incomplete_details"]["reason"] == reason
+    assert error.value.details["usage"]["reasoning_tokens"] == 50

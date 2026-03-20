@@ -265,6 +265,21 @@ def test_pipeline_completes_document_with_translation(tmp_path: Path) -> None:
     assert stored["llm"]["translation_ru"]["prompt_profile"] == "translate_to_ru"
     assert any(row["event"] == "run_started" for row in log_rows)
     assert any(row["event"] == "run_completed" for row in log_rows)
+    assert _stage_events(log_rows, "annotate_original") == [
+        "llm_request_started",
+        "llm_request_completed",
+    ]
+    assert _stage_events(log_rows, "annotate_ru") == [
+        "llm_request_started",
+        "llm_request_completed",
+        "completed",
+    ]
+    assert _find_event(log_rows, "annotate_original", "llm_request_completed")[
+        "details"
+    ]["usage.reasoning_tokens"] == 40
+    assert _find_event(log_rows, "annotate_ru", "llm_request_completed")["details"][
+        "timeout_seconds"
+    ] == 120
 
 
 def test_translation_request_uses_configured_translation_budget(tmp_path: Path) -> None:
@@ -340,6 +355,54 @@ def test_pipeline_rerun_failed_resumes_translation_for_partial_document(
     assert stored["annotation"]["status"] == "completed"
     assert stored["annotation"]["original"]["summary"].startswith("Dokument")
     assert stored["annotation"]["ru"]["summary"].startswith("Документ")
+    assert stored["processing"]["status"] == "completed"
+
+
+def test_pipeline_rerun_doc_id_resumes_translation_for_partial_document(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    first_client = ScriptedLlmClient(
+        script=[
+            _analysis_payload(),
+            LlmCallError(code="llm_timeout", message="Translation timed out."),
+        ]
+    )
+    initial_pipeline = AnnotationPipeline(
+        config=_build_config(
+            tmp_path=tmp_path,
+            input_root=input_root,
+            retry_model_calls=0,
+        ),
+        repository_factory=lambda _config: repository,
+        llm_client=first_client,
+    )
+    initial_pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+
+    resumed_client = ScriptedLlmClient(script=[_translation_payload()])
+    rerun_pipeline = AnnotationPipeline(
+        config=_build_config(tmp_path=tmp_path, input_root=input_root),
+        repository_factory=lambda _config: repository,
+        llm_client=resumed_client,
+    )
+    rerun_summary = rerun_pipeline.run(
+        options=PipelineRunOptions(
+            mode=PipelineMode.RERUN,
+            only_doc_id="doc.md",
+        ),
+        rerun_scope=RerunScope.DOC_ID,
+    )
+    stored = repository.get_document("doc.md")
+
+    assert rerun_summary.processed_count == 1
+    assert rerun_summary.completed_count == 1
+    assert [request.stage for request in resumed_client.calls] == ["annotate_ru"]
+    assert stored is not None
+    assert stored["annotation"]["status"] == "completed"
     assert stored["processing"]["status"] == "completed"
 
 
@@ -577,6 +640,10 @@ def test_pipeline_retries_transient_llm_errors_using_config_surface(
     )
 
     summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+    log_rows = [
+        json.loads(line)
+        for line in summary.log_path.read_text(encoding="utf-8").splitlines()
+    ]
 
     assert summary.completed_count == 1
     assert [request.stage for request in llm_client.calls] == [
@@ -584,6 +651,181 @@ def test_pipeline_retries_transient_llm_errors_using_config_surface(
         "annotate_original",
         "annotate_ru",
     ]
+    assert _stage_events(log_rows, "annotate_original") == [
+        "llm_request_started",
+        "llm_request_failed",
+        "llm_retry",
+        "llm_request_started",
+        "llm_request_completed",
+    ]
+
+
+def test_pipeline_marks_original_timeout_failed_and_logs_llm_failure(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    llm_client = ScriptedLlmClient(
+        script=[LlmCallError(code="llm_timeout", message="Analysis timed out.")]
+    )
+    pipeline = AnnotationPipeline(
+        config=_build_config(
+            tmp_path=tmp_path,
+            input_root=input_root,
+            retry_model_calls=0,
+        ),
+        repository_factory=lambda _config: repository,
+        llm_client=llm_client,
+    )
+
+    summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+    stored = repository.get_document("doc.md")
+    log_rows = [
+        json.loads(line)
+        for line in summary.log_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert summary.failed_count == 1
+    assert summary.partial_count == 0
+    assert [request.stage for request in llm_client.calls] == ["annotate_original"]
+    assert stored is not None
+    assert stored["annotation"]["status"] == "failed"
+    assert stored["processing"]["status"] == "failed"
+    assert stored["processing"]["error"]["code"] == "llm_timeout"
+    assert _stage_events(log_rows, "annotate_original") == [
+        "llm_request_started",
+        "llm_request_failed",
+        "stage_failed",
+    ]
+    failure_event = _find_event(log_rows, "annotate_original", "llm_request_failed")
+    assert failure_event["error"]["code"] == "llm_timeout"
+    assert failure_event["details"]["timeout_seconds"] == 120
+    assert failure_event["details"]["attempt"] == 1
+
+
+def test_pipeline_marks_translation_timeout_partial_and_keeps_original(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    llm_client = ScriptedLlmClient(
+        script=[
+            _analysis_payload(),
+            LlmCallError(code="llm_timeout", message="Translation timed out."),
+        ]
+    )
+    pipeline = AnnotationPipeline(
+        config=_build_config(
+            tmp_path=tmp_path,
+            input_root=input_root,
+            retry_model_calls=0,
+        ),
+        repository_factory=lambda _config: repository,
+        llm_client=llm_client,
+    )
+
+    summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+    stored = repository.get_document("doc.md")
+    log_rows = [
+        json.loads(line)
+        for line in summary.log_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert summary.partial_count == 1
+    assert summary.failed_count == 0
+    assert [request.stage for request in llm_client.calls] == [
+        "annotate_original",
+        "annotate_ru",
+    ]
+    assert stored is not None
+    assert stored["annotation"]["status"] == "partial"
+    assert stored["annotation"]["original"]["summary"].startswith("Dokument")
+    assert "ru" not in stored["annotation"]
+    assert stored["processing"]["status"] == "partial"
+    assert stored["processing"]["error"]["code"] == "llm_timeout"
+    assert _stage_events(log_rows, "annotate_original") == [
+        "llm_request_started",
+        "llm_request_completed",
+    ]
+    assert _stage_events(log_rows, "annotate_ru") == [
+        "llm_request_started",
+        "llm_request_failed",
+        "stage_failed",
+    ]
+    failure_event = _find_event(log_rows, "annotate_ru", "llm_request_failed")
+    assert failure_event["error"]["code"] == "llm_timeout"
+    assert failure_event["details"]["request_hash"]
+
+
+def test_pipeline_persists_incomplete_reason_for_translation_partial(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    llm_client = ScriptedLlmClient(
+        script=[
+            _analysis_payload(),
+            LlmCallError(
+                code="llm_incomplete",
+                message="Responses API returned an incomplete result.",
+                details={
+                    "response_id": "resp_incomplete_1",
+                    "status": "incomplete",
+                    "usage": {
+                        "input_tokens": 400,
+                        "output_tokens": 24000,
+                        "reasoning_tokens": 1200,
+                    },
+                    "incomplete_details": {
+                        "reason": "max_output_tokens",
+                    },
+                },
+            ),
+        ]
+    )
+    pipeline = AnnotationPipeline(
+        config=_build_config(
+            tmp_path=tmp_path,
+            input_root=input_root,
+            retry_model_calls=0,
+        ),
+        repository_factory=lambda _config: repository,
+        llm_client=llm_client,
+    )
+
+    summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+    stored = repository.get_document("doc.md")
+    log_rows = [
+        json.loads(line)
+        for line in summary.log_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert summary.partial_count == 1
+    assert stored is not None
+    assert stored["processing"]["status"] == "partial"
+    assert stored["processing"]["error"]["code"] == "llm_incomplete"
+    assert stored["processing"]["error"]["details"]["incomplete_details"]["reason"] == (
+        "max_output_tokens"
+    )
+    assert stored["llm"]["translation_ru"]["response_id"] == "resp_incomplete_1"
+    assert stored["llm"]["translation_ru"]["status"] == "incomplete"
+    assert stored["llm"]["translation_ru"]["usage"]["output_tokens"] == 24000
+    assert stored["llm"]["translation_ru"]["incomplete_details"]["reason"] == (
+        "max_output_tokens"
+    )
+    failure_event = _find_event(log_rows, "annotate_ru", "llm_request_failed")
+    assert failure_event["details"]["response_id"] == "resp_incomplete_1"
+    assert failure_event["details"]["status"] == "incomplete"
+    assert failure_event["details"]["incomplete_details.reason"] == "max_output_tokens"
 
 
 def test_pipeline_force_classifier_fallback_keeps_rule_based_route_when_it_agrees(
@@ -1047,6 +1289,24 @@ def _analysis_payload(
             "tags": ["kaucja", "wyrok"],
         },
     }
+
+
+def _stage_events(
+    log_rows: list[dict[str, Any]],
+    stage: str,
+) -> list[str]:
+    return [row["event"] for row in log_rows if row["stage"] == stage]
+
+
+def _find_event(
+    log_rows: list[dict[str, Any]],
+    stage: str,
+    event: str,
+) -> dict[str, Any]:
+    for row in log_rows:
+        if row["stage"] == stage and row["event"] == event:
+            return row
+    raise AssertionError(f"Event {event} for stage {stage} was not logged.")
 
 
 def _analysis_payload_en() -> dict[str, Any]:
