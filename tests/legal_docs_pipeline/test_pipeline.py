@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
+from legal_docs_pipeline.canonicalize import CanonicalSection, CanonicalTextResult
 from legal_docs_pipeline.config import PipelineConfig
-from legal_docs_pipeline.constants import PipelineMode, RerunScope
+from legal_docs_pipeline.constants import PipelineMode, PromptProfile, RerunScope
 from legal_docs_pipeline.llm import (
     LlmCallError,
     StructuredLlmRequest,
@@ -21,7 +22,8 @@ from legal_docs_pipeline.pipeline import (
     should_skip_existing_document_in_new_mode,
 )
 from legal_docs_pipeline.repository import MongoDocumentRepository
-from legal_docs_pipeline.schemas import AnalysisAnnotationOutput
+from legal_docs_pipeline.reader import TextStats
+from legal_docs_pipeline.schemas import AnalysisAnnotationOutput, ClassificationResult
 from tests.fake_mongo_runtime import FakeMongoCollection
 
 
@@ -302,6 +304,53 @@ def test_translation_request_uses_configured_translation_budget(tmp_path: Path) 
 
     assert request.max_output_tokens == pipeline.config.model.translation_ru_max_output_tokens
     assert request.max_output_tokens == 24_000
+
+
+def test_analysis_request_uses_packed_sections_for_large_canonical_text(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    pipeline = AnnotationPipeline(
+        config=_build_config(tmp_path=tmp_path, input_root=input_root),
+        repository_factory=lambda _config: _build_repository(),
+        llm_client=ScriptedLlmClient(script=[]),
+    )
+    request = pipeline._build_analysis_request(
+        run_id="run-packed",
+        doc_id="doc.md",
+        classification=_build_classification_result(),
+        language_code="pl",
+        parse_metadata={"canonical_doc_uid": "saos_pl:123"},
+        title="WYROK",
+        canonical_result=_build_large_canonical_result(),
+        resolved_prompt=pipeline.prompt_resolver.resolve_analysis_prompt(
+            _build_classification_result().prompt_profile,
+            source_language_code="pl",
+        ),
+    )
+
+    assert request.input_payload["input_mode"] == "packed_sections"
+    assert "document_sections" in request.input_payload
+    assert "canonical_text" not in request.input_payload
+
+
+def test_pipeline_requires_openai_api_key_for_default_live_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    pipeline = AnnotationPipeline(
+        config=_build_config(tmp_path=tmp_path, input_root=input_root),
+        repository_factory=lambda _config: _build_repository(),
+    )
+
+    with pytest.raises(RuntimeError, match="OPENAI_API_KEY is not configured"):
+        pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
 
 
 def test_pipeline_rerun_failed_resumes_translation_for_partial_document(
@@ -790,6 +839,22 @@ def test_pipeline_persists_incomplete_reason_for_translation_partial(
                     },
                 },
             ),
+            LlmCallError(
+                code="llm_incomplete",
+                message="Responses API returned an incomplete result.",
+                details={
+                    "response_id": "resp_incomplete_1",
+                    "status": "incomplete",
+                    "usage": {
+                        "input_tokens": 400,
+                        "output_tokens": 24000,
+                        "reasoning_tokens": 1200,
+                    },
+                    "incomplete_details": {
+                        "reason": "max_output_tokens",
+                    },
+                },
+            ),
         ]
     )
     pipeline = AnnotationPipeline(
@@ -810,6 +875,11 @@ def test_pipeline_persists_incomplete_reason_for_translation_partial(
     ]
 
     assert summary.partial_count == 1
+    assert [request.stage for request in llm_client.calls] == [
+        "annotate_original",
+        "annotate_ru",
+        "annotate_ru",
+    ]
     assert stored is not None
     assert stored["processing"]["status"] == "partial"
     assert stored["processing"]["error"]["code"] == "llm_incomplete"
@@ -1338,15 +1408,8 @@ def _translation_payload(
     semantic_document_type_code: str = "pl_judgment",
     document_type_label: str = "решение суда",
 ) -> dict[str, Any]:
+    del semantic_document_type_code
     return {
-        "semantic": {
-            "document_type_code": semantic_document_type_code,
-            "authority_level": "high",
-            "relevance": "core",
-            "usually_supports": "depends",
-            "topic_codes": ["deposit_return_term"],
-            "use_for_tasks_codes": ["claim", "legal_position"],
-        },
         "annotation_ru": {
             "language_code": "ru",
             "document_type_label": document_type_label,
@@ -1363,14 +1426,6 @@ def _translation_payload(
 
 def _translation_payload_en() -> dict[str, Any]:
     return {
-        "semantic": {
-            "document_type_code": "discovery_page",
-            "authority_level": "reference_only",
-            "relevance": "discovery_only",
-            "usually_supports": "depends",
-            "topic_codes": ["discovery_navigation"],
-            "use_for_tasks_codes": ["internal_analysis"],
-        },
         "annotation_ru": {
             "language_code": "ru",
             "document_type_label": "страница поиска",
@@ -1396,6 +1451,42 @@ def _fallback_classification_payload(
         "prompt_profile": prompt_profile,
         "confidence": confidence,
     }
+
+
+def _build_classification_result() -> ClassificationResult:
+    return ClassificationResult(
+        document_family="judicial_decision",
+        document_type_code="pl_judgment",
+        prompt_profile=PromptProfile.ADDON_CASE_LAW,
+        annotatable=True,
+        classifier_method="rule_based",
+        confidence=0.95,
+        router_version="2.0.0",
+        signals={"matched_rules": ["judicial_decision"]},
+        skip_reason=None,
+    )
+
+
+def _build_large_canonical_result() -> CanonicalTextResult:
+    section_text = "Artykuł o zwrocie kaucji.\n" * 500
+    sections = tuple(
+        CanonicalSection(
+            section_id=f"s{index:03d}",
+            heading=f"Sekcja {index}",
+            text=section_text[:2000],
+            char_count=len(section_text[:2000]),
+        )
+        for index in range(1, 4)
+    )
+    return CanonicalTextResult(
+        canonical_text=section_text * 5,
+        canonical_text_sha256="large-canonical-sha",
+        text_preview=section_text[:200],
+        text_stats_raw=TextStats(chars=50000, lines=1000, words=7000),
+        text_stats_canonical=TextStats(chars=50000, lines=1000, words=7000),
+        strategy="plain_markdown",
+        sections=sections,
+    )
 
 
 def _run_completed_fallback_pipeline(

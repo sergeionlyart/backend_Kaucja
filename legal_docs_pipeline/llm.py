@@ -116,7 +116,11 @@ class OpenAIResponsesAnnotationLlmClient:
         except TimeoutError as error:
             raise LlmCallError(code="llm_timeout", message=str(error)) from error
         except APIStatusError as error:
-            raise LlmCallError(code="llm_http_error", message=str(error)) from error
+            raise LlmCallError(
+                code="llm_http_error",
+                message=str(error),
+                details=_build_api_status_error_details(error),
+            ) from error
         except Exception as error:  # pragma: no cover - defensive mapping
             raise LlmCallError(code="llm_http_error", message=str(error)) from error
 
@@ -124,6 +128,7 @@ class OpenAIResponsesAnnotationLlmClient:
             raise LlmCallError(
                 code="llm_http_error",
                 message=str(getattr(response.error, "message", response.error)),
+                details=_build_response_error_details(response),
             )
         if _has_refusal(response):
             raise LlmCallError(code="llm_refusal", message="Model returned a refusal.")
@@ -184,6 +189,40 @@ def _build_incomplete_error_details(response: Any) -> dict[str, Any]:
         },
         "incomplete_details": {
             "reason": getattr(incomplete_details, "reason", None),
+        },
+    }
+
+
+def _build_api_status_error_details(error: APIStatusError) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status_code": getattr(error, "status_code", None),
+    }
+    response = getattr(error, "response", None)
+    if response is not None:
+        payload["response_id"] = getattr(response, "id", None)
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        error_body = body.get("error")
+        if isinstance(error_body, dict):
+            payload["provider_error"] = {
+                "type": error_body.get("type"),
+                "code": error_body.get("code"),
+                "message": error_body.get("message"),
+            }
+    return payload
+
+
+def _build_response_error_details(response: Any) -> dict[str, Any]:
+    error_payload = getattr(response, "error", None)
+    if error_payload is None:
+        return {}
+    return {
+        "response_id": str(getattr(response, "id", "")),
+        "status": str(getattr(response, "status", "")),
+        "provider_error": {
+            "type": getattr(error_payload, "type", None),
+            "code": getattr(error_payload, "code", None),
+            "message": getattr(error_payload, "message", None),
         },
     }
 

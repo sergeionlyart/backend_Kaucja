@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from time import sleep
 from typing import Any
@@ -11,8 +12,19 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .canonicalize import (
+    CanonicalTextResult,
+    CanonicalizeDocumentError,
+    build_canonical_text,
+)
 from .config import PipelineConfig
-from .constants import DocumentFamily, PipelineMode, PromptProfile, RerunScope
+from .constants import (
+    DocumentFamily,
+    PACKED_INPUT_THRESHOLD_CHARS,
+    PipelineMode,
+    PromptProfile,
+    RerunScope,
+)
 from .language import HeuristicLanguageDetector, LanguageDetectionResult
 from .llm import (
     AnnotationLlmClient,
@@ -31,7 +43,7 @@ from .prompts import (
     hash_prompt_text,
 )
 from .reader import MarkdownReader, ReadDocumentError, ReadDocumentResult
-from .repository import MongoDocumentRepository
+from .repository import MongoDocumentRepository, RepositoryWriteError
 from .router import RoutingInput, RuleBasedDocumentRouter
 from .scanner import DocumentScanner, DiscoveredDocument
 from .schemas import (
@@ -51,7 +63,7 @@ _FALLBACK_CLASSIFIER_SYSTEM_PROMPT = (
     "Classify one legal markdown document into the allowed NormaDepo families. "
     "Use only provided metadata and excerpt. Return strict JSON only."
 )
-_TRANSIENT_LLM_ERROR_CODES = frozenset({"llm_timeout", "llm_rate_limit"})
+_TRANSPORT_RETRYABLE_LLM_ERROR_CODES = frozenset({"llm_timeout", "llm_rate_limit"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +81,7 @@ class PipelineRunOptions:
 class PreparedAnnotatableDocument:
     read_result: ReadDocumentResult
     parse_result: ParsedMarkdownDocument
+    canonical_result: CanonicalTextResult
     language_result: LanguageDetectionResult
     classification: ClassificationResult
     resolved_prompt: ResolvedPrompt
@@ -137,7 +150,9 @@ class AnnotationPipeline:
     ) -> None:
         self.config = config
         self.scanner = scanner or DocumentScanner()
-        self.reader = reader or MarkdownReader()
+        self.reader = reader or MarkdownReader(
+            max_file_size_bytes=config.input.max_file_size_bytes
+        )
         self.parser = parser or LegalMarkdownParser()
         self.language_detector = language_detector or HeuristicLanguageDetector()
         self.router = router or RuleBasedDocumentRouter(
@@ -217,6 +232,12 @@ class AnnotationPipeline:
                 "rerun_scope": rerun_scope.value if rerun_scope else None,
                 "discovered_count": len(discovered),
             },
+        )
+
+        _require_openai_api_key(
+            config=self.config,
+            llm_client=self._llm_client,
+            dry_run=options.dry_run,
         )
 
         if options.dry_run and options.mode is not PipelineMode.RERUN:
@@ -440,12 +461,14 @@ class AnnotationPipeline:
         try:
             read_result = self.reader.read(document)
             repository.apply_read_result(doc_id=doc_id, read_result=read_result)
-        except ReadDocumentError as error:
+        except (ReadDocumentError, RepositoryWriteError) as error:
+            error_code = getattr(error, "code", "repository_write_error")
+            error_message = str(error)
             repository.mark_failed(
                 doc_id=doc_id,
                 stage="read",
-                error_code=error.code,
-                error_message=error.message,
+                error_code=error_code,
+                error_message=error_message,
                 mode=mode,
             )
             _log_failure(
@@ -453,8 +476,8 @@ class AnnotationPipeline:
                 run_id=run_id,
                 doc_id=doc_id,
                 stage="read",
-                error_code=error.code,
-                error_message=error.message,
+                error_code=error_code,
+                error_message=error_message,
             )
             return "failed"
 
@@ -463,10 +486,40 @@ class AnnotationPipeline:
                 file_name=document.file_name,
                 normalized_text=read_result.normalized_text,
             )
-        except MarkdownParseError as error:
+            repository.apply_parse_result(
+                doc_id=doc_id,
+                parse_result=parse_result,
+            )
+        except (MarkdownParseError, RepositoryWriteError) as error:
+            error_code = getattr(error, "code", "repository_write_error")
+            error_message = str(error)
             repository.mark_failed(
                 doc_id=doc_id,
                 stage="parse",
+                error_code=error_code,
+                error_message=error_message,
+                mode=mode,
+            )
+            _log_failure(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="parse",
+                error_code=error_code,
+                error_message=error_message,
+            )
+            return "failed"
+
+        try:
+            canonical_result = build_canonical_text(
+                file_name=document.file_name,
+                parse_result=parse_result,
+                read_result=read_result,
+            )
+        except CanonicalizeDocumentError as error:
+            repository.mark_failed(
+                doc_id=doc_id,
+                stage="canonicalize",
                 error_code=error.code,
                 error_message=error.message,
                 mode=mode,
@@ -475,39 +528,75 @@ class AnnotationPipeline:
                 logger,
                 run_id=run_id,
                 doc_id=doc_id,
-                stage="parse",
+                stage="canonicalize",
                 error_code=error.code,
                 error_message=error.message,
             )
             return "failed"
 
         language_result = self.language_detector.detect(
-            normalized_text=read_result.normalized_text,
+            normalized_text=canonical_result.canonical_text,
             doc_metadata=parse_result.doc_metadata,
             relative_path=doc_id,
             title=parse_result.title or read_result.title,
         )
+        try:
+            repository.apply_canonical_result(
+                doc_id=doc_id,
+                canonical_result=canonical_result,
+                language_result=language_result,
+            )
+        except RepositoryWriteError as error:
+            repository.mark_failed(
+                doc_id=doc_id,
+                stage="canonicalize",
+                error_code=error.code,
+                error_message=error.message,
+                mode=mode,
+            )
+            _log_failure(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="canonicalize",
+                error_code=error.code,
+                error_message=error.message,
+            )
+            return "failed"
         classification = self.router.route(
             RoutingInput(
                 relative_path=doc_id,
                 file_name=document.file_name,
                 title=parse_result.title or read_result.title,
                 metadata=parse_result.doc_metadata,
-                normalized_text=read_result.normalized_text,
+                normalized_text=canonical_result.canonical_text,
             )
         )
         if language_result.language_code == "und":
             if not classification.annotatable:
-                repository.apply_parse_result(
-                    doc_id=doc_id,
-                    parse_result=parse_result,
-                    language_result=language_result,
-                )
-                repository.apply_classification_result(
-                    doc_id=doc_id,
-                    classification_result=classification,
-                    mode=mode,
-                )
+                try:
+                    repository.apply_classification_result(
+                        doc_id=doc_id,
+                        classification_result=classification,
+                        mode=mode,
+                    )
+                except RepositoryWriteError as error:
+                    repository.mark_failed(
+                        doc_id=doc_id,
+                        stage="classify",
+                        error_code=error.code,
+                        error_message=error.message,
+                        mode=mode,
+                    )
+                    _log_failure(
+                        logger,
+                        run_id=run_id,
+                        doc_id=doc_id,
+                        stage="classify",
+                        error_code=error.code,
+                        error_message=error.message,
+                    )
+                    return "failed"
                 _log(
                     logger,
                     run_id=run_id,
@@ -523,16 +612,13 @@ class AnnotationPipeline:
                 return "skipped_non_target"
             repository.mark_failed(
                 doc_id=doc_id,
-                stage="parse",
+                stage="canonicalize",
                 error_code="failed_language_detection",
                 error_message="Unable to determine source language.",
                 mode=mode,
                 warnings=("language_undetermined",),
                 source_updates={
                     "language_original": "und",
-                    "doc_metadata": dict(parse_result.doc_metadata),
-                    "content_markdown": parse_result.content_markdown,
-                    "title": parse_result.title or read_result.title,
                 },
                 dedup_updates={
                     "canonical_doc_uid": parse_result.doc_metadata.get(
@@ -548,23 +634,17 @@ class AnnotationPipeline:
                 logger,
                 run_id=run_id,
                 doc_id=doc_id,
-                stage="parse",
+                stage="canonicalize",
                 error_code="failed_language_detection",
                 error_message="Unable to determine source language.",
             )
             return "failed"
-
-        repository.apply_parse_result(
-            doc_id=doc_id,
-            parse_result=parse_result,
-            language_result=language_result,
-        )
         if classification.document_family is DocumentFamily.UNKNOWN:
             classification = self._run_fallback_classifier(
                 doc_id=doc_id,
                 run_id=run_id,
                 parse_result=parse_result,
-                read_result=read_result,
+                canonical_result=canonical_result,
                 title=parse_result.title or read_result.title,
             )
         elif (
@@ -575,7 +655,7 @@ class AnnotationPipeline:
                 doc_id=doc_id,
                 run_id=run_id,
                 parse_result=parse_result,
-                read_result=read_result,
+                canonical_result=canonical_result,
                 title=parse_result.title or read_result.title,
             )
             self._log_force_classifier_diagnostic(
@@ -604,11 +684,29 @@ class AnnotationPipeline:
             )
             return "failed"
 
-        repository.apply_classification_result(
-            doc_id=doc_id,
-            classification_result=classification,
-            mode=mode,
-        )
+        try:
+            repository.apply_classification_result(
+                doc_id=doc_id,
+                classification_result=classification,
+                mode=mode,
+            )
+        except RepositoryWriteError as error:
+            repository.mark_failed(
+                doc_id=doc_id,
+                stage="classify",
+                error_code=error.code,
+                error_message=error.message,
+                mode=mode,
+            )
+            _log_failure(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="classify",
+                error_code=error.code,
+                error_message=error.message,
+            )
+            return "failed"
         if not classification.annotatable:
             _log(
                 logger,
@@ -622,10 +720,11 @@ class AnnotationPipeline:
             return "skipped_non_target"
 
         resolved_prompt = self.prompt_resolver.resolve_analysis_prompt(
-            classification.prompt_profile
+            classification.prompt_profile,
+            source_language_code=language_result.language_code,
         )
         analysis_fingerprint = build_analysis_fingerprint(
-            normalized_text_sha256=read_result.normalized_text_sha256,
+            canonical_text_sha256=canonical_result.canonical_text_sha256,
             prompt_profile=classification.prompt_profile,
             prompt_pack_version=self.config.prompts.prompt_pack_version,
             prompt_hash=resolved_prompt.prompt_hash,
@@ -641,26 +740,33 @@ class AnnotationPipeline:
             classification=classification,
             language_code=language_result.language_code,
             parse_metadata=parse_result.doc_metadata,
-            read_result=read_result,
+            title=parse_result.title or read_result.title,
+            canonical_result=canonical_result,
             resolved_prompt=resolved_prompt,
+        )
+        packed_analysis_request = self._build_analysis_request(
+            run_id=run_id,
+            doc_id=doc_id,
+            classification=classification,
+            language_code=language_result.language_code,
+            parse_metadata=parse_result.doc_metadata,
+            title=parse_result.title or read_result.title,
+            canonical_result=canonical_result,
+            resolved_prompt=resolved_prompt,
+            force_packed_input=True,
         )
 
         try:
-            analysis_response = self._run_llm_request(
-                request=analysis_request,
-                run_id=run_id,
-                doc_id=doc_id,
-                logger=logger,
+            analysis_output, analysis_request, analysis_response = (
+                self._run_analysis_with_recovery(
+                    run_id=run_id,
+                    doc_id=doc_id,
+                    logger=logger,
+                    source_language_code=language_result.language_code,
+                    analysis_request=analysis_request,
+                    packed_analysis_request=packed_analysis_request,
+                )
             )
-            analysis_output = AnalysisAnnotationOutput.model_validate(
-                analysis_response.output_payload
-            )
-            validation_errors = validate_analysis_business_rules(
-                analysis_output,
-                source_language=language_result.language_code,
-            )
-            if validation_errors:
-                raise AnalysisBusinessValidationError(validation_errors)
         except LlmCallError as error:
             repository.mark_failed(
                 doc_id=doc_id,
@@ -688,7 +794,7 @@ class AnnotationPipeline:
             )
             return "failed"
         except ValidationError as error:
-            message = "Analysis response failed schema validation."
+            message = "Analysis repair response failed schema validation."
             repository.mark_failed(
                 doc_id=doc_id,
                 stage="annotate_original",
@@ -715,7 +821,7 @@ class AnnotationPipeline:
             )
             return "failed"
         except AnalysisBusinessValidationError as error:
-            message = "Analysis response failed business validation."
+            message = "Analysis repair response failed business validation."
             repository.mark_failed(
                 doc_id=doc_id,
                 stage="annotate_original",
@@ -740,14 +846,33 @@ class AnnotationPipeline:
             )
             return "failed"
 
-        repository.apply_analysis_result(
-            doc_id=doc_id,
-            annotation_output=analysis_output,
-            analysis_fingerprint=analysis_fingerprint,
-            llm_request=analysis_request,
-            llm_response=analysis_response,
-            mode=mode,
-        )
+        try:
+            repository.apply_analysis_result(
+                doc_id=doc_id,
+                annotation_output=analysis_output,
+                analysis_fingerprint=analysis_fingerprint,
+                llm_request=analysis_request,
+                llm_response=analysis_response,
+                mode=mode,
+            )
+        except RepositoryWriteError as error:
+            repository.mark_failed(
+                doc_id=doc_id,
+                stage="annotate_original",
+                error_code=error.code,
+                error_message=error.message,
+                mode=mode,
+                annotation_status="failed",
+            )
+            _log_failure(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="annotate_original",
+                error_code=error.code,
+                error_message=error.message,
+            )
+            return "failed"
 
         outcome = self._run_translation_stage(
             repository=repository,
@@ -808,21 +933,23 @@ class AnnotationPipeline:
             resolved_prompt=translation_prompt,
         )
         try:
-            translation_response = self._run_llm_request(
-                request=translation_request,
-                run_id=run_id,
-                doc_id=doc_id,
-                logger=logger,
+            translation_request, translation_response = (
+                self._run_translation_request_with_recovery(
+                    run_id=run_id,
+                    doc_id=doc_id,
+                    logger=logger,
+                    translation_request=translation_request,
+                )
             )
-            translation_output = TranslationAnnotationOutput.model_validate(
-                translation_response.output_payload
+            translation_output, translation_request, translation_response = (
+                self._validate_or_repair_translation_response(
+                    run_id=run_id,
+                    doc_id=doc_id,
+                    logger=logger,
+                    translation_request=translation_request,
+                    translation_response=translation_response,
+                )
             )
-            validation_errors = validate_translation_business_rules(
-                translation_output,
-                expected_semantic=analysis_output.semantic,
-            )
-            if validation_errors:
-                raise TranslationBusinessValidationError(validation_errors)
         except LlmCallError as error:
             repository.mark_translation_partial(
                 doc_id=doc_id,
@@ -848,7 +975,7 @@ class AnnotationPipeline:
             )
             return "partial"
         except ValidationError as error:
-            message = "Translation response failed schema validation."
+            message = "Translation repair response failed schema validation."
             repository.mark_translation_partial(
                 doc_id=doc_id,
                 error_code="translation_validation_error",
@@ -874,7 +1001,7 @@ class AnnotationPipeline:
             )
             return "partial"
         except TranslationBusinessValidationError as error:
-            message = "Translation response failed business validation."
+            message = "Translation repair response failed business validation."
             repository.mark_translation_partial(
                 doc_id=doc_id,
                 error_code="translation_validation_error",
@@ -898,13 +1025,30 @@ class AnnotationPipeline:
             )
             return "partial"
 
-        repository.apply_translation_result(
-            doc_id=doc_id,
-            translation_output=translation_output,
-            llm_request=translation_request,
-            llm_response=translation_response,
-            mode=mode,
-        )
+        try:
+            repository.apply_translation_result(
+                doc_id=doc_id,
+                translation_output=translation_output,
+                llm_request=translation_request,
+                llm_response=translation_response,
+                mode=mode,
+            )
+        except RepositoryWriteError as error:
+            repository.mark_translation_partial(
+                doc_id=doc_id,
+                error_code=error.code,
+                error_message=error.message,
+                mode=mode,
+            )
+            _log_failure(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="annotate_ru",
+                error_code=error.code,
+                error_message=error.message,
+            )
+            return "partial"
         _log(
             logger,
             run_id=run_id,
@@ -928,8 +1072,13 @@ class AnnotationPipeline:
             file_name=document.file_name,
             normalized_text=read_result.normalized_text,
         )
+        canonical_result = build_canonical_text(
+            file_name=document.file_name,
+            parse_result=parse_result,
+            read_result=read_result,
+        )
         language_result = self.language_detector.detect(
-            normalized_text=read_result.normalized_text,
+            normalized_text=canonical_result.canonical_text,
             doc_metadata=parse_result.doc_metadata,
             relative_path=document.relative_path.as_posix(),
             title=parse_result.title or read_result.title,
@@ -940,7 +1089,7 @@ class AnnotationPipeline:
                 file_name=document.file_name,
                 title=parse_result.title or read_result.title,
                 metadata=parse_result.doc_metadata,
-                normalized_text=read_result.normalized_text,
+                normalized_text=canonical_result.canonical_text,
             )
         )
         if language_result.language_code == "und":
@@ -953,7 +1102,7 @@ class AnnotationPipeline:
                 doc_id=document.relative_path.as_posix(),
                 run_id=run_id,
                 parse_result=parse_result,
-                read_result=read_result,
+                canonical_result=canonical_result,
                 title=parse_result.title or read_result.title,
             )
         if classification is None or classification.document_family is DocumentFamily.UNKNOWN:
@@ -962,10 +1111,11 @@ class AnnotationPipeline:
             return None
 
         resolved_prompt = self.prompt_resolver.resolve_analysis_prompt(
-            classification.prompt_profile
+            classification.prompt_profile,
+            source_language_code=language_result.language_code,
         )
         analysis_fingerprint = build_analysis_fingerprint(
-            normalized_text_sha256=read_result.normalized_text_sha256,
+            canonical_text_sha256=canonical_result.canonical_text_sha256,
             prompt_profile=classification.prompt_profile,
             prompt_pack_version=self.config.prompts.prompt_pack_version,
             prompt_hash=resolved_prompt.prompt_hash,
@@ -978,6 +1128,7 @@ class AnnotationPipeline:
         return PreparedAnnotatableDocument(
             read_result=read_result,
             parse_result=parse_result,
+            canonical_result=canonical_result,
             language_result=language_result,
             classification=classification,
             resolved_prompt=resolved_prompt,
@@ -990,7 +1141,7 @@ class AnnotationPipeline:
         doc_id: str,
         run_id: str,
         parse_result: ParsedMarkdownDocument,
-        read_result: ReadDocumentResult,
+        canonical_result: CanonicalTextResult,
         title: str | None,
     ) -> ClassificationResult | None:
         prompt_hash = hash_prompt_text(_FALLBACK_CLASSIFIER_SYSTEM_PROMPT)
@@ -998,7 +1149,7 @@ class AnnotationPipeline:
             "doc_id": doc_id,
             "title": title,
             "doc_metadata": parse_result.doc_metadata,
-            "excerpt": read_result.normalized_text[:2000],
+            "excerpt": canonical_result.canonical_text[:2000],
         }
         request = StructuredLlmRequest(
             stage="classify_fallback",
@@ -1077,18 +1228,20 @@ class AnnotationPipeline:
         classification: ClassificationResult,
         language_code: str,
         parse_metadata: dict[str, object],
-        read_result: ReadDocumentResult,
+        title: str | None,
+        canonical_result: CanonicalTextResult,
         resolved_prompt: ResolvedPrompt,
+        force_packed_input: bool = False,
     ) -> StructuredLlmRequest:
         output_schema = export_analysis_json_schema()
-        input_payload = {
-            "doc_id": doc_id,
-            "relative_path": doc_id,
-            "language_original": language_code,
-            "title": read_result.title,
-            "doc_metadata": parse_metadata,
-            "markdown_document": read_result.normalized_text,
-        }
+        input_payload = _build_analysis_input_payload(
+            doc_id=doc_id,
+            language_code=language_code,
+            title=title,
+            parse_metadata=parse_metadata,
+            canonical_result=canonical_result,
+            force_packed_input=force_packed_input,
+        )
         return StructuredLlmRequest(
             stage="annotate_original",
             system_prompt=resolved_prompt.prompt_text,
@@ -1124,6 +1277,60 @@ class AnnotationPipeline:
             ),
         )
 
+    def _build_analysis_repair_request(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        source_language_code: str,
+        candidate_output: dict[str, Any],
+        validation_errors: list[str],
+    ) -> StructuredLlmRequest:
+        resolved_prompt = self.prompt_resolver.resolve_analysis_repair_prompt(
+            source_language_code=source_language_code
+        )
+        output_schema = export_analysis_json_schema()
+        input_payload = {
+            "doc_id": doc_id,
+            "source_language_code": source_language_code,
+            "validation_errors": validation_errors,
+            "candidate_output": candidate_output,
+        }
+        return StructuredLlmRequest(
+            stage="annotate_original",
+            system_prompt=resolved_prompt.prompt_text,
+            input_payload=input_payload,
+            output_schema=output_schema,
+            output_model=AnalysisAnnotationOutput,
+            metadata={
+                "run_id": run_id,
+                "doc_id": doc_id,
+                "prompt_pack_version": self.config.prompts.prompt_pack_version,
+                "prompt_profile": "repair_analysis",
+            },
+            provider=self.config.model.provider,
+            api=self.config.model.api,
+            model_id=self.config.model.model_id,
+            reasoning_effort=self.config.model.reasoning_effort,
+            text_verbosity=self.config.model.text_verbosity,
+            truncation=self.config.model.truncation,
+            store=self.config.model.store,
+            max_output_tokens=self.config.model.analysis_max_output_tokens,
+            prompt_pack_id=self.config.prompts.prompt_pack_id,
+            prompt_pack_version=self.config.prompts.prompt_pack_version,
+            prompt_profile="repair_analysis",
+            prompt_hash=resolved_prompt.prompt_hash,
+            request_hash=build_request_hash(
+                system_prompt=resolved_prompt.prompt_text,
+                input_payload=input_payload,
+                output_schema=output_schema,
+                model_id=self.config.model.model_id,
+                reasoning_effort=self.config.model.reasoning_effort,
+                text_verbosity=self.config.model.text_verbosity,
+                max_output_tokens=self.config.model.analysis_max_output_tokens,
+            ),
+        )
+
     def _build_translation_request(
         self,
         *,
@@ -1135,7 +1342,10 @@ class AnnotationPipeline:
         output_schema = export_translation_json_schema()
         input_payload = {
             "doc_id": doc_id,
-            "analysis_result": analysis_output.model_dump(mode="json"),
+            "semantic_context": analysis_output.semantic.model_dump(mode="json"),
+            "annotation_original": analysis_output.annotation_original.model_dump(
+                mode="json"
+            ),
         }
         return StructuredLlmRequest(
             stage="annotate_ru",
@@ -1171,6 +1381,318 @@ class AnnotationPipeline:
                 max_output_tokens=self.config.model.translation_ru_max_output_tokens,
             ),
         )
+
+    def _build_translation_repair_request(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        candidate_output: dict[str, Any],
+        validation_errors: list[str],
+    ) -> StructuredLlmRequest:
+        resolved_prompt = self.prompt_resolver.resolve_translation_repair_prompt()
+        output_schema = export_translation_json_schema()
+        input_payload = {
+            "doc_id": doc_id,
+            "validation_errors": validation_errors,
+            "candidate_output": candidate_output,
+        }
+        return StructuredLlmRequest(
+            stage="annotate_ru",
+            system_prompt=resolved_prompt.prompt_text,
+            input_payload=input_payload,
+            output_schema=output_schema,
+            output_model=TranslationAnnotationOutput,
+            metadata={
+                "run_id": run_id,
+                "doc_id": doc_id,
+                "prompt_pack_version": self.config.prompts.prompt_pack_version,
+                "prompt_profile": "repair_translate_to_ru",
+            },
+            provider=self.config.model.provider,
+            api=self.config.model.api,
+            model_id=self.config.model.model_id,
+            reasoning_effort=self.config.model.reasoning_effort,
+            text_verbosity=self.config.model.text_verbosity,
+            truncation=self.config.model.truncation,
+            store=self.config.model.store,
+            max_output_tokens=self.config.model.translation_ru_max_output_tokens,
+            prompt_pack_id=self.config.prompts.prompt_pack_id,
+            prompt_pack_version=self.config.prompts.prompt_pack_version,
+            prompt_profile="repair_translate_to_ru",
+            prompt_hash=resolved_prompt.prompt_hash,
+            request_hash=build_request_hash(
+                system_prompt=resolved_prompt.prompt_text,
+                input_payload=input_payload,
+                output_schema=output_schema,
+                model_id=self.config.model.model_id,
+                reasoning_effort=self.config.model.reasoning_effort,
+                text_verbosity=self.config.model.text_verbosity,
+                max_output_tokens=self.config.model.translation_ru_max_output_tokens,
+            ),
+        )
+
+    def _run_analysis_with_recovery(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        logger: JsonlPipelineLogger,
+        source_language_code: str,
+        analysis_request: StructuredLlmRequest,
+        packed_analysis_request: StructuredLlmRequest,
+    ) -> tuple[AnalysisAnnotationOutput, StructuredLlmRequest, StructuredLlmResponse]:
+        active_request = analysis_request
+        try:
+            analysis_response = self._run_llm_request(
+                request=active_request,
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+            )
+        except LlmCallError as error:
+            if not _should_retry_analysis_with_packed_input(error, analysis_request):
+                raise
+            _log(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="annotate_original",
+                event="analysis_repacked_retry",
+                level="warning",
+                message=(
+                    "Analysis request hit max_output_tokens; retrying with "
+                    "packed canonical sections."
+                ),
+                error={"code": error.code, "message": error.message},
+                details=error.details,
+            )
+            active_request = packed_analysis_request
+            analysis_response = self._run_llm_request(
+                request=active_request,
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+            )
+        analysis_output, effective_request, effective_response = (
+            self._validate_or_repair_analysis_response(
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+                source_language_code=source_language_code,
+                analysis_request=active_request,
+                analysis_response=analysis_response,
+            )
+        )
+        return analysis_output, effective_request, effective_response
+
+    def _run_translation_request_with_recovery(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        logger: JsonlPipelineLogger,
+        translation_request: StructuredLlmRequest,
+    ) -> tuple[StructuredLlmRequest, StructuredLlmResponse]:
+        active_request = translation_request
+        try:
+            translation_response = self._run_llm_request(
+                request=active_request,
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+            )
+        except LlmCallError as error:
+            if not _should_retry_translation_compact(error):
+                raise
+            _log(
+                logger,
+                run_id=run_id,
+                doc_id=doc_id,
+                stage="annotate_ru",
+                event="translation_compact_retry",
+                level="warning",
+                message=(
+                    "Translation request returned a retryable incomplete result; "
+                    "retrying compact structured payload once."
+                ),
+                error={"code": error.code, "message": error.message},
+                details=error.details,
+            )
+            translation_response = self._run_llm_request(
+                request=active_request,
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+            )
+        return active_request, translation_response
+
+    def _validate_or_repair_analysis_response(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        logger: JsonlPipelineLogger,
+        source_language_code: str,
+        analysis_request: StructuredLlmRequest,
+        analysis_response: StructuredLlmResponse,
+    ) -> tuple[AnalysisAnnotationOutput, StructuredLlmRequest, StructuredLlmResponse]:
+        try:
+            analysis_output = AnalysisAnnotationOutput.model_validate(
+                analysis_response.output_payload
+            )
+        except ValidationError as error:
+            validation_errors = [
+                issue["msg"] for issue in error.errors(include_url=False)
+            ]
+            return self._repair_analysis_response(
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+                source_language_code=source_language_code,
+                candidate_output=analysis_response.output_payload,
+                validation_errors=validation_errors,
+            )
+        validation_errors = validate_analysis_business_rules(
+            analysis_output,
+            source_language=source_language_code,
+        )
+        if not validation_errors:
+            return analysis_output, analysis_request, analysis_response
+        return self._repair_analysis_response(
+            run_id=run_id,
+            doc_id=doc_id,
+            logger=logger,
+            source_language_code=source_language_code,
+            candidate_output=analysis_response.output_payload,
+            validation_errors=validation_errors,
+        )
+
+    def _repair_analysis_response(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        logger: JsonlPipelineLogger,
+        source_language_code: str,
+        candidate_output: dict[str, Any],
+        validation_errors: list[str],
+    ) -> tuple[AnalysisAnnotationOutput, StructuredLlmRequest, StructuredLlmResponse]:
+        _log(
+            logger,
+            run_id=run_id,
+            doc_id=doc_id,
+            stage="annotate_original",
+            event="repair_requested",
+            level="warning",
+            message="Analysis output failed validation; requesting repair pass.",
+            details={"validation_errors": validation_errors},
+        )
+        repair_request = self._build_analysis_repair_request(
+            run_id=run_id,
+            doc_id=doc_id,
+            source_language_code=source_language_code,
+            candidate_output=candidate_output,
+            validation_errors=validation_errors,
+        )
+        repair_response = self._run_llm_request(
+            request=repair_request,
+            run_id=run_id,
+            doc_id=doc_id,
+            logger=logger,
+        )
+        repaired_output = AnalysisAnnotationOutput.model_validate(
+            repair_response.output_payload
+        )
+        repair_errors = validate_analysis_business_rules(
+            repaired_output,
+            source_language=source_language_code,
+        )
+        if repair_errors:
+            raise AnalysisBusinessValidationError(repair_errors)
+        return repaired_output, repair_request, repair_response
+
+    def _validate_or_repair_translation_response(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        logger: JsonlPipelineLogger,
+        translation_request: StructuredLlmRequest,
+        translation_response: StructuredLlmResponse,
+    ) -> tuple[
+        TranslationAnnotationOutput,
+        StructuredLlmRequest,
+        StructuredLlmResponse,
+    ]:
+        try:
+            translation_output = TranslationAnnotationOutput.model_validate(
+                translation_response.output_payload
+            )
+        except ValidationError as error:
+            validation_errors = [
+                issue["msg"] for issue in error.errors(include_url=False)
+            ]
+            return self._repair_translation_response(
+                run_id=run_id,
+                doc_id=doc_id,
+                logger=logger,
+                candidate_output=translation_response.output_payload,
+                validation_errors=validation_errors,
+            )
+        validation_errors = validate_translation_business_rules(translation_output)
+        if not validation_errors:
+            return translation_output, translation_request, translation_response
+        return self._repair_translation_response(
+            run_id=run_id,
+            doc_id=doc_id,
+            logger=logger,
+            candidate_output=translation_response.output_payload,
+            validation_errors=validation_errors,
+        )
+
+    def _repair_translation_response(
+        self,
+        *,
+        run_id: str,
+        doc_id: str,
+        logger: JsonlPipelineLogger,
+        candidate_output: dict[str, Any],
+        validation_errors: list[str],
+    ) -> tuple[
+        TranslationAnnotationOutput,
+        StructuredLlmRequest,
+        StructuredLlmResponse,
+    ]:
+        _log(
+            logger,
+            run_id=run_id,
+            doc_id=doc_id,
+            stage="annotate_ru",
+            event="repair_requested",
+            level="warning",
+            message="Translation output failed validation; requesting repair pass.",
+            details={"validation_errors": validation_errors},
+        )
+        repair_request = self._build_translation_repair_request(
+            run_id=run_id,
+            doc_id=doc_id,
+            candidate_output=candidate_output,
+            validation_errors=validation_errors,
+        )
+        repair_response = self._run_llm_request(
+            request=repair_request,
+            run_id=run_id,
+            doc_id=doc_id,
+            logger=logger,
+        )
+        repaired_output = TranslationAnnotationOutput.model_validate(
+            repair_response.output_payload
+        )
+        repair_errors = validate_translation_business_rules(repaired_output)
+        if repair_errors:
+            raise TranslationBusinessValidationError(repair_errors)
+        return repaired_output, repair_request, repair_response
 
     def _select_document_action(
         self,
@@ -1237,18 +1759,26 @@ class AnnotationPipeline:
     ) -> str | None:
         if existing is None:
             return None
-        normalized_text_sha256 = _normalized_text_sha(existing)
+        canonical_text_sha256 = _canonical_text_sha(existing)
         prompt_profile = _classification_prompt_profile(existing)
-        if not normalized_text_sha256 or prompt_profile is None:
+        source_language_code = _source_language(existing)
+        if (
+            not canonical_text_sha256
+            or prompt_profile is None
+            or not source_language_code
+        ):
             return None
         if prompt_profile is PromptProfile.SKIP_NON_TARGET:
             return None
         try:
-            resolved_prompt = self.prompt_resolver.resolve_analysis_prompt(prompt_profile)
+            resolved_prompt = self.prompt_resolver.resolve_analysis_prompt(
+                prompt_profile,
+                source_language_code=source_language_code,
+            )
         except (FileNotFoundError, ValueError):
             return None
         return build_analysis_fingerprint(
-            normalized_text_sha256=normalized_text_sha256,
+            canonical_text_sha256=canonical_text_sha256,
             prompt_profile=prompt_profile,
             prompt_pack_version=self.config.prompts.prompt_pack_version,
             prompt_hash=resolved_prompt.prompt_hash,
@@ -1373,7 +1903,7 @@ class AnnotationPipeline:
             try:
                 response = self._llm().run(request)
             except LlmCallError as error:
-                transient = error.code in _TRANSIENT_LLM_ERROR_CODES
+                transient = _should_retry_llm_error(error)
                 if logger is not None:
                     _log(
                         logger,
@@ -1398,10 +1928,7 @@ class AnnotationPipeline:
                             error_details=error.details,
                         ),
                     )
-                if (
-                    not transient
-                    or attempt >= attempts
-                ):
+                if not transient or attempt >= attempts:
                     raise
                 if logger is not None:
                     _log(
@@ -1449,6 +1976,43 @@ class AnnotationPipeline:
                 )
             return response
         raise RuntimeError("LLM retry loop exited unexpectedly.")
+
+
+def _build_analysis_input_payload(
+    *,
+    doc_id: str,
+    language_code: str,
+    title: str | None,
+    parse_metadata: dict[str, object],
+    canonical_result: CanonicalTextResult,
+    force_packed_input: bool,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "doc_id": doc_id,
+        "relative_path": doc_id,
+        "language_original": language_code,
+        "title": title,
+        "doc_metadata": parse_metadata,
+        "text_preview": canonical_result.text_preview,
+        "canonicalization_strategy": canonical_result.strategy,
+    }
+    use_packed_input = force_packed_input or (
+        len(canonical_result.canonical_text) > PACKED_INPUT_THRESHOLD_CHARS
+    )
+    if use_packed_input:
+        payload["document_sections"] = [
+            {
+                "section_id": section.section_id,
+                "heading": section.heading,
+                "text": section.text,
+            }
+            for section in canonical_result.sections
+        ]
+        payload["input_mode"] = "packed_sections"
+        return payload
+    payload["canonical_text"] = canonical_result.canonical_text
+    payload["input_mode"] = "canonical_text"
+    return payload
 
 
 def should_skip_existing_document_in_new_mode(
@@ -1698,6 +2262,26 @@ def _analysis_fingerprint(existing: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _require_openai_api_key(
+    *,
+    config: PipelineConfig,
+    llm_client: AnnotationLlmClient | None,
+    dry_run: bool,
+) -> None:
+    if dry_run:
+        return
+    if llm_client is not None:
+        return
+    if config.model.provider != "openai" or config.model.api != "responses":
+        return
+    if os.getenv("OPENAI_API_KEY"):
+        return
+    raise RuntimeError(
+        "OPENAI_API_KEY is not configured. "
+        "Run preflight and export the key before live annotation."
+    )
+
+
 def _annotation_status(existing: dict[str, Any]) -> str | None:
     annotation = existing.get("annotation", {})
     if not isinstance(annotation, dict):
@@ -1706,12 +2290,71 @@ def _annotation_status(existing: dict[str, Any]) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _normalized_text_sha(existing: dict[str, Any]) -> str | None:
+def _canonical_text_sha(existing: dict[str, Any]) -> str | None:
     source = existing.get("source", {})
     if not isinstance(source, dict):
         return None
-    value = source.get("normalized_text_sha256")
+    value = source.get("canonical_text_sha256")
     return value if isinstance(value, str) and value else None
+
+
+def _source_language(existing: dict[str, Any]) -> str | None:
+    source = existing.get("source", {})
+    if not isinstance(source, dict):
+        return None
+    value = source.get("language_original")
+    return value if isinstance(value, str) and value else None
+
+
+def _should_retry_llm_error(error: LlmCallError) -> bool:
+    if error.code in _TRANSPORT_RETRYABLE_LLM_ERROR_CODES:
+        return True
+    if error.code == "llm_http_error":
+        status_code = None
+        if error.details is not None:
+            raw_status = error.details.get("status_code")
+            if isinstance(raw_status, int):
+                status_code = raw_status
+        return _is_retryable_http_status(status_code)
+    if error.code == "llm_incomplete":
+        reason = _extract_incomplete_reason(error.details)
+        return reason is None
+    return False
+
+
+def _should_retry_analysis_with_packed_input(
+    error: LlmCallError,
+    request: StructuredLlmRequest,
+) -> bool:
+    if error.code != "llm_incomplete":
+        return False
+    if _extract_incomplete_reason(error.details) != "max_output_tokens":
+        return False
+    return request.input_payload.get("input_mode") != "packed_sections"
+
+
+def _should_retry_translation_compact(error: LlmCallError) -> bool:
+    if error.code != "llm_incomplete":
+        return False
+    return _extract_incomplete_reason(error.details) == "max_output_tokens"
+
+
+def _extract_incomplete_reason(details: dict[str, Any] | None) -> str | None:
+    if not isinstance(details, dict):
+        return None
+    incomplete_details = details.get("incomplete_details")
+    if not isinstance(incomplete_details, dict):
+        return None
+    reason = incomplete_details.get("reason")
+    return reason if isinstance(reason, str) else None
+
+
+def _is_retryable_http_status(status_code: int | None) -> bool:
+    if status_code is None:
+        return False
+    if status_code in {408, 409, 429}:
+        return True
+    return 500 <= status_code < 600
 
 
 def _classification_prompt_profile(

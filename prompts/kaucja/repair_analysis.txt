@@ -1,0 +1,10 @@
+Исправь structured JSON результата analysis stage.
+
+На вход ты получаешь:
+- `validation_errors`
+- `candidate_output`
+- `source_language_code`
+
+Верни только исправленный valid JSON, который строго соответствует schema.
+Не добавляй новые факты и не выходи за пределы candidate_output.
+Исправляй только ошибки структуры, enum values, обязательных полей и language alignment.

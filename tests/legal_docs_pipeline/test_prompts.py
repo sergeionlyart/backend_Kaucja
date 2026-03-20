@@ -18,16 +18,21 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 def test_prompt_resolver_builds_analysis_prompt_and_hash() -> None:
     resolver = FilePromptResolver(PROJECT_ROOT / "prompts/kaucja")
 
-    resolved = resolver.resolve_analysis_prompt(PromptProfile.ADDON_CASE_LAW)
+    resolved = resolver.resolve_analysis_prompt(
+        PromptProfile.ADDON_CASE_LAW,
+        source_language_code="pl",
+    )
 
     assert [path.name for path in resolved.prompt_paths] == [
         "base_system.txt",
         "addon_case_law.txt",
     ]
     assert "судебным решением" in resolved.prompt_text
+    assert "{OUTPUT_LANGUAGE}" not in resolved.prompt_text
     assert len(resolved.prompt_hash) == 64
     assert resolved.prompt_hash == resolver.resolve_analysis_prompt(
-        PromptProfile.ADDON_CASE_LAW
+        PromptProfile.ADDON_CASE_LAW,
+        source_language_code="pl",
     ).prompt_hash
 
 
@@ -35,7 +40,10 @@ def test_prompt_resolver_rejects_non_annotatable_profile() -> None:
     resolver = FilePromptResolver(PROJECT_ROOT / "prompts/kaucja")
 
     with pytest.raises(ValueError):
-        resolver.resolve_analysis_prompt(PromptProfile.SKIP_NON_TARGET)
+        resolver.resolve_analysis_prompt(
+            PromptProfile.SKIP_NON_TARGET,
+            source_language_code="pl",
+        )
 
 
 def test_prompt_resolver_builds_translation_prompt() -> None:
@@ -44,15 +52,18 @@ def test_prompt_resolver_builds_translation_prompt() -> None:
     resolved = resolver.resolve_translation_prompt()
 
     assert [path.name for path in resolved.prompt_paths] == ["translate_to_ru.txt"]
-    assert "Не перечитывай исходный markdown" in resolved.prompt_text
+    assert "не перечитывай исходный markdown" in resolved.prompt_text.lower()
 
 
 def test_prompt_hash_and_fingerprint_are_deterministic() -> None:
     resolver = FilePromptResolver(PROJECT_ROOT / "prompts/kaucja")
-    resolved = resolver.resolve_analysis_prompt(PromptProfile.ADDON_NORMATIVE)
+    resolved = resolver.resolve_analysis_prompt(
+        PromptProfile.ADDON_NORMATIVE,
+        source_language_code="pl",
+    )
 
     fingerprint_one = build_analysis_fingerprint(
-        normalized_text_sha256="text-sha",
+        canonical_text_sha256="text-sha",
         prompt_profile=PromptProfile.ADDON_NORMATIVE,
         prompt_pack_version="2026-03-16",
         prompt_hash=resolved.prompt_hash,
@@ -63,7 +74,7 @@ def test_prompt_hash_and_fingerprint_are_deterministic() -> None:
         pipeline_version="1.0.0",
     )
     fingerprint_two = build_analysis_fingerprint(
-        normalized_text_sha256="text-sha",
+        canonical_text_sha256="text-sha",
         prompt_profile=PromptProfile.ADDON_NORMATIVE,
         prompt_pack_version="2026-03-16",
         prompt_hash=resolved.prompt_hash,

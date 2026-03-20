@@ -92,20 +92,27 @@ class TopicCode(str, Enum):
     DISCOVERY_NAVIGATION = "discovery_navigation"
 
 
-PIPELINE_SCHEMA_VERSION = "1.0.0"
-PIPELINE_IMPLEMENTATION_VERSION = "1.0.0"
-DEDUPE_VERSION = "1.0.0"
-ROUTER_VERSION = "1.0.0"
+PIPELINE_SCHEMA_VERSION = "2.0.0"
+PIPELINE_IMPLEMENTATION_VERSION = "2.0.0"
+DEDUPE_VERSION = "2.0.0"
+ROUTER_VERSION = "2.0.0"
+DEFAULT_MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024
+DEFAULT_MONGO_DOCUMENT_MAX_BYTES = 16 * 1024 * 1024
 DEFAULT_CONFIG_PATH = Path("config/pipeline.yaml")
 DEFAULT_INPUT_GLOB = "**/*.md"
 DEFAULT_PROMPT_PACK_ID = "kaucja-prompt-pack"
-DEFAULT_PROMPT_PACK_VERSION = "2026-03-16"
+DEFAULT_PROMPT_PACK_VERSION = "2026-03-20"
 BASE_PROMPT_FILENAME = "base_system.txt"
 TRANSLATION_PROMPT_FILENAME = "translate_to_ru.txt"
+REPAIR_ANALYSIS_PROMPT_FILENAME = "repair_analysis.txt"
+REPAIR_TRANSLATION_PROMPT_FILENAME = "repair_translation_ru.txt"
 OUTPUT_SCHEMA_INSTRUCTION = (
     "Return only valid JSON that strictly matches the provided JSON Schema. "
     "Do not add markdown or commentary outside the JSON object."
 )
+TEXT_PREVIEW_CHARS = 500
+PACKED_INPUT_THRESHOLD_CHARS = 20_000
+PACKED_SECTION_MAX_CHARS = 2_500
 
 PROMPT_PROFILE_TO_FILENAME: dict[PromptProfile, str] = {
     PromptProfile.ADDON_NORMATIVE: "addon_normative.txt",

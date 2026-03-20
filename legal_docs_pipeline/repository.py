@@ -10,6 +10,7 @@ import re
 from time import sleep
 from typing import Any, Protocol
 
+from bson import BSON
 from pymongo import MongoClient
 from pymongo.errors import (
     AutoReconnect,
@@ -19,7 +20,9 @@ from pymongo.errors import (
     WriteConcernError,
 )
 
+from .canonicalize import CanonicalTextResult
 from .config import PipelineConfig
+from .constants import DEFAULT_MONGO_DOCUMENT_MAX_BYTES
 from .language import LanguageDetectionResult
 from .llm import StructuredLlmRequest, StructuredLlmResponse
 from .parser import ParsedMarkdownDocument
@@ -34,6 +37,7 @@ from .schemas import (
 _DISCOVER_STAGE = "discover"
 _READ_STAGE = "read"
 _PARSE_STAGE = "parse"
+_CANONICALIZE_STAGE = "canonicalize"
 _CLASSIFY_STAGE = "classify"
 _ANNOTATE_ORIGINAL_STAGE = "annotate_original"
 _ANNOTATE_RU_STAGE = "annotate_ru"
@@ -42,6 +46,7 @@ _ALL_STAGES = (
     _DISCOVER_STAGE,
     _READ_STAGE,
     _PARSE_STAGE,
+    _CANONICALIZE_STAGE,
     _CLASSIFY_STAGE,
     _ANNOTATE_ORIGINAL_STAGE,
     _ANNOTATE_RU_STAGE,
@@ -80,6 +85,13 @@ class RepositoryWriteResult:
     revision_no: int
 
 
+class RepositoryWriteError(RuntimeError):
+    def __init__(self, *, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
 class MongoDocumentRepository:
     def __init__(
         self,
@@ -91,6 +103,7 @@ class MongoDocumentRepository:
         router_version: str,
         history_tail_size: int,
         retry_mongo_writes: int = 0,
+        max_document_bytes: int = DEFAULT_MONGO_DOCUMENT_MAX_BYTES,
         client: MongoClient[dict[str, Any]] | None = None,
     ) -> None:
         self._collection = collection
@@ -100,6 +113,7 @@ class MongoDocumentRepository:
         self._router_version = router_version
         self._history_tail_size = history_tail_size
         self._retry_mongo_writes = retry_mongo_writes
+        self._max_document_bytes = max_document_bytes
         self._client = client
 
     @classmethod
@@ -130,11 +144,16 @@ class MongoDocumentRepository:
     def ensure_indexes(self) -> None:
         _safe_create_index(self._collection, [("_id", 1)])
         _safe_create_index(self._collection, [("source.file_sha256", 1)])
-        _safe_create_index(self._collection, [("source.normalized_text_sha256", 1)])
+        _safe_create_index(self._collection, [("source.canonical_text_sha256", 1)])
         _safe_create_index(self._collection, [("processing.status", 1)])
 
     def get_document(self, doc_id: str) -> dict[str, Any] | None:
-        return self._collection.find_one({"_id": doc_id})
+        document = self._collection.find_one({"_id": doc_id})
+        if document is None:
+            return None
+        normalized = copy.deepcopy(document)
+        _ensure_loaded_document_defaults(normalized)
+        return normalized
 
     def upsert_discovered(
         self,
@@ -230,16 +249,12 @@ class MongoDocumentRepository:
         now = _utc_now()
         source = document["source"]
         source["encoding"] = read_result.encoding
-        source["raw_markdown"] = read_result.raw_markdown
-        source["normalized_text"] = read_result.normalized_text
-        source["normalized_text_sha256"] = read_result.normalized_text_sha256
         source["title"] = read_result.title
-        source["text_stats"] = {
+        source["text_stats_raw"] = {
             "chars": read_result.text_stats.chars,
             "lines": read_result.text_stats.lines,
             "words": read_result.text_stats.words,
         }
-        document["dedup"]["exact_content_key"] = read_result.normalized_text_sha256
         processing = document["processing"]
         processing["current_stage"] = _READ_STAGE
         processing["status"] = "read"
@@ -260,24 +275,21 @@ class MongoDocumentRepository:
         *,
         doc_id: str,
         parse_result: ParsedMarkdownDocument,
-        language_result: LanguageDetectionResult,
     ) -> None:
         document = self._load_required_document(doc_id)
         now = _utc_now()
         source = document["source"]
         source["doc_metadata"] = dict(parse_result.doc_metadata)
-        source["content_markdown"] = parse_result.content_markdown
         if parse_result.title:
             source["title"] = parse_result.title
-        source["language_original"] = language_result.language_code
 
         canonical_doc_uid = parse_result.doc_metadata.get("canonical_doc_uid")
         document["dedup"]["canonical_doc_uid"] = canonical_doc_uid
         document["dedup"]["logical_doc_key"] = canonical_doc_uid or doc_id
 
         processing = document["processing"]
-        processing["current_stage"] = _PARSE_STAGE
-        processing["status"] = "pending_classification"
+        processing["current_stage"] = _CANONICALIZE_STAGE
+        processing["status"] = "pending_canonicalize"
         processing["completed_at"] = None
         processing["error"] = None
         processing["warnings"] = _merge_warnings(
@@ -293,8 +305,50 @@ class MongoDocumentRepository:
         )
 
         search = document["search"]
-        search["language_original"] = language_result.language_code
         search["canonical_doc_uid"] = canonical_doc_uid
+        search["processing_status"] = "pending_canonicalize"
+        document["updated_at"] = now
+        self._write_document(document)
+
+    def apply_canonical_result(
+        self,
+        *,
+        doc_id: str,
+        canonical_result: CanonicalTextResult,
+        language_result: LanguageDetectionResult,
+    ) -> None:
+        document = self._load_required_document(doc_id)
+        now = _utc_now()
+        source = document["source"]
+        source["canonical_text_sha256"] = canonical_result.canonical_text_sha256
+        source["text_preview"] = canonical_result.text_preview
+        source["text_stats_canonical"] = {
+            "chars": canonical_result.text_stats_canonical.chars,
+            "lines": canonical_result.text_stats_canonical.lines,
+            "words": canonical_result.text_stats_canonical.words,
+        }
+        source["canonicalization"] = {
+            "strategy": canonical_result.strategy,
+            "sections_count": len(canonical_result.sections),
+        }
+        source["language_original"] = language_result.language_code
+
+        document["dedup"]["exact_content_key"] = canonical_result.canonical_text_sha256
+        processing = document["processing"]
+        processing["current_stage"] = _CLASSIFY_STAGE
+        processing["status"] = "pending_classification"
+        processing["completed_at"] = None
+        processing["error"] = None
+        _set_stage_state(
+            processing["stages"],
+            stage_name=_CANONICALIZE_STAGE,
+            status="completed",
+            completed_at=now,
+            error=None,
+        )
+
+        search = document["search"]
+        search["language_original"] = language_result.language_code
         search["processing_status"] = "pending_classification"
         document["updated_at"] = now
         self._write_document(document)
@@ -477,7 +531,6 @@ class MongoDocumentRepository:
         completed_at = llm_response.completed_at or _utc_now()
         annotation = document["annotation"]
         annotation["status"] = "completed"
-        annotation["semantic"] = translation_output.semantic.model_dump(mode="json")
         annotation["ru"] = translation_output.annotation_ru.model_dump(mode="json")
         annotation.setdefault("qa", {})
         annotation["qa"]["manual_review_required"] = False
@@ -701,12 +754,26 @@ class MongoDocumentRepository:
         return copy.deepcopy(document)
 
     def _write_document(self, document: dict[str, Any]) -> None:
+        _drop_legacy_source_blob_fields(document["source"])
+        self._guard_document_size(document)
+        existing = self.get_document(str(document["_id"]))
+        set_payload, unset_payload = _build_patch_payload(
+            existing=existing,
+            updated=document,
+        )
+        if not set_payload and not unset_payload:
+            return
         attempts = self._retry_mongo_writes + 1
         for attempt in range(1, attempts + 1):
             try:
+                update: dict[str, Any] = {}
+                if set_payload:
+                    update["$set"] = set_payload
+                if unset_payload:
+                    update["$unset"] = unset_payload
                 self._collection.update_one(
                     {"_id": document["_id"]},
-                    {"$set": document},
+                    update,
                     upsert=True,
                 )
                 return
@@ -714,6 +781,18 @@ class MongoDocumentRepository:
                 if attempt >= attempts:
                     raise
                 sleep(_retry_backoff_seconds(attempt))
+
+    def _guard_document_size(self, document: dict[str, Any]) -> None:
+        payload_size = len(BSON.encode(document))
+        if payload_size <= self._max_document_bytes:
+            return
+        raise RepositoryWriteError(
+            code="mongo_document_too_large",
+            message=(
+                "Estimated MongoDB document size exceeds the configured limit: "
+                f"{payload_size} bytes for {document['_id']}"
+            ),
+        )
 
 
 def _build_error_payload(
@@ -729,6 +808,45 @@ def _build_error_payload(
     if error_details:
         payload["details"] = error_details
     return payload
+
+
+def _build_patch_payload(
+    *,
+    existing: dict[str, Any] | None,
+    updated: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    existing_flat = _flatten_document(existing or {})
+    updated_flat = _flatten_document(updated)
+    updated_paths = tuple(updated_flat.keys())
+    set_payload = {
+        path: value
+        for path, value in updated_flat.items()
+        if existing_flat.get(path) != value
+    }
+    unset_payload = {
+        path: ""
+        for path in existing_flat
+        if path not in updated_flat
+        and not any(updated_path.startswith(f"{path}.") for updated_path in updated_paths)
+    }
+    return set_payload, unset_payload
+
+
+def _flatten_document(
+    payload: dict[str, Any],
+    *,
+    prefix: str = "",
+) -> dict[str, Any]:
+    flattened: dict[str, Any] = {}
+    for key, value in payload.items():
+        path = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            if not value:
+                continue
+            flattened.update(_flatten_document(value, prefix=path))
+            continue
+        flattened[path] = value
+    return flattened
 
 
 def _new_document_skeleton(
@@ -767,12 +885,15 @@ def _new_document_skeleton(
             "encoding": "utf-8",
             "title": None,
             "language_original": "und",
-            "raw_markdown": "",
-            "normalized_text": "",
-            "normalized_text_sha256": "",
-            "text_stats": {"chars": 0, "lines": 0, "words": 0},
+            "canonical_text_sha256": "",
+            "text_stats_raw": {"chars": 0, "lines": 0, "words": 0},
+            "text_stats_canonical": {"chars": 0, "lines": 0, "words": 0},
+            "text_preview": "",
+            "canonicalization": {
+                "strategy": None,
+                "sections_count": 0,
+            },
             "doc_metadata": {},
-            "content_markdown": None,
             "revision_no": 1,
         },
         "dedup": {
@@ -880,12 +1001,22 @@ def _ensure_document_defaults(
     document["source"].setdefault("encoding", "utf-8")
     document["source"].setdefault("title", None)
     document["source"].setdefault("language_original", "und")
-    document["source"].setdefault("raw_markdown", "")
-    document["source"].setdefault("normalized_text", "")
-    document["source"].setdefault("normalized_text_sha256", "")
-    document["source"].setdefault("text_stats", {"chars": 0, "lines": 0, "words": 0})
+    document["source"].setdefault("canonical_text_sha256", "")
+    document["source"].setdefault(
+        "text_stats_raw", {"chars": 0, "lines": 0, "words": 0}
+    )
+    document["source"].setdefault(
+        "text_stats_canonical", {"chars": 0, "lines": 0, "words": 0}
+    )
+    document["source"].setdefault("text_preview", "")
+    document["source"].setdefault(
+        "canonicalization",
+        {
+            "strategy": None,
+            "sections_count": 0,
+        },
+    )
     document["source"].setdefault("doc_metadata", {})
-    document["source"].setdefault("content_markdown", None)
     document["source"].setdefault("revision_no", 1)
 
     document["dedup"].setdefault("canonical_doc_uid", None)
@@ -942,6 +1073,7 @@ def _ensure_document_defaults(
     processing.setdefault("warnings", [])
     processing.setdefault("stages", _empty_stage_map())
     processing.setdefault("history_tail", [])
+    _drop_legacy_source_blob_fields(document["source"])
 
 
 def _update_scan_fields(document: dict[str, Any], discovered: DiscoveredDocument) -> None:
@@ -958,6 +1090,49 @@ def _update_scan_fields(document: dict[str, Any], discovered: DiscoveredDocument
     source["size_bytes"] = discovered.size_bytes
     source["modified_at"] = discovered.modified_at
     source["file_sha256"] = discovered.sha256_hex
+
+
+def _drop_legacy_source_blob_fields(source: dict[str, Any]) -> None:
+    source.pop("raw_markdown", None)
+    source.pop("normalized_text", None)
+    source.pop("normalized_text_sha256", None)
+    source.pop("content_markdown", None)
+
+
+def _ensure_loaded_document_defaults(document: dict[str, Any]) -> None:
+    document.setdefault("classification", {})
+    annotation = document.setdefault("annotation", {})
+    annotation.setdefault("qa", {})
+    annotation["qa"].setdefault("manual_review_required", False)
+    annotation["qa"].setdefault("validation_errors", [])
+    annotation["qa"].setdefault("warnings", [])
+
+    llm = document.setdefault("llm", {})
+    llm.setdefault("analysis", {})
+    llm.setdefault("translation_ru", {})
+
+    processing = document.setdefault("processing", {})
+    processing.setdefault("last_success_at", None)
+    processing.setdefault("error", None)
+    processing.setdefault("warnings", [])
+    processing.setdefault("history_tail", [])
+    processing.setdefault("stages", _empty_stage_map())
+
+    source = document.setdefault("source", {})
+    source.setdefault("language_original", "und")
+    source.setdefault("canonical_text_sha256", "")
+    source.setdefault("text_stats_raw", {"chars": 0, "lines": 0, "words": 0})
+    source.setdefault("text_stats_canonical", {"chars": 0, "lines": 0, "words": 0})
+    source.setdefault("text_preview", "")
+    source.setdefault("canonicalization", {"strategy": None, "sections_count": 0})
+    source.setdefault("doc_metadata", {})
+    source.setdefault("revision_no", 1)
+
+    search = document.setdefault("search", {})
+    search.setdefault("language_original", source.get("language_original", "und"))
+    search.setdefault("tags_original", [])
+    search.setdefault("tags_ru", [])
+    search.setdefault("processing_status", processing.get("status", "discovered"))
 
 
 def _empty_stage_map() -> dict[str, dict[str, Any]]:
