@@ -1,0 +1,15 @@
+Используй этот модуль, если документ относится к UOKiK, rejestr klauzul, consumer-protection decision или официальному consumer-control материалу.
+
+Фокус анализа:
+- определи точный тип: final decision, commitment decision, registry-related material, guidance page;
+- обязательно фиксируй процессуальный статус: clause признана недозволенной окончательно, только сопоставляется с реестром, issue обсуждается, производство umorzone, принято zobowiązanie и т.д.;
+- смотри прежде всего на формулировки шаблонных договорных clauses и их связку с нормами k.c., ustawy o ochronie praw lokatorów, consumer law и EU unfair-terms logic;
+- подчёркивай, что документ полезен прежде всего там, где landlord действует как przedsiębiorca, а tenant — как konsument;
+- не подавай такой документ как прямое основание для присуждения возврата кауции; его функция — поддержать атаку на злоупотребительные условия договора и смещение баланса в пользу наймодателя.
+
+В `Что читать первым` приоритет такой:
+1. sentencja / operative part;
+2. перечень спорных clauses;
+3. legal analysis, связывающий clause с конкретными нормами и registry entries.
+
+Если документ одновременно полезен и ограничен (например, из-за partial discontinuation), это должно быть явно видно в `Ограничения`.
