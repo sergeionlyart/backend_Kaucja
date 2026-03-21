@@ -15,14 +15,12 @@ _TERMINAL_PROVIDER_STATUSES = frozenset({"completed", "failed", "expired", "canc
 _INFLIGHT_PROVIDER_STATUSES = frozenset(
     {"submitted", "validating", "in_progress", "finalizing"}
 )
+_TRULY_APPLIED_STATUSES = frozenset(
+    {"applied_success", "fallback_completed", "stale", "superseded"}
+)
+_TERMINAL_FAILED_APPLY_STATUSES = frozenset({"applied_failed", "fallback_failed"})
 _TERMINAL_APPLY_STATUSES = frozenset(
-    {
-        "applied_success",
-        "applied_failed",
-        "fallback_completed",
-        "fallback_failed",
-        "stale",
-    }
+    _TRULY_APPLIED_STATUSES | _TERMINAL_FAILED_APPLY_STATUSES
 )
 
 
@@ -160,11 +158,16 @@ class MongoBatchStateRepository:
         cost_estimate: dict[str, Any] | None,
     ) -> BatchQueueWriteResult:
         now = _utc_now()
+        self._invalidate_superseded_queued_items(
+            doc_id=doc_id,
+            stage=stage,
+            exclude_custom_id=custom_id,
+        )
         existing = self.get_item(custom_id)
         if existing is not None:
             apply_status = str(existing.get("apply_status", "pending"))
             provider_status = self._item_provider_status(existing)
-            if apply_status == "stale":
+            if apply_status in {"stale", "superseded"}:
                 self._items.update_one(
                     {"_id": self._storage_item_id(custom_id)},
                     {
@@ -185,7 +188,28 @@ class MongoBatchStateRepository:
                     upsert=False,
                 )
                 return BatchQueueWriteResult(created=False, status="stale_replaced")
-            if apply_status in _TERMINAL_APPLY_STATUSES:
+            if apply_status in _TERMINAL_FAILED_APPLY_STATUSES:
+                self._items.update_one(
+                    {"_id": self._storage_item_id(custom_id)},
+                    {
+                        "$set": self._build_item_document(
+                            custom_id=custom_id,
+                            doc_id=doc_id,
+                            stage=stage,
+                            request_hash=request_hash,
+                            prompt_hash=prompt_hash,
+                            source_language_code=source_language_code,
+                            request_record=request_record,
+                            request_body=request_body,
+                            analysis_fingerprint=analysis_fingerprint,
+                            cost_estimate=cost_estimate,
+                            queued_at=now,
+                        )
+                    },
+                    upsert=False,
+                )
+                return BatchQueueWriteResult(created=False, status="queued")
+            if apply_status in _TRULY_APPLIED_STATUSES:
                 return BatchQueueWriteResult(created=False, status="existing_applied")
             if provider_status in _TERMINAL_PROVIDER_STATUSES:
                 return BatchQueueWriteResult(created=False, status="existing_completed")
@@ -340,7 +364,7 @@ class MongoBatchStateRepository:
             apply_status = str(job.get("apply_status", "pending"))
             if provider_status not in _TERMINAL_PROVIDER_STATUSES:
                 continue
-            if apply_status == "fully_applied":
+            if apply_status in {"fully_applied", "apply_failed"}:
                 continue
             ready.append(copy.deepcopy(job))
         return sorted(ready, key=lambda item: str(item.get("submitted_at", "")))
@@ -446,6 +470,48 @@ class MongoBatchStateRepository:
             "batch_job_id": None,
             "error_payload": None,
         }
+
+    def _invalidate_superseded_queued_items(
+        self,
+        *,
+        doc_id: str,
+        stage: str,
+        exclude_custom_id: str,
+    ) -> None:
+        now = _utc_now()
+        queued_items = self._items.find(
+            {
+                "target_database": self._target_database,
+                "target_collection": self._target_collection,
+                "doc_id": doc_id,
+                "stage": stage,
+                "provider_status": "queued",
+                "apply_status": "pending",
+            }
+        )
+        for item in queued_items:
+            custom_id = str(item.get("custom_id", ""))
+            if custom_id == exclude_custom_id:
+                continue
+            self._items.update_one(
+                {"_id": self._storage_item_id(custom_id)},
+                {
+                    "$set": {
+                        "apply_status": "superseded",
+                        "status": "superseded",
+                        "applied_at": now,
+                        "error_payload": {
+                            "code": "batch_item_superseded",
+                            "message": (
+                                "Queued batch item was superseded by a newer "
+                                "request for the same document and stage."
+                            ),
+                            "superseded_by": exclude_custom_id,
+                        },
+                    }
+                },
+                upsert=False,
+            )
 
     def _storage_item_id(self, custom_id: str) -> str:
         return (

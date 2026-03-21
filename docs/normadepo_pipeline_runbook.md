@@ -59,7 +59,11 @@ python scripts/batch_legal_docs.py apply --config config/pipeline.yaml
 
 - первая версия batch используется только для `annotate_original`;
 - `annotate_ru`, repair-pass и `rerun --doc-id` остаются direct;
-- batch-state хранится в Mongo-коллекциях `analysis_batch_jobs` и `analysis_batch_items`.
+- batch-state хранится в Mongo-коллекциях `analysis_batch_jobs_v2` и `analysis_batch_items_v2`;
+- повторный `prepare` должен:
+  - повторно queue'ить item после `applied_failed` / `fallback_failed`;
+  - инвалидировать superseded queued item для того же `doc_id + stage` до `submit`;
+- `apply_failed` считается terminal для конкретного batch job; retry делается через новый `prepare`, а не через бесконечный re-apply того же job.
 
 ## Live smoke pattern
 

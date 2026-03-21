@@ -95,20 +95,23 @@ class OpenAIResponsesAnnotationLlmClient:
 
     def run(self, request: StructuredLlmRequest) -> StructuredLlmResponse:
         started = monotonic()
+        request_kwargs: dict[str, Any] = {
+            "model": request.model_id,
+            "instructions": request.system_prompt,
+            "input": _serialize_input_payload(request.input_payload),
+            "text_format": request.output_model,
+            "text": {"verbosity": request.text_verbosity},
+            "max_output_tokens": request.max_output_tokens,
+            "metadata": request.metadata,
+            "store": request.store,
+            "truncation": request.truncation,
+        }
+        reasoning = _build_reasoning_payload(request.reasoning_effort)
+        if reasoning is not None:
+            request_kwargs["reasoning"] = reasoning
         try:
             with _request_timeout_guard(self._timeout_seconds):
-                response = self._service().parse(
-                    model=request.model_id,
-                    instructions=request.system_prompt,
-                    input=_serialize_input_payload(request.input_payload),
-                    text_format=request.output_model,
-                    text={"verbosity": request.text_verbosity},
-                    reasoning={"effort": request.reasoning_effort},
-                    max_output_tokens=request.max_output_tokens,
-                    metadata=request.metadata,
-                    store=request.store,
-                    truncation=request.truncation,
-                )
+                response = self._service().parse(**request_kwargs)
         except RateLimitError as error:
             raise LlmCallError(code="llm_rate_limit", message=str(error)) from error
         except APITimeoutError as error:
@@ -174,6 +177,12 @@ def _serialize_input_payload(input_payload: dict[str, Any]) -> str:
         sort_keys=True,
         indent=2,
     )
+
+
+def _build_reasoning_payload(reasoning_effort: str) -> dict[str, str] | None:
+    if reasoning_effort == "auto":
+        return None
+    return {"effort": reasoning_effort}
 
 
 def _build_incomplete_error_details(response: Any) -> dict[str, Any]:

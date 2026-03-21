@@ -21,7 +21,8 @@ def test_example_pipeline_config_loads_and_resolves_paths() -> None:
     assert config.mongo.collection == "documents_cas_law_v2_2_prod_v3"
     assert config.pipeline.workers == 1
     assert config.model.model_id == "gpt-5.4"
-    assert config.model.translation_ru_max_output_tokens == 12_000
+    assert config.model.translation_reasoning_effort == "auto"
+    assert config.model.translation_ru_max_output_tokens == 128_000
     assert config.model.request_timeout_seconds == 600
     assert config.pipeline.llm_dispatch_mode == "direct"
     assert config.pipeline.batch_inflight_jobs_limit == 2
@@ -37,6 +38,8 @@ def test_probe_pipeline_config_loads_with_diagnostic_overrides() -> None:
     assert config.prompts.prompt_dir == (PROJECT_ROOT / "prompts/kaucja").resolve()
     assert config.mongo.collection == "documents_cas_law_v2_2_llm_probe_v1"
     assert config.model.model_id == "gpt-5.4"
+    assert config.model.translation_reasoning_effort == "auto"
+    assert config.model.translation_ru_max_output_tokens == 128_000
     assert config.model.request_timeout_seconds == 600
     assert config.pipeline.retry_model_calls == 0
 
@@ -59,6 +62,7 @@ def test_translation_budget_allows_values_below_previous_floor(tmp_path: Path) -
                 "api": "responses",
                 "model_id": "gpt-5.4",
                 "reasoning_effort": "xhigh",
+                "translation_reasoning_effort": "auto",
                 "text_verbosity": "low",
                 "truncation": "disabled",
                 "store": False,
@@ -85,6 +89,7 @@ def test_translation_budget_allows_values_below_previous_floor(tmp_path: Path) -
     )
 
     assert config.model.translation_ru_max_output_tokens == 8000
+    assert config.model.translation_reasoning_effort == "auto"
     assert config.pipeline.llm_dispatch_mode == "batch_analysis"
 
 
@@ -107,11 +112,12 @@ def test_translation_budget_rejects_values_above_safety_clamp(tmp_path: Path) ->
                     "api": "responses",
                     "model_id": "gpt-5.4",
                     "reasoning_effort": "xhigh",
+                    "translation_reasoning_effort": "auto",
                     "text_verbosity": "low",
                     "truncation": "disabled",
                     "store": False,
                     "analysis_max_output_tokens": 32000,
-                    "translation_ru_max_output_tokens": 32000,
+                    "translation_ru_max_output_tokens": 128001,
                 },
                 "prompts": {
                     "prompt_pack_id": "kaucja-prompt-pack",

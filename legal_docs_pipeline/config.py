@@ -12,6 +12,7 @@ from .constants import (
     ANALYSIS_BATCH_JOBS_COLLECTION,
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
+    DEFAULT_TRANSLATION_RU_REASONING_EFFORT,
     DEFAULT_BATCH_DISCOUNT_FACTOR,
     DEDUPE_VERSION,
     DEFAULT_MAX_FILE_SIZE_BYTES,
@@ -50,6 +51,10 @@ class ModelConfig(BaseModel):
     api: str = Field(default="responses", min_length=1)
     model_id: str = Field(default="gpt-5.4", min_length=1)
     reasoning_effort: str = Field(default="xhigh", min_length=1)
+    translation_reasoning_effort: str = Field(
+        default=DEFAULT_TRANSLATION_RU_REASONING_EFFORT,
+        min_length=1,
+    )
     text_verbosity: str = Field(default="low", min_length=1)
     truncation: str = Field(default="disabled", min_length=1)
     store: bool = False

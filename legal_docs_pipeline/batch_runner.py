@@ -164,6 +164,7 @@ class BatchAnalysisRunner:
         run_id, logger, discovered, summary = self._initialize_batch_run(
             action="submit",
             options=BatchRunOptions(mode=PipelineMode.NEW, log_level=log_level),
+            discover_documents=False,
         )
         summary.discovered_count = len(discovered)
         batch_repository = self._batch_repository_factory(self.config)
@@ -231,6 +232,7 @@ class BatchAnalysisRunner:
         run_id, logger, discovered, summary = self._initialize_batch_run(
             action="poll",
             options=BatchRunOptions(mode=PipelineMode.NEW, log_level=log_level),
+            discover_documents=False,
         )
         summary.discovered_count = len(discovered)
         batch_repository = self._batch_repository_factory(self.config)
@@ -273,6 +275,7 @@ class BatchAnalysisRunner:
         run_id, logger, discovered, summary = self._initialize_batch_run(
             action="apply",
             options=BatchRunOptions(mode=PipelineMode.NEW, log_level=log_level),
+            discover_documents=False,
         )
         summary.discovered_count = len(discovered)
         document_repository = self._document_repository_factory(self.config)
@@ -413,15 +416,6 @@ class BatchAnalysisRunner:
                 apply_status="stale",
             )
             return _ApplyItemResult(outcome="stale", provider_status=provider_status)
-        document_repository.update_analysis_dispatch(
-            doc_id=str(item["doc_id"]),
-            dispatch_updates={
-                "mode": "batch_analysis",
-                "status": "completed",
-                "custom_id": custom_id,
-                "batch_job_id": batch_job_id,
-            },
-        )
         request = deserialize_analysis_request_record(dict(item["request_record"]))
         if result.response is None:
             return self._apply_failed_item(
@@ -777,6 +771,7 @@ class BatchAnalysisRunner:
         *,
         action: str,
         options: BatchRunOptions,
+        discover_documents: bool = True,
     ) -> tuple[str, JsonlPipelineLogger, list[Any], BatchCommandSummary]:
         if self.config.config_path is None:
             raise ValueError("config_path must be set on PipelineConfig.")
@@ -786,14 +781,16 @@ class BatchAnalysisRunner:
             log_dir=_default_log_dir(self.config.config_path),
             log_level=options.log_level,
         )
-        discovered = self.pipeline.scanner.scan(
-            self.config.input.root_path,
-            glob_pattern=self.config.input.glob,
-            ignore_hidden=self.config.input.ignore_hidden,
-            only_doc_id=options.only_doc_id,
-            from_relative_path=options.from_relative_path,
-            limit=options.limit,
-        )
+        discovered: list[Any] = []
+        if discover_documents:
+            discovered = self.pipeline.scanner.scan(
+                self.config.input.root_path,
+                glob_pattern=self.config.input.glob,
+                ignore_hidden=self.config.input.ignore_hidden,
+                only_doc_id=options.only_doc_id,
+                from_relative_path=options.from_relative_path,
+                limit=options.limit,
+            )
         summary = BatchCommandSummary(
             action=action,
             config_path=self.config.config_path,
@@ -854,7 +851,7 @@ class BatchAnalysisRunner:
         if not items or apply_statuses == {"pending"}:
             return "pending"
         if apply_statuses.issubset(
-            {"applied_success", "fallback_completed", "stale"}
+            {"applied_success", "fallback_completed", "stale", "superseded"}
         ):
             return "fully_applied"
         if "pending" in apply_statuses:

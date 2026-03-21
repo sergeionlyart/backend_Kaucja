@@ -237,7 +237,7 @@ class OpenAIResponsesBatchClient:
 
 
 def _build_responses_request_body(request: StructuredLlmRequest) -> dict[str, Any]:
-    return {
+    body = {
         "model": request.model_id,
         "instructions": request.system_prompt,
         "input": json.dumps(
@@ -255,12 +255,21 @@ def _build_responses_request_body(request: StructuredLlmRequest) -> dict[str, An
                 "schema": request.output_schema,
             },
         },
-        "reasoning": {"effort": request.reasoning_effort},
         "max_output_tokens": request.max_output_tokens,
         "metadata": request.metadata,
         "store": request.store,
         "truncation": request.truncation,
     }
+    reasoning = _build_reasoning_payload(request.reasoning_effort)
+    if reasoning is not None:
+        body["reasoning"] = reasoning
+    return body
+
+
+def _build_reasoning_payload(reasoning_effort: str) -> dict[str, str] | None:
+    if reasoning_effort == "auto":
+        return None
+    return {"effort": reasoning_effort}
 
 
 def _extract_structured_output_payload(body: dict[str, Any]) -> dict[str, Any]:
