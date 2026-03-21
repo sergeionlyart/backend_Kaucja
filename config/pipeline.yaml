@@ -7,7 +7,7 @@ input:
 mongo:
   uri: "mongodb://localhost:27017"
   database: "kaucja_legal_corpus"
-  collection: "documents_cas_law_v2_2_prod_v2"
+  collection: "documents_cas_law_v2_2_prod_v3"
 
 model:
   provider: "openai"
@@ -42,3 +42,6 @@ pipeline:
   batch_inflight_jobs_limit: 2
   batch_min_requests_to_submit: 5
   batch_apply_direct_fallback: true
+  batch_jobs_collection: "analysis_batch_jobs_v2"
+  batch_items_collection: "analysis_batch_items_v2"
+  batch_discount_factor: 0.5

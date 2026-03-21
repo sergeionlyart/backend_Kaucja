@@ -34,6 +34,8 @@ def estimate_stage_cost(
     response: StructuredLlmResponse | None = None,
     input_cost_per_1k_tokens_usd: float | None = None,
     output_cost_per_1k_tokens_usd: float | None = None,
+    dispatch_mode: str = "direct",
+    batch_discount_factor: float = 1.0,
 ) -> dict[str, Any]:
     input_tokens = (
         response.usage.input_tokens
@@ -48,18 +50,25 @@ def estimate_stage_cost(
     payload: dict[str, Any] = {
         "estimated_input_tokens": input_tokens,
         "estimated_output_tokens": output_tokens,
+        "dispatch_mode": dispatch_mode,
     }
+    if dispatch_mode == "batch_analysis":
+        payload["batch_discount_factor"] = batch_discount_factor
     if (
         input_cost_per_1k_tokens_usd is None
         or output_cost_per_1k_tokens_usd is None
     ):
         payload["estimated_cost_usd"] = None
         return payload
-    payload["estimated_cost_usd"] = round(
+    estimated_cost = round(
         (input_tokens / 1000.0) * input_cost_per_1k_tokens_usd
         + (output_tokens / 1000.0) * output_cost_per_1k_tokens_usd,
         6,
     )
+    payload["estimated_cost_before_discount_usd"] = estimated_cost
+    if dispatch_mode == "batch_analysis":
+        estimated_cost = round(estimated_cost * batch_discount_factor, 6)
+    payload["estimated_cost_usd"] = estimated_cost
     return payload
 
 
