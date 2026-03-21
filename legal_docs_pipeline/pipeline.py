@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
 from time import sleep
@@ -26,7 +25,6 @@ from .batch import (
 from .batch_repository import MongoBatchStateRepository
 from .config import PipelineConfig
 from .constants import (
-    DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
     DocumentFamily,
     LlmDispatchMode,
@@ -1492,7 +1490,7 @@ class AnnotationPipeline:
             provider=self.config.model.provider,
             api=self.config.model.api,
             model_id=self.config.model.model_id,
-            reasoning_effort=self.config.model.reasoning_effort,
+            reasoning_effort=self.config.model.translation_reasoning_effort,
             text_verbosity=self.config.model.text_verbosity,
             truncation=self.config.model.truncation,
             store=self.config.model.store,
@@ -1506,7 +1504,7 @@ class AnnotationPipeline:
                 input_payload=input_payload,
                 output_schema=output_schema,
                 model_id=self.config.model.model_id,
-                reasoning_effort=self.config.model.reasoning_effort,
+                reasoning_effort=self.config.model.translation_reasoning_effort,
                 text_verbosity=self.config.model.text_verbosity,
                 max_output_tokens=max_output_tokens,
             ),
@@ -1546,7 +1544,7 @@ class AnnotationPipeline:
             provider=self.config.model.provider,
             api=self.config.model.api,
             model_id=self.config.model.model_id,
-            reasoning_effort=self.config.model.reasoning_effort,
+            reasoning_effort=self.config.model.translation_reasoning_effort,
             text_verbosity=self.config.model.text_verbosity,
             truncation=self.config.model.truncation,
             store=self.config.model.store,
@@ -1560,7 +1558,7 @@ class AnnotationPipeline:
                 input_payload=input_payload,
                 output_schema=output_schema,
                 model_id=self.config.model.model_id,
-                reasoning_effort=self.config.model.reasoning_effort,
+                reasoning_effort=self.config.model.translation_reasoning_effort,
                 text_verbosity=self.config.model.text_verbosity,
                 max_output_tokens=max_output_tokens,
             ),
@@ -2558,23 +2556,11 @@ def _select_translation_output_budget(
     input_payload: dict[str, Any],
     configured_default: int,
 ) -> int:
-    serialized = json.dumps(
-        input_payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
+    _ = input_payload
+    return max(
+        1,
+        min(DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX, configured_default),
     )
-    if not serialized:
-        return configured_default
-    payload_chars = len(serialized)
-    if payload_chars <= 8_000:
-        return 8_000
-    if payload_chars <= 16_000:
-        return min(
-            DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
-            max(configured_default, DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS),
-        )
-    return min(DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX, 16_000)
 
 
 def _build_translation_compact_retry_request(
@@ -2583,7 +2569,7 @@ def _build_translation_compact_retry_request(
     compact_input_payload = _build_compact_translation_payload(request.input_payload)
     max_output_tokens = _select_translation_output_budget(
         input_payload=compact_input_payload,
-        configured_default=DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
+        configured_default=request.max_output_tokens,
     )
     return StructuredLlmRequest(
         stage=request.stage,

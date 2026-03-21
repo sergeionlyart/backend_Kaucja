@@ -13,11 +13,12 @@ model:
   api: "responses"
   model_id: "gpt-5.4"
   reasoning_effort: "xhigh"
+  translation_reasoning_effort: "auto"
   text_verbosity: "low"
   truncation: "disabled"
   store: false
   analysis_max_output_tokens: 32000
-  translation_ru_max_output_tokens: 12000
+  translation_ru_max_output_tokens: 128000
   request_timeout_seconds: 600
 
 prompts:

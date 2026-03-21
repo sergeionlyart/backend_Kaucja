@@ -147,6 +147,43 @@ def test_openai_responses_client_uses_spec_compatible_request() -> None:
     assert "top_logprobs" not in call
 
 
+def test_openai_responses_client_omits_reasoning_for_auto_mode() -> None:
+    service = FakeResponsesService()
+    client = OpenAIResponsesAnnotationLlmClient(responses_service=service)
+
+    client.run(
+        StructuredLlmRequest(
+            stage="annotate_ru",
+            system_prompt="system prompt",
+            input_payload={"doc_id": "doc.md"},
+            output_schema={"type": "object"},
+            output_model=AnalysisAnnotationOutput,
+            metadata={
+                "run_id": "run-1",
+                "doc_id": "doc.md",
+                "prompt_pack_version": "2026-03-16",
+                "prompt_profile": "translate_to_ru",
+            },
+            provider="openai",
+            api="responses",
+            model_id="gpt-5.4",
+            reasoning_effort="auto",
+            text_verbosity="low",
+            truncation="disabled",
+            store=False,
+            max_output_tokens=128000,
+            prompt_pack_id="kaucja-prompt-pack",
+            prompt_pack_version="2026-03-16",
+            prompt_profile="translate_to_ru",
+            prompt_hash="prompt-hash",
+            request_hash="request-hash",
+        )
+    )
+
+    call = service.calls[0]
+    assert "reasoning" not in call
+
+
 @pytest.mark.parametrize("timeout_seconds", [77, 600])
 def test_openai_responses_client_uses_configured_timeout(
     monkeypatch,

@@ -302,7 +302,8 @@ def test_translation_request_uses_configured_translation_budget(tmp_path: Path) 
         resolved_prompt=resolved_prompt,
     )
 
-    assert request.max_output_tokens == 8_000
+    assert request.reasoning_effort == "auto"
+    assert request.max_output_tokens == 128_000
 
 
 def test_analysis_request_uses_packed_sections_for_large_canonical_text(
@@ -1342,11 +1343,12 @@ def _build_config(
                 "api": "responses",
                 "model_id": model_id,
                 "reasoning_effort": "xhigh",
+                "translation_reasoning_effort": "auto",
                 "text_verbosity": "low",
                 "truncation": "disabled",
                 "store": False,
                 "analysis_max_output_tokens": 32000,
-                "translation_ru_max_output_tokens": 12000,
+                "translation_ru_max_output_tokens": 128000,
             },
             "prompts": {
                 "prompt_pack_id": "kaucja-prompt-pack",

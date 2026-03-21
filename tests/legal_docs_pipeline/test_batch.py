@@ -36,6 +36,7 @@ class FakeBatchClient:
         *,
         output_payloads: dict[str, dict[str, Any]] | None = None,
         error_payloads: dict[str, dict[str, Any]] | None = None,
+        responseless_custom_ids: set[str] | None = None,
         job_status: str = "completed",
         output_file_id: str | None = "file_out_1",
         error_file_id: str | None = "file_err_1",
@@ -43,6 +44,7 @@ class FakeBatchClient:
         self.created_jobs: list[dict[str, Any]] = []
         self.output_payloads = output_payloads or {}
         self.error_payloads = error_payloads or {}
+        self.responseless_custom_ids = responseless_custom_ids or set()
         self.job_status = job_status
         self.output_file_id = output_file_id
         self.error_file_id = error_file_id
@@ -91,6 +93,17 @@ class FakeBatchClient:
         results: list[BatchResultItem] = []
         for item in items:
             custom_id = item["custom_id"]
+            if custom_id in self.responseless_custom_ids:
+                results.append(
+                    BatchResultItem(
+                        custom_id=custom_id,
+                        status="completed",
+                        response=None,
+                        error_payload=None,
+                        raw_payload={"custom_id": custom_id, "status": "completed"},
+                    )
+                )
+                continue
             if custom_id not in self.output_payloads:
                 continue
             response = StructuredLlmResponse(
@@ -292,6 +305,109 @@ def test_batch_runner_failed_item_falls_back_to_direct_analysis(tmp_path: Path) 
     assert stored["llm"]["analysis"]["dispatch"]["fallback"] == "direct"
 
 
+def test_prepare_requeues_item_after_applied_failed(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={
+                    "batch_min_requests_to_submit": 1,
+                    "batch_apply_direct_fallback": False,
+                }
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    batch_client = FakeBatchClient()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=batch_client,
+    )
+
+    first_prepare = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    queued_items = batch_repository.list_queued_items()
+    custom_id = str(queued_items[0]["custom_id"])
+    batch_client.responseless_custom_ids = {custom_id}
+
+    runner.submit()
+    runner.poll()
+    apply_summary = runner.apply()
+    second_prepare = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    requeued_items = batch_repository.list_queued_items()
+    item = batch_repository.get_item(custom_id)
+
+    assert first_prepare.queued_count == 1
+    assert apply_summary.failed_count == 1
+    assert second_prepare.queued_count == 1
+    assert second_prepare.existing_item_count == 0
+    assert len(requeued_items) == 1
+    assert item is not None
+    assert item["provider_status"] == "queued"
+    assert item["apply_status"] == "pending"
+
+
+def test_apply_failed_job_is_not_returned_for_reapply(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={
+                    "batch_min_requests_to_submit": 1,
+                    "batch_apply_direct_fallback": False,
+                }
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    batch_client = FakeBatchClient()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=batch_client,
+    )
+
+    runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    queued_items = batch_repository.list_queued_items()
+    batch_client.responseless_custom_ids = {str(queued_items[0]["custom_id"])}
+
+    runner.submit()
+    runner.poll()
+    first_apply = runner.apply()
+    second_apply = runner.apply()
+    job = batch_repository.get_job("batch_1")
+
+    assert first_apply.failed_count == 1
+    assert second_apply.applied_items_count == 0
+    assert job is not None
+    assert job["apply_status"] == "apply_failed"
+    assert batch_repository.get_terminal_jobs_ready_for_apply() == []
+
+
 def test_pipeline_run_honors_batch_dispatch_mode(tmp_path: Path) -> None:
     input_root = tmp_path / "input"
     input_root.mkdir()
@@ -370,6 +486,58 @@ def test_batch_runner_prepare_reports_existing_item_on_repeat(tmp_path: Path) ->
     assert first_summary.queued_count == 1
     assert second_summary.queued_count == 0
     assert second_summary.existing_item_count == 1
+
+
+def test_second_prepare_supersedes_old_queued_item_before_submit(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    doc_path = input_root / "doc.md"
+    _write_judicial_doc(doc_path, canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={"batch_min_requests_to_submit": 1}
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    batch_client = FakeBatchClient()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=batch_client,
+    )
+
+    first_prepare = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    first_item = batch_repository.list_queued_items()[0]
+    _write_judicial_doc(doc_path, canonical_doc_uid="saos_pl:456")
+    second_prepare = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    queued_items = batch_repository.list_queued_items()
+    superseded_item = batch_repository.get_item(str(first_item["custom_id"]))
+
+    runner.submit()
+
+    assert first_prepare.queued_count == 1
+    assert second_prepare.queued_count == 1
+    assert len(queued_items) == 1
+    assert superseded_item is not None
+    assert superseded_item["apply_status"] == "superseded"
+    assert len(batch_client.created_jobs) == 1
+    assert len(batch_client.created_jobs[0]["jsonl_items"]) == 1
+    assert (
+        batch_client.created_jobs[0]["jsonl_items"][0]["custom_id"]
+        == queued_items[0]["custom_id"]
+    )
 
 
 def test_batch_runner_apply_marks_stale_item_without_overwrite(tmp_path: Path) -> None:
@@ -477,6 +645,95 @@ def test_batch_runner_missing_error_line_falls_back_to_direct(tmp_path: Path) ->
     assert apply_summary.batch_failed_count == 1
     assert stored is not None
     assert stored["annotation"]["status"] == "completed"
+
+
+def test_malformed_success_item_does_not_mark_dispatch_completed(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={
+                    "batch_min_requests_to_submit": 1,
+                    "batch_apply_direct_fallback": False,
+                }
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    batch_client = FakeBatchClient()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=batch_client,
+    )
+
+    runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    queued_items = batch_repository.list_queued_items()
+    custom_id = str(queued_items[0]["custom_id"])
+    batch_client.responseless_custom_ids = {custom_id}
+
+    runner.submit()
+    runner.poll()
+    apply_summary = runner.apply()
+    stored = document_repository.get_document("doc.md")
+    item = batch_repository.get_item(custom_id)
+
+    assert apply_summary.failed_count == 1
+    assert stored is not None
+    assert stored["llm"]["analysis"]["dispatch"]["status"] == "submitted"
+    assert item is not None
+    assert item["apply_status"] == "applied_failed"
+
+
+class CountingScanner:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def scan(self, *args: Any, **kwargs: Any) -> list[Any]:
+        self.calls.append({"args": args, "kwargs": kwargs})
+        return []
+
+
+def test_submit_poll_apply_do_not_scan_corpus(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+
+    config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    scanner = CountingScanner()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            scanner=scanner,
+            repository_factory=lambda _config: _build_document_repository(),
+            batch_repository_factory=lambda _config: _build_batch_repository(config=config),
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: _build_document_repository(),
+        batch_repository_factory=lambda _config: _build_batch_repository(config=config),
+        batch_client=FakeBatchClient(),
+    )
+
+    submit_summary = runner.submit()
+    poll_summary = runner.poll()
+    apply_summary = runner.apply()
+
+    assert scanner.calls == []
+    assert submit_summary.discovered_count == 0
+    assert poll_summary.discovered_count == 0
+    assert apply_summary.discovered_count == 0
 
 
 def _build_document_repository() -> MongoDocumentRepository:
