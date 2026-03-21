@@ -21,8 +21,10 @@ def test_example_pipeline_config_loads_and_resolves_paths() -> None:
     assert config.mongo.collection == "documents_cas_law_v2_2_prod_v2"
     assert config.pipeline.workers == 1
     assert config.model.model_id == "gpt-5.4"
-    assert config.model.translation_ru_max_output_tokens == 24_000
+    assert config.model.translation_ru_max_output_tokens == 12_000
     assert config.model.request_timeout_seconds == 600
+    assert config.pipeline.llm_dispatch_mode == "direct"
+    assert config.pipeline.batch_inflight_jobs_limit == 2
 
 
 def test_probe_pipeline_config_loads_with_diagnostic_overrides() -> None:
@@ -36,7 +38,54 @@ def test_probe_pipeline_config_loads_with_diagnostic_overrides() -> None:
     assert config.pipeline.retry_model_calls == 0
 
 
-def test_translation_budget_rejects_values_below_explicit_minimum(tmp_path: Path) -> None:
+def test_translation_budget_allows_values_below_previous_floor(tmp_path: Path) -> None:
+    config = PipelineConfig.model_validate(
+        {
+            "input": {
+                "root_path": tmp_path,
+                "glob": "**/*.md",
+                "ignore_hidden": True,
+            },
+            "mongo": {
+                "uri": "mongodb://localhost:27017",
+                "database": "kaucja_legal_corpus",
+                "collection": "documents",
+            },
+            "model": {
+                "provider": "openai",
+                "api": "responses",
+                "model_id": "gpt-5.4",
+                "reasoning_effort": "xhigh",
+                "text_verbosity": "low",
+                "truncation": "disabled",
+                "store": False,
+                "analysis_max_output_tokens": 32000,
+                "translation_ru_max_output_tokens": 8000,
+            },
+            "prompts": {
+                "prompt_pack_id": "kaucja-prompt-pack",
+                "prompt_pack_version": "2026-03-20",
+                "prompt_dir": PROJECT_ROOT / "prompts/kaucja",
+            },
+            "pipeline": {
+                "schema_version": "2.0.0",
+                "pipeline_version": "2.0.0",
+                "workers": 1,
+                "dedup_version": "2.0.0",
+                "router_version": "2.0.0",
+                "history_tail_size": 10,
+                "retry_model_calls": 2,
+                "retry_mongo_writes": 2,
+                "llm_dispatch_mode": "batch_analysis",
+            },
+        }
+    )
+
+    assert config.model.translation_ru_max_output_tokens == 8000
+    assert config.pipeline.llm_dispatch_mode == "batch_analysis"
+
+
+def test_translation_budget_rejects_values_above_safety_clamp(tmp_path: Path) -> None:
     with pytest.raises(ValidationError):
         PipelineConfig.model_validate(
             {
@@ -59,7 +108,7 @@ def test_translation_budget_rejects_values_below_explicit_minimum(tmp_path: Path
                     "truncation": "disabled",
                     "store": False,
                     "analysis_max_output_tokens": 32000,
-                    "translation_ru_max_output_tokens": 16000,
+                    "translation_ru_max_output_tokens": 32000,
                 },
                 "prompts": {
                     "prompt_pack_id": "kaucja-prompt-pack",

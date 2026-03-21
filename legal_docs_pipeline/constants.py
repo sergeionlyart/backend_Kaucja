@@ -12,6 +12,11 @@ class PipelineMode(str, Enum):
     RERUN = "rerun"
 
 
+class LlmDispatchMode(str, Enum):
+    DIRECT = "direct"
+    BATCH_ANALYSIS = "batch_analysis"
+
+
 class RerunScope(str, Enum):
     FAILED = "failed"
     STALE = "stale"
@@ -98,6 +103,8 @@ DEDUPE_VERSION = "2.0.0"
 ROUTER_VERSION = "2.0.0"
 DEFAULT_MAX_FILE_SIZE_BYTES = 16 * 1024 * 1024
 DEFAULT_MONGO_DOCUMENT_MAX_BYTES = 16 * 1024 * 1024
+DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS = 12_000
+DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX = 24_000
 DEFAULT_CONFIG_PATH = Path("config/pipeline.yaml")
 DEFAULT_INPUT_GLOB = "**/*.md"
 DEFAULT_PROMPT_PACK_ID = "kaucja-prompt-pack"
@@ -113,6 +120,8 @@ OUTPUT_SCHEMA_INSTRUCTION = (
 TEXT_PREVIEW_CHARS = 500
 PACKED_INPUT_THRESHOLD_CHARS = 20_000
 PACKED_SECTION_MAX_CHARS = 2_500
+ANALYSIS_BATCH_JOBS_COLLECTION = "analysis_batch_jobs"
+ANALYSIS_BATCH_ITEMS_COLLECTION = "analysis_batch_items"
 
 PROMPT_PROFILE_TO_FILENAME: dict[PromptProfile, str] = {
     PromptProfile.ADDON_NORMATIVE: "addon_normative.txt",

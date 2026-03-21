@@ -7,16 +7,28 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SITE_PACKAGES = "/Users/sergejavdejcik/.pyenv/versions/3.10.10/lib/python3.10/site-packages"
 
 
-def test_cli_help() -> None:
-    result = subprocess.run(
-        [sys.executable, "scripts/annotate_legal_docs.py", "--help"],
+def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+    bootstrap = (
+        "import runpy, sys; "
+        f"sys.path.insert(0, {str(PROJECT_ROOT)!r}); "
+        f"sys.path.append({SITE_PACKAGES!r}); "
+        "sys.argv = ['scripts/annotate_legal_docs.py', *sys.argv[1:]]; "
+        "runpy.run_path('scripts/annotate_legal_docs.py', run_name='__main__')"
+    )
+    return subprocess.run(
+        [sys.executable, "-S", "-c", bootstrap, *args],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
+
+
+def test_cli_help() -> None:
+    result = _run_cli(["--help"])
 
     assert result.returncode == 0
     assert "--config" in result.stdout
@@ -64,7 +76,7 @@ def test_cli_dry_run_new_limit_outputs_summary(tmp_path: Path) -> None:
                 '  truncation: "disabled"',
                 "  store: false",
                 "  analysis_max_output_tokens: 32000",
-                "  translation_ru_max_output_tokens: 24000",
+                "  translation_ru_max_output_tokens: 12000",
                 "prompts:",
                 '  prompt_pack_id: "kaucja-prompt-pack"',
                 '  prompt_pack_version: "2026-03-16"',
@@ -83,10 +95,8 @@ def test_cli_dry_run_new_limit_outputs_summary(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
+    result = _run_cli(
         [
-            sys.executable,
-            "scripts/annotate_legal_docs.py",
             "--config",
             str(config_path),
             "--mode",
@@ -96,11 +106,7 @@ def test_cli_dry_run_new_limit_outputs_summary(tmp_path: Path) -> None:
             "--limit",
             "2",
             "--dry-run",
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+        ]
     )
 
     assert result.returncode == 0
@@ -141,7 +147,7 @@ def test_cli_dry_run_rerun_failed_outputs_summary(tmp_path: Path) -> None:
                 '  truncation: "disabled"',
                 "  store: false",
                 "  analysis_max_output_tokens: 32000",
-                "  translation_ru_max_output_tokens: 24000",
+                "  translation_ru_max_output_tokens: 12000",
                 "prompts:",
                 '  prompt_pack_id: "kaucja-prompt-pack"',
                 '  prompt_pack_version: "2026-03-16"',
@@ -160,10 +166,8 @@ def test_cli_dry_run_rerun_failed_outputs_summary(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = subprocess.run(
+    result = _run_cli(
         [
-            sys.executable,
-            "scripts/annotate_legal_docs.py",
             "--config",
             str(config_path),
             "--mode",
@@ -171,11 +175,7 @@ def test_cli_dry_run_rerun_failed_outputs_summary(tmp_path: Path) -> None:
             "--rerun-scope",
             "failed",
             "--dry-run",
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+        ]
     )
 
     assert result.returncode == 0
@@ -215,7 +215,7 @@ def test_cli_rejects_dry_run_with_force_classifier_fallback(tmp_path: Path) -> N
                 '  truncation: "disabled"',
                 "  store: false",
                 "  analysis_max_output_tokens: 32000",
-                "  translation_ru_max_output_tokens: 24000",
+                "  translation_ru_max_output_tokens: 12000",
                 "prompts:",
                 '  prompt_pack_id: "kaucja-prompt-pack"',
                 '  prompt_pack_version: "2026-03-16"',
@@ -234,21 +234,15 @@ def test_cli_rejects_dry_run_with_force_classifier_fallback(tmp_path: Path) -> N
         encoding="utf-8",
     )
 
-    result = subprocess.run(
+    result = _run_cli(
         [
-            sys.executable,
-            "scripts/annotate_legal_docs.py",
             "--config",
             str(config_path),
             "--mode",
             "new",
             "--dry-run",
             "--force-classifier-fallback",
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+        ]
     )
 
     assert result.returncode != 0
