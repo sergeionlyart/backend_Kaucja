@@ -7,14 +7,18 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SITE_PACKAGES = "/Users/sergejavdejcik/.pyenv/versions/3.10.10/lib/python3.10/site-packages"
+SITE_PACKAGES = [
+    path
+    for path in sys.path
+    if "site-packages" in path or "dist-packages" in path
+]
 
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     bootstrap = (
         "import runpy, sys; "
         f"sys.path.insert(0, {str(PROJECT_ROOT)!r}); "
-        f"sys.path.append({SITE_PACKAGES!r}); "
+        f"sys.path.extend({SITE_PACKAGES!r}); "
         "sys.argv = ['scripts/annotate_legal_docs.py', *sys.argv[1:]]; "
         "runpy.run_path('scripts/annotate_legal_docs.py', run_name='__main__')"
     )
