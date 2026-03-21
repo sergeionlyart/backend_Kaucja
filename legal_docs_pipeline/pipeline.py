@@ -18,11 +18,18 @@ from .canonicalize import (
     CanonicalizeDocumentError,
     build_canonical_text,
 )
+from .batch import (
+    build_batch_custom_id,
+    build_batch_jsonl_item,
+    serialize_analysis_request_record,
+)
+from .batch_repository import MongoBatchStateRepository
 from .config import PipelineConfig
 from .constants import (
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
     DocumentFamily,
+    LlmDispatchMode,
     PACKED_INPUT_THRESHOLD_CHARS,
     PipelineMode,
     PromptProfile,
@@ -116,6 +123,9 @@ class PipelineRunSummary(BaseModel):
     updated_count: int = 0
     completed_count: int = 0
     partial_count: int = 0
+    queued_count: int = 0
+    existing_item_count: int = 0
+    stale_item_count: int = 0
     skipped_non_target_count: int = 0
     skipped_unchanged_count: int = 0
     skipped_count: int = 0
@@ -150,6 +160,8 @@ class AnnotationPipeline:
         prompt_resolver: FilePromptResolver | None = None,
         repository_factory: Callable[[PipelineConfig], MongoDocumentRepository]
         | None = None,
+        batch_repository_factory: Callable[[PipelineConfig], MongoBatchStateRepository]
+        | None = None,
         llm_client: AnnotationLlmClient | None = None,
     ) -> None:
         self.config = config
@@ -166,6 +178,9 @@ class AnnotationPipeline:
             config.prompts.prompt_dir
         )
         self._repository_factory = repository_factory or MongoDocumentRepository.from_config
+        self._batch_repository_factory = (
+            batch_repository_factory or MongoBatchStateRepository.from_config
+        )
         self._llm_client = llm_client
 
     def run(
@@ -253,11 +268,19 @@ class AnnotationPipeline:
             _log_summary(logger, summary)
             return summary
 
+        effective_dispatch_mode = self._resolve_dispatch_mode(
+            options=options,
+            rerun_scope=rerun_scope,
+        )
         repository: MongoDocumentRepository | None = None
+        batch_repository: MongoBatchStateRepository | None = None
         try:
             repository = self._repository_factory(self.config)
             if not options.dry_run:
                 repository.ensure_indexes()
+                if effective_dispatch_mode == LlmDispatchMode.BATCH_ANALYSIS:
+                    batch_repository = self._batch_repository_factory(self.config)
+                    batch_repository.ensure_indexes()
         except Exception as error:
             if options.dry_run and options.mode is PipelineMode.RERUN:
                 warning = (
@@ -290,13 +313,17 @@ class AnnotationPipeline:
             else:
                 self._run_with_repository(
                     repository=repository,
+                    batch_repository=batch_repository,
                     discovered=discovered,
                     options=options,
                     rerun_scope=rerun_scope,
+                    dispatch_mode=effective_dispatch_mode,
                     summary=summary,
                     logger=logger,
                 )
         finally:
+            if batch_repository is not None:
+                batch_repository.close()
             repository.close()
 
         _log_summary(logger, summary)
@@ -384,9 +411,11 @@ class AnnotationPipeline:
         self,
         *,
         repository: MongoDocumentRepository,
+        batch_repository: MongoBatchStateRepository | None,
         discovered: list[DiscoveredDocument],
         options: PipelineRunOptions,
         rerun_scope: RerunScope | None,
+        dispatch_mode: LlmDispatchMode,
         summary: PipelineRunSummary,
         logger: JsonlPipelineLogger,
     ) -> None:
@@ -441,26 +470,30 @@ class AnnotationPipeline:
                 continue
 
             outcome = self._process_full_document(
-                    repository=repository,
-                    document=document,
-                    doc_id=doc_id,
-                    mode=options.mode.value,
-                    run_id=summary.run_id,
-                    force_classifier_fallback=options.force_classifier_fallback,
-                    logger=logger,
-                )
+                repository=repository,
+                batch_repository=batch_repository,
+                document=document,
+                doc_id=doc_id,
+                mode=options.mode.value,
+                run_id=summary.run_id,
+                force_classifier_fallback=options.force_classifier_fallback,
+                logger=logger,
+                dispatch_mode=dispatch_mode,
+            )
             _record_outcome(summary, outcome)
 
     def _process_full_document(
         self,
         *,
         repository: MongoDocumentRepository,
+        batch_repository: MongoBatchStateRepository | None,
         document: DiscoveredDocument,
         doc_id: str,
         mode: str,
         run_id: str,
         force_classifier_fallback: bool,
         logger: JsonlPipelineLogger,
+        dispatch_mode: LlmDispatchMode,
     ) -> str:
         try:
             read_result = self.reader.read(document)
@@ -759,6 +792,19 @@ class AnnotationPipeline:
             resolved_prompt=resolved_prompt,
             force_packed_input=True,
         )
+        if dispatch_mode == LlmDispatchMode.BATCH_ANALYSIS:
+            if batch_repository is None:
+                raise ValueError("batch_repository is required for batch_analysis mode.")
+            return self._queue_batch_analysis_request(
+                repository=repository,
+                batch_repository=batch_repository,
+                doc_id=doc_id,
+                analysis_request=analysis_request,
+                analysis_fingerprint=analysis_fingerprint,
+                mode=mode,
+                logger=logger,
+                run_id=run_id,
+            )
 
         try:
             analysis_output, analysis_request, analysis_response = (
@@ -922,6 +968,74 @@ class AnnotationPipeline:
             run_id=run_id,
             logger=logger,
         )
+
+    def _queue_batch_analysis_request(
+        self,
+        *,
+        repository: MongoDocumentRepository,
+        batch_repository: MongoBatchStateRepository,
+        doc_id: str,
+        analysis_request: StructuredLlmRequest,
+        analysis_fingerprint: str,
+        mode: str,
+        logger: JsonlPipelineLogger,
+        run_id: str,
+    ) -> str:
+        request_record = serialize_analysis_request_record(analysis_request)
+        request_body = build_batch_jsonl_item(analysis_request)
+        custom_id = build_batch_custom_id(
+            doc_id=doc_id,
+            stage=analysis_request.stage,
+            request_hash=analysis_request.request_hash,
+        )
+        queue_result = batch_repository.queue_item(
+            custom_id=custom_id,
+            doc_id=doc_id,
+            stage=analysis_request.stage,
+            request_hash=analysis_request.request_hash,
+            prompt_hash=analysis_request.prompt_hash,
+            source_language_code=str(
+                analysis_request.input_payload.get("language_original", "und")
+            ),
+            request_record=request_record,
+            request_body=request_body,
+            analysis_fingerprint=analysis_fingerprint,
+            cost_estimate=self._estimate_stage_cost(
+                request=analysis_request,
+                response=None,
+                dispatch_mode=LlmDispatchMode.BATCH_ANALYSIS,
+            ),
+        )
+        if queue_result.status != "existing_applied":
+            repository.mark_analysis_batch_dispatched(
+                doc_id=doc_id,
+                mode=mode,
+                dispatch_updates={
+                    "mode": LlmDispatchMode.BATCH_ANALYSIS.value,
+                    "status": _map_batch_queue_status_to_dispatch_status(
+                        queue_result.status
+                    ),
+                    "custom_id": custom_id,
+                    "request_hash": analysis_request.request_hash,
+                    "prompt_hash": analysis_request.prompt_hash,
+                    "analysis_fingerprint": analysis_fingerprint,
+                },
+            )
+        _log(
+            logger,
+            run_id=run_id,
+            doc_id=doc_id,
+            stage="annotate_original",
+            event="batch_analysis_dispatched",
+            level="info",
+            message="Queued annotate_original via batch dispatch.",
+            details={
+                "custom_id": custom_id,
+                "queue_status": queue_result.status,
+                "dispatch_mode": LlmDispatchMode.BATCH_ANALYSIS.value,
+            },
+        )
+        return _map_batch_queue_status_to_outcome(queue_result.status)
 
     def _run_translation_stage(
         self,
@@ -1715,6 +1829,22 @@ class AnnotationPipeline:
             raise TranslationBusinessValidationError(repair_errors)
         return repaired_output, repair_request, repair_response
 
+    def _resolve_dispatch_mode(
+        self,
+        *,
+        options: PipelineRunOptions,
+        rerun_scope: RerunScope | None,
+    ) -> LlmDispatchMode:
+        if (
+            options.mode is PipelineMode.RERUN
+            and rerun_scope is RerunScope.DOC_ID
+        ):
+            return LlmDispatchMode.DIRECT
+        configured_mode = self.config.pipeline.llm_dispatch_mode
+        if isinstance(configured_mode, LlmDispatchMode):
+            return configured_mode
+        return LlmDispatchMode(str(configured_mode))
+
     def _select_document_action(
         self,
         *,
@@ -2019,12 +2149,15 @@ class AnnotationPipeline:
         *,
         request: StructuredLlmRequest,
         response: StructuredLlmResponse | None,
+        dispatch_mode: LlmDispatchMode = LlmDispatchMode.DIRECT,
     ) -> dict[str, Any]:
         return estimate_stage_cost(
             request=request,
             response=response,
             input_cost_per_1k_tokens_usd=self.config.model.input_cost_per_1k_tokens_usd,
             output_cost_per_1k_tokens_usd=self.config.model.output_cost_per_1k_tokens_usd,
+            dispatch_mode=dispatch_mode.value,
+            batch_discount_factor=self.config.pipeline.batch_discount_factor,
         )
 
 
@@ -2093,12 +2226,40 @@ def _record_outcome(summary: PipelineRunSummary, outcome: str) -> None:
     elif outcome == "partial":
         summary.partial_count += 1
         summary.processed_count += 1
+    elif outcome == "queued":
+        summary.queued_count += 1
+        summary.processed_count += 1
+    elif outcome == "existing_item":
+        summary.existing_item_count += 1
+        summary.processed_count += 1
+    elif outcome == "stale_replaced":
+        summary.queued_count += 1
+        summary.stale_item_count += 1
+        summary.processed_count += 1
     elif outcome == "failed":
         summary.failed_count += 1
         summary.processed_count += 1
     elif outcome == "skipped_non_target":
         summary.skipped_non_target_count += 1
         summary.processed_count += 1
+
+
+def _map_batch_queue_status_to_dispatch_status(status: str) -> str:
+    if status in {"queued", "stale_replaced", "existing_queued"}:
+        return "queued"
+    if status == "existing_submitted":
+        return "submitted"
+    if status == "existing_completed":
+        return "completed"
+    if status == "existing_applied":
+        return "applied"
+    return status
+
+
+def _map_batch_queue_status_to_outcome(status: str) -> str:
+    if status in {"queued", "stale_replaced"}:
+        return status
+    return "existing_item"
 
 
 def _build_failed_llm_updates(

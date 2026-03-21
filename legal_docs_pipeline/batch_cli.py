@@ -26,6 +26,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
     poll = subparsers.add_parser("poll")
     _add_shared_runtime_arguments(poll)
+    poll.add_argument(
+        "--wait",
+        action="store_true",
+        help="Poll until no in-flight batch jobs remain.",
+    )
 
     apply = subparsers.add_parser("apply")
     _add_shared_runtime_arguments(apply)
@@ -63,7 +68,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "submit":
             summary = runner.submit(log_level=args.log_level)
         elif args.command == "poll":
-            summary = runner.poll(log_level=args.log_level)
+            summary = runner.poll(log_level=args.log_level, wait=args.wait)
         else:
             summary = runner.apply(log_level=args.log_level)
     except Exception as error:  # pragma: no cover - CLI guardrail
@@ -82,13 +87,6 @@ def _add_shared_prepare_arguments(parser: argparse.ArgumentParser) -> None:
         choices=[PipelineMode.FULL.value, PipelineMode.NEW.value],
         help="Batch prepare mode: full or new.",
     )
-    parser.add_argument("--input-root", help="Optional override for input.root_path.")
-    parser.add_argument("--mongo-uri", help="Optional override for mongo.uri.")
-    parser.add_argument("--mongo-db", help="Optional override for mongo.database.")
-    parser.add_argument(
-        "--mongo-collection",
-        help="Optional override for mongo.collection.",
-    )
     parser.add_argument("--only-doc-id", help="Queue only one document.")
     parser.add_argument(
         "--from-relative-path",
@@ -104,6 +102,13 @@ def _add_shared_prepare_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _add_shared_runtime_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", required=True, help="Path to YAML config file.")
+    parser.add_argument("--input-root", help="Optional override for input.root_path.")
+    parser.add_argument("--mongo-uri", help="Optional override for mongo.uri.")
+    parser.add_argument("--mongo-db", help="Optional override for mongo.database.")
+    parser.add_argument(
+        "--mongo-collection",
+        help="Optional override for mongo.collection.",
+    )
     parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],

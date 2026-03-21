@@ -681,6 +681,54 @@ class MongoDocumentRepository:
         document["updated_at"] = _utc_now()
         self._write_document(document)
 
+    def mark_analysis_batch_dispatched(
+        self,
+        *,
+        doc_id: str,
+        mode: str,
+        dispatch_updates: dict[str, Any],
+        processing_status: str = "awaiting_batch_analysis",
+    ) -> None:
+        document = self._load_required_document(doc_id)
+        now = _utc_now()
+        llm_analysis = document.setdefault("llm", {}).setdefault("analysis", {})
+        dispatch = llm_analysis.setdefault("dispatch", {})
+        dispatch.update(dispatch_updates)
+
+        processing = document["processing"]
+        processing["current_stage"] = _ANNOTATE_ORIGINAL_STAGE
+        processing["status"] = processing_status
+        processing["completed_at"] = None
+        processing["error"] = None
+        stage = processing["stages"].setdefault(
+            _ANNOTATE_ORIGINAL_STAGE,
+            {
+                "status": "pending",
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+            },
+        )
+        stage["status"] = str(dispatch.get("status", "queued"))
+        stage["started_at"] = stage.get("started_at") or now
+        stage["completed_at"] = None
+        stage["error"] = None
+        _append_history(
+            processing,
+            history_tail_size=self._history_tail_size,
+            record={
+                "run_id": processing["run_id"],
+                "mode": mode,
+                "status": processing_status,
+                "stage": _ANNOTATE_ORIGINAL_STAGE,
+                "completed_at": now,
+                "dispatch": copy.deepcopy(dispatch),
+            },
+        )
+        document["search"]["processing_status"] = processing_status
+        document["updated_at"] = now
+        self._write_document(document)
+
     def mark_failed(
         self,
         *,

@@ -8,8 +8,11 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .constants import (
+    ANALYSIS_BATCH_ITEMS_COLLECTION,
+    ANALYSIS_BATCH_JOBS_COLLECTION,
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
     DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
+    DEFAULT_BATCH_DISCOUNT_FACTOR,
     DEDUPE_VERSION,
     DEFAULT_MAX_FILE_SIZE_BYTES,
     DEFAULT_INPUT_GLOB,
@@ -121,6 +124,19 @@ class PipelineSettings(BaseModel):
     batch_inflight_jobs_limit: int = Field(default=2, ge=1)
     batch_min_requests_to_submit: int = Field(default=5, ge=1)
     batch_apply_direct_fallback: bool = True
+    batch_jobs_collection: str = Field(
+        default=ANALYSIS_BATCH_JOBS_COLLECTION,
+        min_length=1,
+    )
+    batch_items_collection: str = Field(
+        default=ANALYSIS_BATCH_ITEMS_COLLECTION,
+        min_length=1,
+    )
+    batch_discount_factor: float = Field(
+        default=DEFAULT_BATCH_DISCOUNT_FACTOR,
+        ge=0.0,
+        le=1.0,
+    )
 
     @field_validator("workers")
     @classmethod

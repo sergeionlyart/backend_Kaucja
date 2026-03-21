@@ -27,7 +27,7 @@ from tests.legal_docs_pipeline.test_pipeline import (
     _write_judicial_doc,
 )
 from legal_docs_pipeline.repository import MongoDocumentRepository
-from legal_docs_pipeline.pipeline import AnnotationPipeline
+from legal_docs_pipeline.pipeline import AnnotationPipeline, PipelineRunOptions
 
 
 class FakeBatchClient:
@@ -36,10 +36,16 @@ class FakeBatchClient:
         *,
         output_payloads: dict[str, dict[str, Any]] | None = None,
         error_payloads: dict[str, dict[str, Any]] | None = None,
+        job_status: str = "completed",
+        output_file_id: str | None = "file_out_1",
+        error_file_id: str | None = "file_err_1",
     ) -> None:
         self.created_jobs: list[dict[str, Any]] = []
         self.output_payloads = output_payloads or {}
         self.error_payloads = error_payloads or {}
+        self.job_status = job_status
+        self.output_file_id = output_file_id
+        self.error_file_id = error_file_id
 
     def create_job(
         self,
@@ -69,13 +75,13 @@ class FakeBatchClient:
     def retrieve_job(self, job_id: str) -> BatchJobSnapshot:
         return BatchJobSnapshot(
             job_id=job_id,
-            status="completed",
+            status=self.job_status,
             input_file_id="file_in_1",
-            output_file_id="file_out_1",
-            error_file_id="file_err_1",
+            output_file_id=self.output_file_id,
+            error_file_id=self.error_file_id,
             submitted_at=datetime.now(tz=timezone.utc),
             completed_at=datetime.now(tz=timezone.utc),
-            raw_payload={"id": job_id, "status": "completed"},
+            raw_payload={"id": job_id, "status": self.job_status},
         )
 
     def download_results(self, *, output_file_id: str | None) -> list[BatchResultItem]:
@@ -229,6 +235,7 @@ def test_batch_runner_prepare_submit_poll_apply_success(tmp_path: Path) -> None:
     assert submit_summary.submitted_jobs_count == 1
     assert poll_summary.polled_jobs_count == 1
     assert apply_summary.completed_count == 1
+    assert apply_summary.batch_success_count == 1
     assert stored is not None
     assert stored["annotation"]["status"] == "completed"
     assert stored["llm"]["analysis"]["dispatch"]["mode"] == "batch_analysis"
@@ -278,9 +285,198 @@ def test_batch_runner_failed_item_falls_back_to_direct_analysis(tmp_path: Path) 
     stored = document_repository.get_document("doc.md")
 
     assert apply_summary.completed_count == 1
+    assert apply_summary.direct_fallback_count == 1
+    assert apply_summary.batch_failed_count == 1
     assert stored is not None
     assert stored["annotation"]["status"] == "completed"
     assert stored["llm"]["analysis"]["dispatch"]["fallback"] == "direct"
+
+
+def test_pipeline_run_honors_batch_dispatch_mode(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={
+                    "llm_dispatch_mode": "batch_analysis",
+                    "batch_min_requests_to_submit": 1,
+                }
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    pipeline = AnnotationPipeline(
+        config=config,
+        repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        llm_client=ScriptedLlmClient(script=[]),
+    )
+
+    summary = pipeline.run(
+        options=PipelineRunOptions(
+            mode=PipelineMode.FULL,
+            only_doc_id="doc.md",
+        )
+    )
+    stored = document_repository.get_document("doc.md")
+    queued_items = batch_repository.list_queued_items()
+
+    assert summary.queued_count == 1
+    assert summary.completed_count == 0
+    assert stored is not None
+    assert stored["processing"]["status"] == "awaiting_batch_analysis"
+    assert stored["llm"]["analysis"]["dispatch"]["mode"] == "batch_analysis"
+    assert len(queued_items) == 1
+    assert queued_items[0]["cost_estimate"]["dispatch_mode"] == "batch_analysis"
+    assert queued_items[0]["cost_estimate"]["batch_discount_factor"] == 0.5
+
+
+def test_batch_runner_prepare_reports_existing_item_on_repeat(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={"batch_min_requests_to_submit": 1}
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=FakeBatchClient(),
+    )
+
+    first_summary = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    second_summary = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+
+    assert first_summary.queued_count == 1
+    assert second_summary.queued_count == 0
+    assert second_summary.existing_item_count == 1
+
+
+def test_batch_runner_apply_marks_stale_item_without_overwrite(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={"batch_min_requests_to_submit": 1}
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[_translation_payload()]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=FakeBatchClient(),
+    )
+
+    runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    queued_items = batch_repository.list_queued_items()
+    assert len(queued_items) == 1
+    queued_item = queued_items[0]
+    runner._batch_client.output_payloads = {
+        str(queued_item["custom_id"]): _analysis_payload()
+    }
+    runner.submit()
+    runner.poll()
+    document_repository.update_analysis_dispatch(
+        doc_id="doc.md",
+        dispatch_updates={
+            "mode": "batch_analysis",
+            "status": "queued",
+            "custom_id": "doc.md::annotate_original::newer-request",
+            "request_hash": "newer-request",
+            "analysis_fingerprint": "newer-fingerprint",
+        },
+    )
+    apply_summary = runner.apply()
+    stored = document_repository.get_document("doc.md")
+    stale_item = batch_repository.get_item(str(queued_item["custom_id"]))
+
+    assert apply_summary.stale_count == 1
+    assert apply_summary.completed_count == 0
+    assert stale_item is not None
+    assert stale_item["apply_status"] == "stale"
+    assert stored is not None
+    assert stored["llm"]["analysis"]["dispatch"]["custom_id"] == (
+        "doc.md::annotate_original::newer-request"
+    )
+
+
+def test_batch_runner_missing_error_line_falls_back_to_direct(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={"batch_min_requests_to_submit": 1}
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    pipeline = AnnotationPipeline(
+        config=config,
+        repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        llm_client=ScriptedLlmClient(script=[_analysis_payload(), _translation_payload()]),
+    )
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=pipeline,
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=FakeBatchClient(
+            job_status="failed",
+            output_file_id=None,
+            error_file_id=None,
+        ),
+    )
+
+    runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    runner.submit()
+    runner.poll()
+    apply_summary = runner.apply()
+    stored = document_repository.get_document("doc.md")
+
+    assert apply_summary.completed_count == 1
+    assert apply_summary.direct_fallback_count == 1
+    assert apply_summary.batch_failed_count == 1
+    assert stored is not None
+    assert stored["annotation"]["status"] == "completed"
 
 
 def _build_document_repository() -> MongoDocumentRepository:
@@ -295,11 +491,19 @@ def _build_document_repository() -> MongoDocumentRepository:
     repository.ensure_indexes()
     return repository
 
-
-def _build_batch_repository() -> MongoBatchStateRepository:
+def _build_batch_repository(*, config=None) -> MongoBatchStateRepository:
     repository = MongoBatchStateRepository(
         jobs_collection=FakeMongoCollection(),
         items_collection=FakeMongoCollection(),
+        target_database=(
+            config.mongo.database if config is not None else "kaucja_legal_corpus"
+        ),
+        target_collection=(
+            config.mongo.collection if config is not None else "documents"
+        ),
+        schema_version="2.0.0",
+        jobs_collection_name="analysis_batch_jobs_v2",
+        items_collection_name="analysis_batch_items_v2",
     )
     repository.ensure_indexes()
     return repository

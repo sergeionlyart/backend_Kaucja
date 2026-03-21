@@ -18,13 +18,16 @@ def test_example_pipeline_config_loads_and_resolves_paths() -> None:
     assert config.input.root_path == (PROJECT_ROOT / "docs/legal/cas_law_v2_2_md").resolve()
     assert config.input.max_file_size_bytes == 64 * 1024 * 1024
     assert config.prompts.prompt_dir == (PROJECT_ROOT / "prompts/kaucja").resolve()
-    assert config.mongo.collection == "documents_cas_law_v2_2_prod_v2"
+    assert config.mongo.collection == "documents_cas_law_v2_2_prod_v3"
     assert config.pipeline.workers == 1
     assert config.model.model_id == "gpt-5.4"
     assert config.model.translation_ru_max_output_tokens == 12_000
     assert config.model.request_timeout_seconds == 600
     assert config.pipeline.llm_dispatch_mode == "direct"
     assert config.pipeline.batch_inflight_jobs_limit == 2
+    assert config.pipeline.batch_jobs_collection == "analysis_batch_jobs_v2"
+    assert config.pipeline.batch_items_collection == "analysis_batch_items_v2"
+    assert config.pipeline.batch_discount_factor == 0.5
 
 
 def test_probe_pipeline_config_loads_with_diagnostic_overrides() -> None:
