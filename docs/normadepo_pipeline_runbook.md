@@ -63,6 +63,7 @@ python scripts/batch_legal_docs.py apply --config config/pipeline.yaml
 - повторный `prepare` должен:
   - повторно queue'ить item после `applied_failed` / `fallback_failed`;
   - инвалидировать superseded queued item для того же `doc_id + stage` до `submit`;
+- `submit` автоматически flush'ит последний неполный batch, если inflight jobs уже нет, чтобы tail < `batch_min_requests_to_submit` не требовал ручного override;
 - `apply_failed` считается terminal для конкретного batch job; retry делается через новый `prepare`, а не через бесконечный re-apply того же job.
 
 ## Live smoke pattern

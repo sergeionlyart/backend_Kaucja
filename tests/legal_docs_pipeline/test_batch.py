@@ -255,6 +255,50 @@ def test_batch_runner_prepare_submit_poll_apply_success(tmp_path: Path) -> None:
     assert stored["llm"]["analysis"]["dispatch"]["status"] == "applied"
 
 
+def test_submit_flushes_tail_batch_when_no_inflight_jobs(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    for idx in range(3):
+        _write_judicial_doc(
+            input_root / f"doc_{idx}.md",
+            canonical_doc_uid=f"saos_pl:{idx}",
+        )
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={"batch_min_requests_to_submit": 5}
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    batch_client = FakeBatchClient()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=batch_client,
+    )
+
+    prepare_summary = runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    submit_summary = runner.submit()
+    items = batch_repository.list_items_for_job("batch_1")
+
+    assert prepare_summary.queued_count == 3
+    assert submit_summary.submitted_jobs_count == 1
+    assert submit_summary.warnings == []
+    assert len(batch_client.created_jobs) == 1
+    assert len(items) == 3
+
+
 def test_batch_runner_failed_item_falls_back_to_direct_analysis(tmp_path: Path) -> None:
     input_root = tmp_path / "input"
     input_root.mkdir()
@@ -303,6 +347,58 @@ def test_batch_runner_failed_item_falls_back_to_direct_analysis(tmp_path: Path) 
     assert stored is not None
     assert stored["annotation"]["status"] == "completed"
     assert stored["llm"]["analysis"]["dispatch"]["fallback"] == "direct"
+
+
+def test_submit_keeps_small_queue_below_threshold_while_inflight_job_exists(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    for idx in range(3):
+        _write_judicial_doc(
+            input_root / f"doc_{idx}.md",
+            canonical_doc_uid=f"saos_pl:{idx}",
+        )
+
+    base_config = _build_config(tmp_path=tmp_path, input_root=input_root)
+    config = base_config.model_copy(
+        update={
+            "pipeline": base_config.pipeline.model_copy(
+                update={"batch_min_requests_to_submit": 5}
+            )
+        }
+    )
+    document_repository = _build_document_repository()
+    batch_repository = _build_batch_repository(config=config)
+    batch_client = FakeBatchClient()
+    runner = BatchAnalysisRunner(
+        config=config,
+        pipeline=AnnotationPipeline(
+            config=config,
+            repository_factory=lambda _config: document_repository,
+            batch_repository_factory=lambda _config: batch_repository,
+            llm_client=ScriptedLlmClient(script=[]),
+        ),
+        document_repository_factory=lambda _config: document_repository,
+        batch_repository_factory=lambda _config: batch_repository,
+        batch_client=batch_client,
+    )
+
+    runner.prepare(options=BatchRunOptions(mode=PipelineMode.FULL))
+    queued_items = batch_repository.list_queued_items()
+    batch_repository.mark_submitted(
+        batch_job_id="batch_existing",
+        custom_ids=[str(queued_items[0]["custom_id"])],
+        raw_payload={"id": "batch_existing", "status": "submitted"},
+    )
+
+    submit_summary = runner.submit()
+
+    assert submit_summary.submitted_jobs_count == 0
+    assert submit_summary.warnings == [
+        "Queued batch items are below batch_min_requests_to_submit."
+    ]
+    assert len(batch_client.created_jobs) == 0
 
 
 def test_prepare_requeues_item_after_applied_failed(tmp_path: Path) -> None:

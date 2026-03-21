@@ -179,11 +179,37 @@ class BatchAnalysisRunner:
                 summary.warnings.append("Batch inflight jobs limit already reached.")
                 return summary
             queued_items = batch_repository.list_queued_items()
-            if len(queued_items) < self.config.pipeline.batch_min_requests_to_submit:
+            if not queued_items:
+                return summary
+            queued_count = len(queued_items)
+            below_submit_threshold = (
+                queued_count < self.config.pipeline.batch_min_requests_to_submit
+            )
+            should_flush_tail_batch = below_submit_threshold and inflight_count == 0
+            if below_submit_threshold and not should_flush_tail_batch:
                 summary.warnings.append(
                     "Queued batch items are below batch_min_requests_to_submit."
                 )
                 return summary
+            if should_flush_tail_batch:
+                _log(
+                    logger,
+                    run_id=run_id,
+                    stage="batch",
+                    event="batch_tail_flush_submitted",
+                    level="info",
+                    message=(
+                        "Submitting trailing queued batch items below "
+                        "batch_min_requests_to_submit because no inflight "
+                        "jobs remain."
+                    ),
+                    details={
+                        "queued_count": queued_count,
+                        "batch_min_requests_to_submit": (
+                            self.config.pipeline.batch_min_requests_to_submit
+                        ),
+                    },
+                )
             chunks = _chunk_queued_items(
                 queued_items=queued_items,
                 max_requests=self.config.pipeline.batch_max_requests,
