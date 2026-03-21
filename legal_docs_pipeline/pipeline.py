@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 from time import sleep
@@ -19,12 +20,15 @@ from .canonicalize import (
 )
 from .config import PipelineConfig
 from .constants import (
+    DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
+    DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
     DocumentFamily,
     PACKED_INPUT_THRESHOLD_CHARS,
     PipelineMode,
     PromptProfile,
     RerunScope,
 )
+from .costs import estimate_stage_cost
 from .language import HeuristicLanguageDetector, LanguageDetectionResult
 from .llm import (
     AnnotationLlmClient,
@@ -854,6 +858,10 @@ class AnnotationPipeline:
                 llm_request=analysis_request,
                 llm_response=analysis_response,
                 mode=mode,
+                cost_estimate=self._estimate_stage_cost(
+                    request=analysis_request,
+                    response=analysis_response,
+                ),
             )
         except RepositoryWriteError as error:
             repository.mark_failed(
@@ -1032,6 +1040,10 @@ class AnnotationPipeline:
                 llm_request=translation_request,
                 llm_response=translation_response,
                 mode=mode,
+                cost_estimate=self._estimate_stage_cost(
+                    request=translation_request,
+                    response=translation_response,
+                ),
             )
         except RepositoryWriteError as error:
             repository.mark_translation_partial(
@@ -1347,6 +1359,10 @@ class AnnotationPipeline:
                 mode="json"
             ),
         }
+        max_output_tokens = _select_translation_output_budget(
+            input_payload=input_payload,
+            configured_default=self.config.model.translation_ru_max_output_tokens,
+        )
         return StructuredLlmRequest(
             stage="annotate_ru",
             system_prompt=resolved_prompt.prompt_text,
@@ -1366,7 +1382,7 @@ class AnnotationPipeline:
             text_verbosity=self.config.model.text_verbosity,
             truncation=self.config.model.truncation,
             store=self.config.model.store,
-            max_output_tokens=self.config.model.translation_ru_max_output_tokens,
+            max_output_tokens=max_output_tokens,
             prompt_pack_id=self.config.prompts.prompt_pack_id,
             prompt_pack_version=self.config.prompts.prompt_pack_version,
             prompt_profile="translate_to_ru",
@@ -1378,7 +1394,7 @@ class AnnotationPipeline:
                 model_id=self.config.model.model_id,
                 reasoning_effort=self.config.model.reasoning_effort,
                 text_verbosity=self.config.model.text_verbosity,
-                max_output_tokens=self.config.model.translation_ru_max_output_tokens,
+                max_output_tokens=max_output_tokens,
             ),
         )
 
@@ -1397,6 +1413,10 @@ class AnnotationPipeline:
             "validation_errors": validation_errors,
             "candidate_output": candidate_output,
         }
+        max_output_tokens = _select_translation_output_budget(
+            input_payload=input_payload,
+            configured_default=self.config.model.translation_ru_max_output_tokens,
+        )
         return StructuredLlmRequest(
             stage="annotate_ru",
             system_prompt=resolved_prompt.prompt_text,
@@ -1416,7 +1436,7 @@ class AnnotationPipeline:
             text_verbosity=self.config.model.text_verbosity,
             truncation=self.config.model.truncation,
             store=self.config.model.store,
-            max_output_tokens=self.config.model.translation_ru_max_output_tokens,
+            max_output_tokens=max_output_tokens,
             prompt_pack_id=self.config.prompts.prompt_pack_id,
             prompt_pack_version=self.config.prompts.prompt_pack_version,
             prompt_profile="repair_translate_to_ru",
@@ -1428,7 +1448,7 @@ class AnnotationPipeline:
                 model_id=self.config.model.model_id,
                 reasoning_effort=self.config.model.reasoning_effort,
                 text_verbosity=self.config.model.text_verbosity,
-                max_output_tokens=self.config.model.translation_ru_max_output_tokens,
+                max_output_tokens=max_output_tokens,
             ),
         )
 
@@ -1519,6 +1539,7 @@ class AnnotationPipeline:
                 error={"code": error.code, "message": error.message},
                 details=error.details,
             )
+            active_request = _build_translation_compact_retry_request(translation_request)
             translation_response = self._run_llm_request(
                 request=active_request,
                 run_id=run_id,
@@ -1898,6 +1919,10 @@ class AnnotationPipeline:
                         attempt=attempt,
                         max_attempts=attempts,
                         timeout_seconds=timeout_seconds,
+                        cost_estimate=self._estimate_stage_cost(
+                            request=request,
+                            response=None,
+                        ),
                     ),
                 )
             try:
@@ -1925,6 +1950,10 @@ class AnnotationPipeline:
                             attempt=attempt,
                             max_attempts=attempts,
                             timeout_seconds=timeout_seconds,
+                            cost_estimate=self._estimate_stage_cost(
+                                request=request,
+                                response=None,
+                            ),
                             error_details=error.details,
                         ),
                     )
@@ -1949,6 +1978,10 @@ class AnnotationPipeline:
                             attempt=attempt + 1,
                             max_attempts=attempts,
                             timeout_seconds=timeout_seconds,
+                            cost_estimate=self._estimate_stage_cost(
+                                request=request,
+                                response=None,
+                            ),
                         ),
                     )
                 sleep(_retry_backoff_seconds(attempt))
@@ -1971,11 +2004,28 @@ class AnnotationPipeline:
                         attempt=attempt,
                         max_attempts=attempts,
                         timeout_seconds=timeout_seconds,
+                        cost_estimate=self._estimate_stage_cost(
+                            request=request,
+                            response=response,
+                        ),
                         response=response,
                     ),
                 )
             return response
         raise RuntimeError("LLM retry loop exited unexpectedly.")
+
+    def _estimate_stage_cost(
+        self,
+        *,
+        request: StructuredLlmRequest,
+        response: StructuredLlmResponse | None,
+    ) -> dict[str, Any]:
+        return estimate_stage_cost(
+            request=request,
+            response=response,
+            input_cost_per_1k_tokens_usd=self.config.model.input_cost_per_1k_tokens_usd,
+            output_cost_per_1k_tokens_usd=self.config.model.output_cost_per_1k_tokens_usd,
+        )
 
 
 def _build_analysis_input_payload(
@@ -2100,6 +2150,7 @@ def _build_llm_log_details(
     attempt: int,
     max_attempts: int,
     timeout_seconds: int,
+    cost_estimate: dict[str, Any] | None = None,
     response: StructuredLlmResponse | None = None,
     error_details: dict[str, Any] | None = None,
 ) -> dict[str, object]:
@@ -2114,6 +2165,8 @@ def _build_llm_log_details(
         "max_output_tokens": request.max_output_tokens,
         "request_hash": request.request_hash,
     }
+    if cost_estimate is not None:
+        details.update(cost_estimate)
     if error_details:
         if "response_id" in error_details:
             details["response_id"] = error_details["response_id"]
@@ -2337,6 +2390,162 @@ def _should_retry_translation_compact(error: LlmCallError) -> bool:
     if error.code != "llm_incomplete":
         return False
     return _extract_incomplete_reason(error.details) == "max_output_tokens"
+
+
+def _select_translation_output_budget(
+    *,
+    input_payload: dict[str, Any],
+    configured_default: int,
+) -> int:
+    serialized = json.dumps(
+        input_payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if not serialized:
+        return configured_default
+    payload_chars = len(serialized)
+    if payload_chars <= 8_000:
+        return 8_000
+    if payload_chars <= 16_000:
+        return min(
+            DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
+            max(configured_default, DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS),
+        )
+    return min(DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX, 16_000)
+
+
+def _build_translation_compact_retry_request(
+    request: StructuredLlmRequest,
+) -> StructuredLlmRequest:
+    compact_input_payload = _build_compact_translation_payload(request.input_payload)
+    max_output_tokens = _select_translation_output_budget(
+        input_payload=compact_input_payload,
+        configured_default=DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
+    )
+    return StructuredLlmRequest(
+        stage=request.stage,
+        system_prompt=request.system_prompt,
+        input_payload=compact_input_payload,
+        output_schema=request.output_schema,
+        output_model=request.output_model,
+        metadata=dict(request.metadata),
+        provider=request.provider,
+        api=request.api,
+        model_id=request.model_id,
+        reasoning_effort=request.reasoning_effort,
+        text_verbosity=request.text_verbosity,
+        truncation=request.truncation,
+        store=request.store,
+        max_output_tokens=max_output_tokens,
+        prompt_pack_id=request.prompt_pack_id,
+        prompt_pack_version=request.prompt_pack_version,
+        prompt_profile=request.prompt_profile,
+        prompt_hash=request.prompt_hash,
+        request_hash=build_request_hash(
+            system_prompt=request.system_prompt,
+            input_payload=compact_input_payload,
+            output_schema=request.output_schema,
+            model_id=request.model_id,
+            reasoning_effort=request.reasoning_effort,
+            text_verbosity=request.text_verbosity,
+            max_output_tokens=max_output_tokens,
+        ),
+    )
+
+
+def _build_compact_translation_payload(
+    input_payload: dict[str, Any],
+) -> dict[str, Any]:
+    semantic_context = input_payload.get("semantic_context")
+    compact_semantic_context: dict[str, Any] = {}
+    if isinstance(semantic_context, dict):
+        compact_semantic_context = {
+            "document_type_code": semantic_context.get("document_type_code"),
+            "topic_codes": semantic_context.get("topic_codes"),
+            "use_for_tasks_codes": semantic_context.get("use_for_tasks_codes"),
+        }
+    annotation_original = input_payload.get("annotation_original")
+    compact_annotation: dict[str, Any] = {}
+    if isinstance(annotation_original, dict):
+        compact_annotation = {
+            "language_code": annotation_original.get("language_code"),
+            "document_type_label": _truncate_text(
+                annotation_original.get("document_type_label"),
+                limit=200,
+            ),
+            "summary": _truncate_text(
+                annotation_original.get("summary"),
+                limit=800,
+            ),
+            "practical_value": _truncate_list(
+                annotation_original.get("practical_value"),
+                item_limit=180,
+                list_limit=3,
+            ),
+            "best_use_scenarios": _truncate_list(
+                annotation_original.get("best_use_scenarios"),
+                item_limit=180,
+                list_limit=3,
+            ),
+            "use_for_tasks_labels": _truncate_list(
+                annotation_original.get("use_for_tasks_labels"),
+                item_limit=120,
+                list_limit=4,
+            ),
+            "read_first": _truncate_list(
+                annotation_original.get("read_first"),
+                item_limit=160,
+                list_limit=4,
+            ),
+            "limitations": _truncate_list(
+                annotation_original.get("limitations"),
+                item_limit=160,
+                list_limit=4,
+            ),
+            "tags": _truncate_list(
+                annotation_original.get("tags"),
+                item_limit=80,
+                list_limit=6,
+            ),
+        }
+    compact_payload = {
+        "doc_id": input_payload.get("doc_id"),
+        "semantic_context": compact_semantic_context,
+        "annotation_original": compact_annotation,
+    }
+    return compact_payload
+
+
+def _truncate_text(value: Any, *, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: max(1, limit - 3)].rstrip() + "..."
+
+
+def _truncate_list(
+    value: Any,
+    *,
+    item_limit: int,
+    list_limit: int,
+) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for raw_item in value[:list_limit]:
+        if not isinstance(raw_item, str):
+            continue
+        normalized = raw_item.strip()
+        if not normalized:
+            continue
+        if len(normalized) > item_limit:
+            normalized = normalized[: max(1, item_limit - 3)].rstrip() + "..."
+        items.append(normalized)
+    return items
 
 
 def _extract_incomplete_reason(details: dict[str, Any] | None) -> str | None:

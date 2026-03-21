@@ -106,6 +106,7 @@ def test_repository_translation_success_sets_completed_terminal_state(
 ) -> None:
     repository = _build_repository()
     _persist_partial_annotation(repository=repository, tmp_path=tmp_path)
+    before = repository.get_document("doc.md")
 
     repository.apply_translation_result(
         doc_id="doc.md",
@@ -120,16 +121,22 @@ def test_repository_translation_success_sets_completed_terminal_state(
     stored = repository.get_document("doc.md")
 
     assert stored is not None
+    assert before is not None
     assert stored["annotation"]["status"] == "completed"
     assert stored["processing"]["status"] == "completed"
     assert stored["processing"]["last_success_at"] is not None
     assert stored["search"]["tags_ru"] == ["кауция", "решение"]
     assert stored["llm"]["translation_ru"]["prompt_profile"] == "translate_to_ru"
+    assert (
+        stored["processing"]["stages"]["annotate_original"]["completed_at"]
+        == before["processing"]["stages"]["annotate_original"]["completed_at"]
+    )
 
 
 def test_repository_translation_failure_keeps_partial_progress(tmp_path: Path) -> None:
     repository = _build_repository()
     _persist_partial_annotation(repository=repository, tmp_path=tmp_path)
+    before = repository.get_document("doc.md")
 
     repository.mark_translation_partial(
         doc_id="doc.md",
@@ -184,6 +191,7 @@ def test_repository_translation_failure_keeps_partial_progress(tmp_path: Path) -
     stored = repository.get_document("doc.md")
 
     assert stored is not None
+    assert before is not None
     assert stored["annotation"]["status"] == "partial"
     assert stored["annotation"]["original"]["summary"] == "Dokument porządkuje linię orzeczniczą."
     assert stored["processing"]["status"] == "partial"
@@ -196,6 +204,10 @@ def test_repository_translation_failure_keeps_partial_progress(tmp_path: Path) -
     )
     assert stored["processing"]["error"]["details"]["incomplete_details"]["reason"] == (
         "max_output_tokens"
+    )
+    assert (
+        stored["processing"]["stages"]["annotate_original"]["completed_at"]
+        == before["processing"]["stages"]["annotate_original"]["completed_at"]
     )
 
 
@@ -228,6 +240,26 @@ def test_repository_does_not_store_inline_source_blobs(tmp_path: Path) -> None:
     assert "normalized_text_sha256" not in stored["source"]
     assert "content_markdown" not in stored["source"]
     assert stored["source"]["canonical_text_sha256"] == "canonical-sha"
+
+
+def test_repository_updates_analysis_dispatch_metadata(tmp_path: Path) -> None:
+    repository = _build_repository()
+    _persist_partial_annotation(repository=repository, tmp_path=tmp_path)
+
+    repository.update_analysis_dispatch(
+        doc_id="doc.md",
+        dispatch_updates={
+            "mode": "batch_analysis",
+            "status": "queued",
+            "custom_id": "doc.md::annotate_original::request-hash",
+        },
+    )
+
+    stored = repository.get_document("doc.md")
+
+    assert stored is not None
+    assert stored["llm"]["analysis"]["dispatch"]["mode"] == "batch_analysis"
+    assert stored["llm"]["analysis"]["dispatch"]["status"] == "queued"
 
 
 def test_repository_retries_transient_mongo_write_failures(tmp_path: Path) -> None:

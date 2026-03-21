@@ -41,9 +41,25 @@ python scripts/annotate_legal_docs.py \
 - terminal `processing.last_success_at` обновляется только на `completed` annotatable документах и terminal non-target skip;
 - forced fallback diagnostics не меняют canonical classification без отдельно утверждённой политики override;
 - для live smoke лучше использовать отдельную Mongo collection через `--mongo-collection`, чтобы не смешивать smoke и рабочие записи.
-- `translation_ru_max_output_tokens` теперь имеет один явный contract: example/default config использует `24000`, и runtime отправляет ровно это настроенное значение без скрытого auto-floor.
-- значения ниже `24000` для `translation_ru_max_output_tokens` теперь отклоняются в config validation, потому что live smoke показал риск `llm_incomplete` на stage B при меньшем бюджете.
+- `translation_ru_max_output_tokens` теперь задаёт baseline/default, а runtime поверх него выбирает stage-specific dynamic cap по размеру translation payload.
+- safety clamp для `translation_ru_max_output_tokens` теперь верхний, а не нижний: значения выше `24000` отклоняются в config validation.
 - discovery heuristics опираются на body/content markers и не должны повышать `url_count` из metadata URLs до `discovery_reference` для source-backed legal excerpts.
+
+## Batch workflow
+
+```bash
+python scripts/batch_legal_docs.py prepare \
+  --config config/pipeline.yaml \
+  --mode new
+
+python scripts/batch_legal_docs.py submit --config config/pipeline.yaml
+python scripts/batch_legal_docs.py poll --config config/pipeline.yaml
+python scripts/batch_legal_docs.py apply --config config/pipeline.yaml
+```
+
+- первая версия batch используется только для `annotate_original`;
+- `annotate_ru`, repair-pass и `rerun --doc-id` остаются direct;
+- batch-state хранится в Mongo-коллекциях `analysis_batch_jobs` и `analysis_batch_items`.
 
 ## Live smoke pattern
 

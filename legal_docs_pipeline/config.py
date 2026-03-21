@@ -8,16 +8,18 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .constants import (
+    DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
+    DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX,
     DEDUPE_VERSION,
     DEFAULT_MAX_FILE_SIZE_BYTES,
     DEFAULT_INPUT_GLOB,
     DEFAULT_PROMPT_PACK_ID,
     DEFAULT_PROMPT_PACK_VERSION,
+    LlmDispatchMode,
     PIPELINE_IMPLEMENTATION_VERSION,
     PIPELINE_SCHEMA_VERSION,
 )
 
-DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS = 24_000
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 120
 
 
@@ -51,12 +53,14 @@ class ModelConfig(BaseModel):
     analysis_max_output_tokens: int = Field(default=32_000, ge=1)
     translation_ru_max_output_tokens: int = Field(
         default=DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
-        ge=DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS,
+        ge=1,
     )
     request_timeout_seconds: int = Field(
         default=DEFAULT_REQUEST_TIMEOUT_SECONDS,
         ge=1,
     )
+    input_cost_per_1k_tokens_usd: float | None = Field(default=None, ge=0.0)
+    output_cost_per_1k_tokens_usd: float | None = Field(default=None, ge=0.0)
     temperature: float | None = None
     top_p: float | None = None
     logprobs: bool | None = None
@@ -74,6 +78,14 @@ class ModelConfig(BaseModel):
                     "temperature, top_p, and logprobs must be omitted when "
                     "reasoning_effort is not 'none'."
                 )
+        if (
+            self.translation_ru_max_output_tokens
+            > DEFAULT_TRANSLATION_RU_MAX_OUTPUT_TOKENS_MAX
+        ):
+            raise ValueError(
+                "translation_ru_max_output_tokens must not exceed the "
+                "translation safety clamp."
+            )
         return self
 
 
@@ -102,6 +114,13 @@ class PipelineSettings(BaseModel):
     history_tail_size: int = Field(default=10, ge=1)
     retry_model_calls: int = Field(default=2, ge=0)
     retry_mongo_writes: int = Field(default=2, ge=0)
+    llm_dispatch_mode: LlmDispatchMode = LlmDispatchMode.DIRECT
+    batch_max_requests: int = Field(default=25, ge=1)
+    batch_max_input_file_bytes: int = Field(default=8 * 1024 * 1024, ge=1)
+    batch_poll_interval_seconds: int = Field(default=30, ge=1)
+    batch_inflight_jobs_limit: int = Field(default=2, ge=1)
+    batch_min_requests_to_submit: int = Field(default=5, ge=1)
+    batch_apply_direct_fallback: bool = True
 
     @field_validator("workers")
     @classmethod

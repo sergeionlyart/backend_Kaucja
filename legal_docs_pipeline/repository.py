@@ -432,6 +432,8 @@ class MongoDocumentRepository:
         llm_request: StructuredLlmRequest,
         llm_response: StructuredLlmResponse,
         mode: str,
+        dispatch_updates: dict[str, Any] | None = None,
+        cost_estimate: dict[str, Any] | None = None,
     ) -> None:
         document = self._load_required_document(doc_id)
         completed_at = llm_response.completed_at or _utc_now()
@@ -476,6 +478,14 @@ class MongoDocumentRepository:
                 "error": None,
             }
         )
+        llm_analysis["dispatch"] = {
+            "mode": "direct",
+            "status": "completed",
+        }
+        if dispatch_updates:
+            llm_analysis["dispatch"].update(dispatch_updates)
+        if cost_estimate is not None:
+            llm_analysis["cost_estimate"] = cost_estimate
 
         processing = document["processing"]
         processing["current_stage"] = _ANNOTATE_RU_STAGE
@@ -526,6 +536,7 @@ class MongoDocumentRepository:
         llm_request: StructuredLlmRequest,
         llm_response: StructuredLlmResponse,
         mode: str,
+        cost_estimate: dict[str, Any] | None = None,
     ) -> None:
         document = self._load_required_document(doc_id)
         completed_at = llm_response.completed_at or _utc_now()
@@ -565,6 +576,8 @@ class MongoDocumentRepository:
                 "error": None,
             }
         )
+        if cost_estimate is not None:
+            llm_translation["cost_estimate"] = cost_estimate
 
         processing = document["processing"]
         processing["current_stage"] = _ANNOTATE_RU_STAGE
@@ -572,13 +585,6 @@ class MongoDocumentRepository:
         processing["completed_at"] = completed_at
         processing["last_success_at"] = completed_at
         processing["error"] = None
-        _set_stage_state(
-            processing["stages"],
-            stage_name=_ANNOTATE_ORIGINAL_STAGE,
-            status="completed",
-            completed_at=completed_at,
-            error=None,
-        )
         _set_stage_state(
             processing["stages"],
             stage_name=_ANNOTATE_RU_STAGE,
@@ -641,13 +647,6 @@ class MongoDocumentRepository:
         processing["error"] = error_payload
         _set_stage_state(
             processing["stages"],
-            stage_name=_ANNOTATE_ORIGINAL_STAGE,
-            status="completed",
-            completed_at=now,
-            error=None,
-        )
-        _set_stage_state(
-            processing["stages"],
             stage_name=_ANNOTATE_RU_STAGE,
             status="failed",
             completed_at=now,
@@ -667,6 +666,19 @@ class MongoDocumentRepository:
         )
         document["search"]["processing_status"] = "partial"
         document["updated_at"] = now
+        self._write_document(document)
+
+    def update_analysis_dispatch(
+        self,
+        *,
+        doc_id: str,
+        dispatch_updates: dict[str, Any],
+    ) -> None:
+        document = self._load_required_document(doc_id)
+        llm_analysis = document.setdefault("llm", {}).setdefault("analysis", {})
+        dispatch = llm_analysis.setdefault("dispatch", {})
+        dispatch.update(dispatch_updates)
+        document["updated_at"] = _utc_now()
         self._write_document(document)
 
     def mark_failed(

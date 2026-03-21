@@ -302,8 +302,7 @@ def test_translation_request_uses_configured_translation_budget(tmp_path: Path) 
         resolved_prompt=resolved_prompt,
     )
 
-    assert request.max_output_tokens == pipeline.config.model.translation_ru_max_output_tokens
-    assert request.max_output_tokens == 24_000
+    assert request.max_output_tokens == 8_000
 
 
 def test_analysis_request_uses_packed_sections_for_large_canonical_text(
@@ -898,6 +897,128 @@ def test_pipeline_persists_incomplete_reason_for_translation_partial(
     assert failure_event["details"]["incomplete_details.reason"] == "max_output_tokens"
 
 
+def test_pipeline_translation_compact_retry_uses_reduced_payload(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    llm_client = ScriptedLlmClient(
+        script=[
+            _analysis_payload(),
+            LlmCallError(
+                code="llm_incomplete",
+                message="Responses API returned an incomplete result.",
+                details={
+                    "response_id": "resp_incomplete_1",
+                    "status": "incomplete",
+                    "usage": {
+                        "input_tokens": 400,
+                        "output_tokens": 12000,
+                        "reasoning_tokens": 1200,
+                    },
+                    "incomplete_details": {
+                        "reason": "max_output_tokens",
+                    },
+                },
+            ),
+            _translation_payload(),
+        ]
+    )
+    pipeline = AnnotationPipeline(
+        config=_build_config(
+            tmp_path=tmp_path,
+            input_root=input_root,
+            retry_model_calls=0,
+        ),
+        repository_factory=lambda _config: repository,
+        llm_client=llm_client,
+    )
+
+    summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+
+    assert summary.completed_count == 1
+    assert [request.stage for request in llm_client.calls] == [
+        "annotate_original",
+        "annotate_ru",
+        "annotate_ru",
+    ]
+    first_request = llm_client.calls[1]
+    second_request = llm_client.calls[2]
+    assert json.dumps(second_request.input_payload, ensure_ascii=False) != json.dumps(
+        first_request.input_payload,
+        ensure_ascii=False,
+    )
+    assert len(json.dumps(second_request.input_payload, ensure_ascii=False)) < len(
+        json.dumps(first_request.input_payload, ensure_ascii=False)
+    )
+    assert second_request.max_output_tokens <= first_request.max_output_tokens
+
+
+def test_pipeline_analysis_repair_pass_recovers_structured_output(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    llm_client = ScriptedLlmClient(
+        script=[
+            _invalid_analysis_payload_missing_summary(),
+            _analysis_payload(),
+            _translation_payload(),
+        ]
+    )
+    pipeline = AnnotationPipeline(
+        config=_build_config(tmp_path=tmp_path, input_root=input_root),
+        repository_factory=lambda _config: repository,
+        llm_client=llm_client,
+    )
+
+    summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+    log_rows = [
+        json.loads(line)
+        for line in summary.log_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert summary.completed_count == 1
+    assert _find_event(log_rows, "annotate_original", "repair_requested")["details"][
+        "validation_errors"
+    ]
+
+
+def test_pipeline_translation_repair_pass_recovers_business_validation(
+    tmp_path: Path,
+) -> None:
+    input_root = tmp_path / "input"
+    input_root.mkdir()
+    _write_judicial_doc(input_root / "doc.md", canonical_doc_uid="saos_pl:123")
+
+    repository = _build_repository()
+    llm_client = ScriptedLlmClient(
+        script=[
+            _analysis_payload(),
+            _invalid_translation_payload_wrong_language(),
+            _translation_payload(),
+        ]
+    )
+    pipeline = AnnotationPipeline(
+        config=_build_config(tmp_path=tmp_path, input_root=input_root),
+        repository_factory=lambda _config: repository,
+        llm_client=llm_client,
+    )
+
+    summary = pipeline.run(options=PipelineRunOptions(mode=PipelineMode.FULL))
+    log_rows = [
+        json.loads(line)
+        for line in summary.log_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert summary.completed_count == 1
+    assert _find_event(log_rows, "annotate_ru", "repair_requested")["details"][
+        "validation_errors"
+    ]
+
+
 def test_pipeline_force_classifier_fallback_keeps_rule_based_route_when_it_agrees(
     tmp_path: Path,
 ) -> None:
@@ -1209,6 +1330,7 @@ def _build_config(
                 "root_path": input_root,
                 "glob": "**/*.md",
                 "ignore_hidden": True,
+                "max_file_size_bytes": 64 * 1024 * 1024,
             },
             "mongo": {
                 "uri": "mongodb://localhost:27017",
@@ -1224,7 +1346,7 @@ def _build_config(
                 "truncation": "disabled",
                 "store": False,
                 "analysis_max_output_tokens": 32000,
-                "translation_ru_max_output_tokens": 24000,
+                "translation_ru_max_output_tokens": 12000,
             },
             "prompts": {
                 "prompt_pack_id": "kaucja-prompt-pack",
@@ -1240,6 +1362,13 @@ def _build_config(
                 "history_tail_size": 10,
                 "retry_model_calls": retry_model_calls,
                 "retry_mongo_writes": 2,
+                "llm_dispatch_mode": "direct",
+                "batch_max_requests": 25,
+                "batch_max_input_file_bytes": 8 * 1024 * 1024,
+                "batch_poll_interval_seconds": 30,
+                "batch_inflight_jobs_limit": 2,
+                "batch_min_requests_to_submit": 5,
+                "batch_apply_direct_fallback": True,
             },
         }
     )
@@ -1403,6 +1532,12 @@ def _analysis_payload_en() -> dict[str, Any]:
     }
 
 
+def _invalid_analysis_payload_missing_summary() -> dict[str, Any]:
+    payload = _analysis_payload()
+    payload["annotation_original"].pop("summary")
+    return payload
+
+
 def _translation_payload(
     *,
     semantic_document_type_code: str = "pl_judgment",
@@ -1422,6 +1557,12 @@ def _translation_payload(
             "tags": ["кауция", "решение"],
         },
     }
+
+
+def _invalid_translation_payload_wrong_language() -> dict[str, Any]:
+    payload = _translation_payload()
+    payload["annotation_ru"]["language_code"] = "pl"
+    return payload
 
 
 def _translation_payload_en() -> dict[str, Any]:
