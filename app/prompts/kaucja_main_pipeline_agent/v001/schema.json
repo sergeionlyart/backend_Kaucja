@@ -1,0 +1,249 @@
+{
+  "$defs": {
+    "CitationRegister": {
+      "additionalProperties": false,
+      "properties": {
+        "legal": {
+          "items": {
+            "$ref": "#/$defs/LegalRegisterItem"
+          },
+          "title": "Legal",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRegisterItem"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "title": "CitationRegister",
+      "type": "object"
+    },
+    "EvidenceRegisterItem": {
+      "additionalProperties": false,
+      "properties": {
+        "ref_id": {
+          "pattern": "^U\\d{2}$",
+          "title": "Ref Id",
+          "type": "string"
+        },
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "anchor_id": {
+          "title": "Anchor Id",
+          "type": "string"
+        },
+        "preview": {
+          "title": "Preview",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref_id",
+        "doc_id",
+        "anchor_id",
+        "preview"
+      ],
+      "title": "EvidenceRegisterItem",
+      "type": "object"
+    },
+    "FactsPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "evidence_ref_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ref Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "FactsPoint",
+      "type": "object"
+    },
+    "LegalAnalysisSection": {
+      "additionalProperties": false,
+      "properties": {
+        "issue_code": {
+          "title": "Issue Code",
+          "type": "string"
+        },
+        "issue_title": {
+          "title": "Issue Title",
+          "type": "string"
+        },
+        "analysis_points": {
+          "items": {
+            "$ref": "#/$defs/MemoPoint"
+          },
+          "title": "Analysis Points",
+          "type": "array"
+        },
+        "risks": {
+          "items": {
+            "$ref": "#/$defs/RiskPoint"
+          },
+          "title": "Risks",
+          "type": "array"
+        },
+        "practical_takeaway": {
+          "title": "Practical Takeaway",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue_code",
+        "issue_title",
+        "practical_takeaway"
+      ],
+      "title": "LegalAnalysisSection",
+      "type": "object"
+    },
+    "LegalRegisterItem": {
+      "additionalProperties": false,
+      "properties": {
+        "ref_id": {
+          "pattern": "^L\\d{2}$",
+          "title": "Ref Id",
+          "type": "string"
+        },
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "anchor_id": {
+          "title": "Anchor Id",
+          "type": "string"
+        },
+        "locator_label": {
+          "title": "Locator Label",
+          "type": "string"
+        },
+        "preview": {
+          "title": "Preview",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref_id",
+        "doc_id",
+        "anchor_id",
+        "locator_label",
+        "preview"
+      ],
+      "title": "LegalRegisterItem",
+      "type": "object"
+    },
+    "MemoPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "legal_ref_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Legal Ref Ids",
+          "type": "array"
+        },
+        "evidence_ref_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ref Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "MemoPoint",
+      "type": "object"
+    },
+    "RiskPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "legal_ref_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Legal Ref Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "RiskPoint",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "executive_summary": {
+      "items": {
+        "$ref": "#/$defs/MemoPoint"
+      },
+      "title": "Executive Summary",
+      "type": "array"
+    },
+    "facts_considered": {
+      "items": {
+        "$ref": "#/$defs/FactsPoint"
+      },
+      "title": "Facts Considered",
+      "type": "array"
+    },
+    "legal_analysis": {
+      "items": {
+        "$ref": "#/$defs/LegalAnalysisSection"
+      },
+      "title": "Legal Analysis",
+      "type": "array"
+    },
+    "recommended_next_steps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Recommended Next Steps",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "citation_register": {
+      "$ref": "#/$defs/CitationRegister"
+    }
+  },
+  "required": [
+    "title",
+    "citation_register"
+  ],
+  "title": "StrategicMemo",
+  "type": "object"
+}

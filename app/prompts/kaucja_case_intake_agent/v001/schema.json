@@ -1,0 +1,170 @@
+{
+  "$defs": {
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "anchor_id": {
+          "title": "Anchor Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "anchor_id"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "MoneyFact": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "ambiguous",
+            "missing",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ],
+      "title": "MoneyFact",
+      "type": "object"
+    },
+    "TimelineItem": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "title": "Event",
+          "type": "string"
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date"
+        },
+        "status": {
+          "enum": [
+            "confirmed",
+            "ambiguous",
+            "missing",
+            "conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceRef"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "event",
+        "status"
+      ],
+      "title": "TimelineItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "user_goal": {
+      "title": "User Goal",
+      "type": "string"
+    },
+    "case_summary": {
+      "title": "Case Summary",
+      "type": "string"
+    },
+    "timeline": {
+      "items": {
+        "$ref": "#/$defs/TimelineItem"
+      },
+      "title": "Timeline",
+      "type": "array"
+    },
+    "money_facts": {
+      "items": {
+        "$ref": "#/$defs/MoneyFact"
+      },
+      "title": "Money Facts",
+      "type": "array"
+    },
+    "established_facts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Established Facts",
+      "type": "array"
+    },
+    "disputed_facts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Disputed Facts",
+      "type": "array"
+    },
+    "missing_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Evidence",
+      "type": "array"
+    },
+    "issue_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Issue Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "user_goal",
+    "case_summary"
+  ],
+  "title": "CaseIssueSheet",
+  "type": "object"
+}

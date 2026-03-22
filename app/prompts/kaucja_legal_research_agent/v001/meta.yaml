@@ -1,0 +1,4 @@
+prompt_name: kaucja_legal_research_agent
+version: v001
+response_mode: structured_json
+source_doc_path: docs/Tech_Spec_Agents_Legal/system_prompt_legal_research_agent.txt

@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "QcIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "severity": {
+          "enum": [
+            "critical",
+            "major",
+            "minor"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "suggested_fix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggested Fix"
+        }
+      },
+      "required": [
+        "severity",
+        "path",
+        "message"
+      ],
+      "title": "QcIssue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": [
+        "pass",
+        "needs_revision",
+        "fail"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/QcIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "checked_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Checked Paths",
+      "type": "array"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "summary"
+  ],
+  "title": "MemoQcReport",
+  "type": "object"
+}
