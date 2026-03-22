@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "LegalAuthority": {
+      "additionalProperties": false,
+      "properties": {
+        "ref_id": {
+          "pattern": "^L\\d{2}$",
+          "title": "Ref Id",
+          "type": "string"
+        },
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "anchor_id": {
+          "title": "Anchor Id",
+          "type": "string"
+        },
+        "document_title": {
+          "title": "Document Title",
+          "type": "string"
+        },
+        "locator_label": {
+          "title": "Locator Label",
+          "type": "string"
+        },
+        "authority_level": {
+          "title": "Authority Level",
+          "type": "string"
+        },
+        "usually_supports": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usually Supports"
+        },
+        "topic_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Topic Codes",
+          "type": "array"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "supports_position": {
+          "enum": [
+            "supporting",
+            "adverse",
+            "neutral"
+          ],
+          "title": "Supports Position",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref_id",
+        "doc_id",
+        "anchor_id",
+        "document_title",
+        "locator_label",
+        "authority_level",
+        "quote",
+        "supports_position"
+      ],
+      "title": "LegalAuthority",
+      "type": "object"
+    },
+    "ResearchIssue": {
+      "additionalProperties": false,
+      "properties": {
+        "issue_code": {
+          "title": "Issue Code",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "search_notes": {
+          "default": "",
+          "title": "Search Notes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue_code",
+        "question"
+      ],
+      "title": "ResearchIssue",
+      "type": "object"
+    },
+    "SearchTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "tool_calls_used": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Tool Calls Used",
+          "type": "integer"
+        },
+        "queries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Queries",
+          "type": "array"
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/SearchTraceEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        }
+      },
+      "title": "SearchTrace",
+      "type": "object"
+    },
+    "SearchTraceEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "query": {
+          "title": "Query",
+          "type": "string"
+        },
+        "hit_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Hit Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tool_name",
+        "query"
+      ],
+      "title": "SearchTraceEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/ResearchIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "legal_authorities": {
+      "items": {
+        "$ref": "#/$defs/LegalAuthority"
+      },
+      "title": "Legal Authorities",
+      "type": "array"
+    },
+    "coverage_gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Coverage Gaps",
+      "type": "array"
+    },
+    "search_trace": {
+      "$ref": "#/$defs/SearchTrace"
+    }
+  },
+  "required": [
+    "search_trace"
+  ],
+  "title": "ResearchBundle",
+  "type": "object"
+}

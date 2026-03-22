@@ -1,0 +1,4 @@
+prompt_name: kaucja_anchor_markdown
+version: v001
+response_mode: plain_text
+source_doc_path: docs/Tech_Spec_Agents_Legal/system_prompt_якоризации_Markdown.txt
